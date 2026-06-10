@@ -30,6 +30,7 @@ import {
 	buildSourceSidecarPathCandidates,
 	buildTimelineSourceAudioTracks,
 } from "./sourceAudioTracks";
+import { countTimelineRows } from "./timelineLayout";
 
 export interface TimelineEditorProps {
 	videoDuration: number;
@@ -85,6 +86,7 @@ export interface TimelineEditorProps {
 	sourceAudioTrackSettings?: SourceAudioTrackSettings;
 	getSourceAudioTrackSettingsForClip?: (clipId: string | null) => SourceAudioTrackSettings;
 	onSourceAudioTracksMetaChange?: (tracks: SourceAudioTrackMeta) => void;
+	onTimelineRowCountChange?: (rowCount: number) => void;
 }
 
 function extractLocalPathFromMediaServerUrl(input: string | null | undefined): string | null {
@@ -167,6 +169,7 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 			sourceAudioTrackSettings = {},
 			getSourceAudioTrackSettingsForClip,
 			onSourceAudioTracksMetaChange,
+			onTimelineRowCountChange,
 		},
 		ref,
 	) {
@@ -403,6 +406,21 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 			keyShortcuts,
 			isTimelineFocusedRef,
 		});
+
+		// Report how many rows the timeline renders so the editor layout can size
+		// the timeline panel to fit every visible track without internal scrolling.
+		const timelineRowCount = useMemo(
+			() =>
+				countTimelineRows(timelineItems, {
+					showCameraTrack,
+					showSourceAudioTrack,
+					sourceAudioTrackCount: sourceAudioTracks.length,
+				}),
+			[timelineItems, showCameraTrack, showSourceAudioTrack, sourceAudioTracks.length],
+		);
+		useEffect(() => {
+			onTimelineRowCountChange?.(timelineRowCount);
+		}, [onTimelineRowCountChange, timelineRowCount]);
 
 		if (!videoDuration || videoDuration === 0) {
 			return (

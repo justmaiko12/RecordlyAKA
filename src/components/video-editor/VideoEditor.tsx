@@ -163,6 +163,7 @@ import {
 	RECORDLY_ISSUES_URL,
 } from "./TutorialHelp";
 import TimelineEditor, { type TimelineEditorHandle } from "./timeline/TimelineEditor";
+import { getTimelinePreferredHeightPx } from "./timeline/timelineLayout";
 import {
 	normalizeCursorTelemetry,
 	shouldAutoApplyFreshRecordingZoomsForSource,
@@ -701,6 +702,9 @@ export default function VideoEditor() {
 	const smokeExportReadyStateRef = useRef<Record<string, unknown>>({});
 	const [historyVersion, setHistoryVersion] = useState(0);
 	const timelineRef = useRef<TimelineEditorHandle>(null);
+	// Visible timeline rows (clip + zoom by default); drives the timeline panel
+	// height so every track fits without internal scrolling.
+	const [timelineRowCount, setTimelineRowCount] = useState(2);
 
 	function formatTime(seconds: number) {
 		if (!isFinite(seconds) || isNaN(seconds) || seconds < 0) return "0:00";
@@ -6740,12 +6744,15 @@ export default function VideoEditor() {
 				<div
 					className="flex-shrink-0 flex flex-col"
 					style={{
-						height: "15%",
+						// Grow with the visible track count so every row fits without
+						// internal scrolling; cap at 45% so the preview keeps priority.
+						height: `clamp(15%, ${getTimelinePreferredHeightPx(timelineRowCount)}px, 45%)`,
 						minHeight: 160,
 					}}
 				>
 					<TimelineEditor
 						ref={timelineRef}
+						onTimelineRowCountChange={setTimelineRowCount}
 						videoDuration={displayedTimelineDuration}
 						currentTime={currentTime}
 						playheadTime={displayedPlayheadTime}

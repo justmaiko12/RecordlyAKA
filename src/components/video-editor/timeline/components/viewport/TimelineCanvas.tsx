@@ -30,10 +30,9 @@ import Item from "../../Item";
 import glassStyles from "../../ItemGlass.module.css";
 import Row from "../../Row";
 import {
+	countTimelineRows,
 	getTimelineContentMinHeightPx,
 	getTimelineRowsMinHeightPx,
-	getTimelineViewportStretchFactor,
-	TIMELINE_AXIS_HEIGHT_PX,
 } from "../../timelineLayout";
 import TimelineAxis from "../axis/TimelineAxis";
 import ClipMarkerOverlay from "../overlays/ClipMarkerOverlay";
@@ -752,20 +751,17 @@ export default function TimelineCanvas({
 		};
 	}, [getAbsoluteMsFromClientX, isSeeking, onSeek]);
 
-	const timelineRowCount = useMemo(() => {
-		const annotationRowIds = new Set<string>();
-		const audioRowIds = new Set<string>();
-		for (const item of items) {
-			if (isAnnotationTrackRowId(item.rowId)) annotationRowIds.add(item.rowId);
-			if (isAudioTrackRowId(item.rowId)) audioRowIds.add(item.rowId);
-		}
-		const sourceAudioRows = showSourceAudioTrack ? sourceAudioTracks.length : 0;
-		const cameraRows = showCameraTrack ? 1 : 0;
-		return 2 + cameraRows + sourceAudioRows + annotationRowIds.size + audioRowIds.size;
-	}, [items, showCameraTrack, showSourceAudioTrack, sourceAudioTracks.length]);
+	const timelineRowCount = useMemo(
+		() =>
+			countTimelineRows(items, {
+				showCameraTrack,
+				showSourceAudioTrack,
+				sourceAudioTrackCount: sourceAudioTracks.length,
+			}),
+		[items, showCameraTrack, showSourceAudioTrack, sourceAudioTracks.length],
+	);
 	const timelineRowsMinHeightPx = getTimelineRowsMinHeightPx(timelineRowCount);
 	const timelineContentMinHeightPx = getTimelineContentMinHeightPx(timelineRowCount);
-	const timelineViewportStretchFactor = getTimelineViewportStretchFactor(timelineRowCount);
 	const sideProperty = direction === "rtl" ? "right" : "left";
 	const {
 		canShowGhostPlayhead,
@@ -828,7 +824,7 @@ export default function TimelineCanvas({
 			ref={setRefs}
 			style={{
 				...style,
-				height: `max(100%, ${timelineContentMinHeightPx}px, calc(${TIMELINE_AXIS_HEIGHT_PX}px + (100% - ${TIMELINE_AXIS_HEIGHT_PX}px) * ${timelineViewportStretchFactor}))`,
+				height: `max(100%, ${timelineContentMinHeightPx}px)`,
 			}}
 			className="select-none bg-editor-bg relative cursor-pointer group flex flex-col"
 			onMouseDown={handleTimelineMouseDown}
