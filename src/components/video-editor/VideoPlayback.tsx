@@ -181,7 +181,12 @@ import {
 	createMotionBlurState,
 	type MotionBlurState,
 } from "./videoPlayback/zoomTransform";
-import type { WebcamLayoutRegion } from "./webcamLayoutRegions";
+import {
+	CAMERA_FULL_PADDING_FRACTION,
+	getLetterboxRect,
+	isCameraFullAtMs,
+	type WebcamLayoutRegion,
+} from "./webcamLayoutRegions";
 import {
 	getWebcamCropSourceRect,
 	getWebcamOverlayPosition,
@@ -406,6 +411,10 @@ export interface VideoPlaybackRef {
 	refreshFrame: () => Promise<void>;
 }
 
+// Stable default so the regions-changed effect does not re-run every render
+// when the prop is omitted.
+const EMPTY_WEBCAM_LAYOUT_REGIONS: WebcamLayoutRegion[] = [];
+
 const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 	(
 		{
@@ -439,8 +448,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			frame = null,
 			cropRegion,
 			webcam,
-			// webcamLayoutRegions intentionally not destructured yet — Task 6 adds the
-			// camera-full rendering that consumes it (kept out to satisfy noUnusedLocals).
+			webcamLayoutRegions = EMPTY_WEBCAM_LAYOUT_REGIONS,
 			webcamVideoPath,
 			trimRegions = [],
 			speedRegions = [],
@@ -795,9 +803,14 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			webcamCornerRadius,
 			webcamShadow,
 			webcamVideoPath,
+			webcamCropRegion,
+			webcamVideoDimensions,
 		};
 		const webcamLayoutInputsRef = useRef(latestWebcamLayoutInputs);
 		webcamLayoutInputsRef.current = latestWebcamLayoutInputs;
+		const webcamLayoutRegionsRef = useRef<WebcamLayoutRegion[]>(webcamLayoutRegions);
+		webcamLayoutRegionsRef.current = webcamLayoutRegions;
+		const cameraFullActiveRef = useRef(false);
 		const webcamCropPreviewContentStyle = useMemo<React.CSSProperties>(() => {
 			if (!webcamVideoDimensions) {
 				return { opacity: 0 };
@@ -839,6 +852,60 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				if (bubble) {
 					bubble.style.display = "none";
 				}
+				return;
+			}
+
+			if (cameraFullActiveRef.current) {
+				// Camera-full segment: the screen layer is hidden, so zoomScale is
+				// intentionally ignored — the camera stays letterboxed over the
+				// background regardless of zoom regions / reactToZoom.
+				const videoDims = inputs.webcamVideoDimensions;
+				let contentWidth = 16;
+				let contentHeight = 9;
+				if (videoDims) {
+					const { sw, sh } = getWebcamCropSourceRect(
+						inputs.webcamCropRegion,
+						videoDims.width,
+						videoDims.height,
+					);
+					contentWidth = sw;
+					contentHeight = sh;
+				}
+				const rect = getLetterboxRect(
+					{ width: contentWidth, height: contentHeight },
+					{ width: overlay.clientWidth, height: overlay.clientHeight },
+					Math.min(overlay.clientWidth, overlay.clientHeight) *
+						CAMERA_FULL_PADDING_FRACTION,
+				);
+
+				bubble.style.display = "block";
+				bubble.style.left = `${rect.x}px`;
+				bubble.style.top = `${rect.y}px`;
+				bubble.style.width = `${rect.width}px`;
+				bubble.style.height = `${rect.height}px`;
+				bubble.style.aspectRatio = "auto";
+				const cameraFullSquirclePath = getSquircleSvgPath({
+					x: 0,
+					y: 0,
+					width: rect.width,
+					height: rect.height,
+					radius: inputs.webcamCornerRadius,
+				});
+				const shadowBase = Math.min(rect.width, rect.height);
+				bubble.style.filter = `drop-shadow(0 ${Math.round(shadowBase * 0.06)}px ${Math.round(
+					shadowBase * 0.22,
+				)}px rgba(0, 0, 0, ${inputs.webcamShadow}))`;
+				bubble.style.borderRadius = "0px";
+				bubble.style.boxShadow = "none";
+
+				bubbleInner.style.borderRadius = "0px";
+				bubbleInner.style.overflow = "hidden";
+				bubbleInner.style.contain = "paint";
+				bubbleInner.style.clipPath = `path('${cameraFullSquirclePath}')`;
+				bubbleInner.style.setProperty(
+					"-webkit-clip-path",
+					`path('${cameraFullSquirclePath}')`,
+				);
 				return;
 			}
 
@@ -906,7 +973,38 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			webcamCornerRadius,
 			webcamShadow,
 			webcamVideoPath,
+			webcamCropRegion,
+			webcamVideoDimensions,
 		]);
+
+		const updateWebcamLayoutMode = useCallback(
+			(force = false) => {
+				const active = isCameraFullAtMs(
+					webcamLayoutRegionsRef.current,
+					currentTimeRef.current,
+				);
+				const changed = cameraFullActiveRef.current !== active;
+				cameraFullActiveRef.current = active;
+				// Enforce screen visibility unconditionally: the Pixi container can be
+				// (re)created after the active state was computed.
+				const cameraContainer = cameraContainerRef.current;
+				if (cameraContainer && cameraContainer.visible === active) {
+					cameraContainer.visible = !active;
+				}
+				if (changed || force) {
+					applyWebcamBubbleLayout(animationStateRef.current.appliedScale || 1);
+				}
+			},
+			[applyWebcamBubbleLayout],
+		);
+
+		// Re-evaluate camera-full mode when the regions list changes (sidecar load /
+		// checkbox toggle) and once on mount. Forced so the bubble restyles even when
+		// the active state is unchanged.
+		// biome-ignore lint/correctness/useExhaustiveDependencies: webcamLayoutRegions is read via webcamLayoutRegionsRef inside the stable callback; it is listed here as the re-run trigger.
+		useEffect(() => {
+			updateWebcamLayoutMode(true);
+		}, [webcamLayoutRegions, updateWebcamLayoutMode]);
 
 		const clampFocusToStage = useCallback((focus: ZoomFocus, depth: ZoomDepth) => {
 			return clampFocusToStageUtil(focus, depth, stageSizeRef.current);
@@ -1690,13 +1788,14 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		useEffect(() => {
 			const timeMs = currentTime * 1000;
 			currentTimeRef.current = timeMs;
+			updateWebcamLayoutMode();
 			const videoInfo = extensionHost.getVideoInfoSnapshot();
 			extensionHost.setPlaybackState({
 				currentTimeMs: timeMs,
 				durationMs: videoInfo?.durationMs ?? 0,
 				isPlaying,
 			});
-		}, [currentTime, isPlaying]);
+		}, [currentTime, isPlaying, updateWebcamLayoutMode]);
 
 		useEffect(() => {
 			if (!pixiReady || !videoReady) return;
@@ -2393,6 +2492,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 
 				applyTransform({ scale: appliedScale, x: appliedX, y: appliedY }, targetFocus);
 
+				updateWebcamLayoutMode();
 				applyWebcamBubbleLayout(animationStateRef.current.appliedScale || 1);
 
 				const timeMs = currentTimeRef.current;
@@ -2589,6 +2689,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			videoReady,
 			clampFocusToStage,
 			applyWebcamBubbleLayout,
+			updateWebcamLayoutMode,
 			borderRadius,
 			padding,
 			showShadow,
