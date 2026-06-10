@@ -197,6 +197,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			ipcRenderer.removeListener("teleprompter-command", listener);
 		};
 	},
+	webcamDeviceChanged: (deviceId: string | null) => {
+		ipcRenderer.send("webcam-device-changed", deviceId);
+	},
+	getSelectedWebcamDevice: () => {
+		return ipcRenderer.invoke("get-selected-webcam-device") as Promise<string | null>;
+	},
 	getHudOverlayCaptureProtection: () => {
 		return ipcRenderer.invoke("get-hud-overlay-capture-protection");
 	},

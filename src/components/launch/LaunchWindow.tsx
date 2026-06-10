@@ -131,6 +131,10 @@ function LaunchWindowContent() {
 		}
 	}, [selectedVideoDeviceId, setWebcamDeviceId]);
 
+	useEffect(() => {
+		window.electronAPI?.webcamDeviceChanged?.(webcamDeviceId ?? null);
+	}, [webcamDeviceId]);
+
 	const {
 		showFloatingWebcamPreview,
 		setShowFloatingWebcamPreview,

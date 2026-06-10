@@ -212,6 +212,8 @@ interface Window {
 		teleprompterToggle: () => void;
 		teleprompterClose: () => void;
 		onTeleprompterCommand: (callback: (command: string) => void) => () => void;
+		webcamDeviceChanged: (deviceId: string | null) => void;
+		getSelectedWebcamDevice: () => Promise<string | null>;
 		getHudOverlayCaptureProtection: () => Promise<{ success: boolean; enabled: boolean }>;
 		getHudOverlayMousePassthroughSupported: () => Promise<{
 			success: boolean;

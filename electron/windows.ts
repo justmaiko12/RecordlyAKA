@@ -1117,3 +1117,13 @@ ipcMain.on("teleprompter-toggle", () => {
 ipcMain.on("teleprompter-close", () => {
 	getTeleprompterWindow()?.close();
 });
+
+let selectedWebcamDeviceId: string | null = null;
+
+ipcMain.on("webcam-device-changed", (_event, deviceId: string | null) => {
+	selectedWebcamDeviceId = typeof deviceId === "string" && deviceId.length > 0 ? deviceId : null;
+});
+
+ipcMain.handle("get-selected-webcam-device", () => {
+	return selectedWebcamDeviceId;
+});
