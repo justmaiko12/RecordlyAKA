@@ -3327,9 +3327,14 @@ export default function VideoEditor() {
 		[zoomRegions, mapTimelineTimeToSourceTime],
 	);
 
+	// Regions also require a usable webcam: with the webcam cleared/disabled,
+	// camera-full segments would render background-only blanks in preview/export.
 	const effectiveWebcamLayoutRegions = useMemo(
-		() => (webcamLayoutRegionsEnabled ? webcamLayoutRegions : []),
-		[webcamLayoutRegions, webcamLayoutRegionsEnabled],
+		() =>
+			webcamLayoutRegionsEnabled && webcam.enabled && webcam.sourcePath
+				? webcamLayoutRegions
+				: [],
+		[webcamLayoutRegions, webcamLayoutRegionsEnabled, webcam.enabled, webcam.sourcePath],
 	);
 
 	const timelinePlayheadTime = useMemo(
@@ -3440,7 +3445,9 @@ export default function VideoEditor() {
 	const handlePreviewSkipBack = useCallback(() => {
 		const currentMs = timelinePlayheadTime * 1000;
 		const keyframes = timelineRef.current?.keyframes ?? [];
-		const previous = [...keyframes].reverse().find((keyframe) => keyframe.time < currentMs - 50);
+		const previous = [...keyframes]
+			.reverse()
+			.find((keyframe) => keyframe.time < currentMs - 50);
 		handleSeek(previous ? previous.time / 1000 : Math.max(0, timelinePlayheadTime - 5));
 	}, [handleSeek, timelinePlayheadTime]);
 
@@ -3448,9 +3455,7 @@ export default function VideoEditor() {
 		const currentMs = timelinePlayheadTime * 1000;
 		const keyframes = timelineRef.current?.keyframes ?? [];
 		const next = keyframes.find((keyframe) => keyframe.time > currentMs + 50);
-		handleSeek(
-			next ? next.time / 1000 : Math.min(timelineDuration, timelinePlayheadTime + 5),
-		);
+		handleSeek(next ? next.time / 1000 : Math.min(timelineDuration, timelinePlayheadTime + 5));
 	}, [handleSeek, timelineDuration, timelinePlayheadTime]);
 
 	const handleSelectZoom = useCallback((id: string | null) => {
@@ -5260,10 +5265,7 @@ export default function VideoEditor() {
 			volume={
 				audio.shouldMutePreviewVideo || audio.isCurrentClipMuted
 					? 0
-					: Math.max(
-							0,
-							Math.min(1, previewVolume * audio.embeddedSourcePreviewGain),
-						)
+					: Math.max(0, Math.min(1, previewVolume * audio.embeddedSourcePreviewGain))
 			}
 			suspendRendering={suspendRendering}
 		/>

@@ -17,6 +17,7 @@ import {
 	normalizeVideoSourcePath,
 	parseJsonWithByteOrderMark,
 } from "../utils";
+import { getWebcamLayoutEventsPath } from "./webcamLayoutEvents";
 
 export async function hasSiblingProjectFile(videoPath: string) {
 	const baseName = path.basename(videoPath, path.extname(videoPath));
@@ -82,10 +83,13 @@ async function loadSavedProjectMediaPaths() {
 						editor?: { webcam?: { sourcePath?: unknown } };
 					}>(await fs.readFile(projectPath, "utf-8"));
 				} catch (error) {
-					console.warn("[prune] Aborting recording prune because a saved project is unreadable", {
-						projectPath,
-						error,
-					});
+					console.warn(
+						"[prune] Aborting recording prune because a saved project is unreadable",
+						{
+							projectPath,
+							error,
+						},
+					);
 					throw error;
 				}
 				const candidatePaths = [
@@ -167,6 +171,9 @@ export async function pruneAutoRecordings(exemptPaths: string[] = []) {
 		try {
 			await fs.rm(entry.filePath, { force: true });
 			await fs.rm(getTelemetryPathForVideo(entry.filePath), { force: true });
+			await fs
+				.rm(getWebcamLayoutEventsPath(entry.filePath), { force: true })
+				.catch(() => undefined);
 			// Clean up companion audio files left from recording (macOS .m4a, Windows .wav)
 			const base = entry.filePath.replace(/\.(mp4|mov|webm)$/i, "");
 			const companionSuffixes = Array.from(
