@@ -42,6 +42,8 @@
 		"pause": "Пауза",
 		"stop": "Стоп",
 		"cancel": "Отмена",
+		"cameraLayoutToCameraFull": "Камера на весь экран",
+		"cameraLayoutToScreen": "Вернуться к экрану",
 		"more": "Ещё",
 		"update": {
 			"update": "Обновить",

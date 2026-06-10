@@ -75,6 +75,8 @@ function LaunchWindowContent() {
 		setWebcamEnabled,
 		webcamDeviceId,
 		setWebcamDeviceId,
+		cameraFullActive,
+		toggleCameraLayout,
 		countdownDelay,
 		setCountdownDelay,
 		preparePermissions,
@@ -195,6 +197,13 @@ function LaunchWindowContent() {
 		};
 	}, [syncSelectedSource]);
 
+	useEffect(() => {
+		const unsubscribe = window.electronAPI?.onWebcamLayoutHotkey?.(() => {
+			toggleCameraLayout();
+		});
+		return unsubscribe;
+	}, [toggleCameraLayout]);
+
 	const hudStateTransition = {
 		duration: 0.24,
 		ease: [0.22, 1, 0.36, 1] as const,
@@ -206,6 +215,9 @@ function LaunchWindowContent() {
 			microphoneEnabled={microphoneEnabled}
 			elapsed={elapsed}
 			onToggleMicrophone={() => setMicrophoneEnabled(!microphoneEnabled)}
+			webcamEnabled={webcamEnabled}
+			cameraFullActive={cameraFullActive}
+			onToggleCameraLayout={toggleCameraLayout}
 			onPauseResume={paused ? resumeRecording : pauseRecording}
 			onStopRecording={toggleRecording}
 			onHideHud={() => window.electronAPI?.hudOverlayHide?.()}

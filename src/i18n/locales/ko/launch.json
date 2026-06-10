@@ -42,6 +42,8 @@
 		"pause": "일시 정지",
 		"stop": "중지",
 		"cancel": "취소",
+		"cameraLayoutToCameraFull": "카메라 전체 화면",
+		"cameraLayoutToScreen": "화면으로 돌아가기",
 		"more": "더 보기",
 		"update": {
 			"update": "업데이트",

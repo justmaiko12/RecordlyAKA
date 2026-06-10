@@ -42,6 +42,8 @@
 		"pause": "Pausa",
 		"stop": "Stop",
 		"cancel": "Annulla",
+		"cameraLayoutToCameraFull": "Fotocamera a schermo intero",
+		"cameraLayoutToScreen": "Torna allo schermo",
 		"more": "Altro",
 		"update": {
 			"update": "Aggiorna",

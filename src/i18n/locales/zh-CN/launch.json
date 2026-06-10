@@ -42,6 +42,8 @@
 		"pause": "暂停",
 		"stop": "停止",
 		"cancel": "取消",
+		"cameraLayoutToCameraFull": "摄像头全屏",
+		"cameraLayoutToScreen": "返回屏幕",
 		"more": "更多",
 		"update": {
 			"update": "更新",

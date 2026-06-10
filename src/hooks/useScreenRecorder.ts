@@ -147,6 +147,8 @@ type UseScreenRecorderReturn = {
 	setWebcamEnabled: (enabled: boolean) => void;
 	webcamDeviceId: string | undefined;
 	setWebcamDeviceId: (deviceId: string | undefined) => void;
+	cameraFullActive: boolean;
+	toggleCameraLayout: () => void;
 	countdownDelay: number;
 	setCountdownDelay: (delay: number) => void;
 };
@@ -346,6 +348,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const [systemAudioEnabled, setSystemAudioEnabled] = useState(false);
 	const [webcamEnabled, setWebcamEnabled] = useState(false);
 	const [webcamDeviceId, setWebcamDeviceId] = useState<string | undefined>(undefined);
+	const [cameraFullActive, setCameraFullActive] = useState(false);
+	const cameraFullActiveRef = useRef(false);
 	const [countdownDelay, setCountdownDelayState] = useState(3);
 	const mediaRecorder = useRef<MediaRecorder | null>(null);
 	const webcamRecorder = useRef<MediaRecorder | null>(null);
@@ -449,6 +453,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		startTime.current = startedAt;
 		accumulatedPausedDurationMs.current = 0;
 		pauseStartedAtMs.current = null;
+		cameraFullActiveRef.current = false;
+		setCameraFullActive(false);
 	}, []);
 
 	const markRecordingPaused = useCallback((pausedAt: number) => {
@@ -476,6 +482,20 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			pauseStartedAtMs: pauseStartedAtMs.current,
 		});
 	}, []);
+
+	const toggleCameraLayout = useCallback(() => {
+		if (!recording || !webcamEnabled) {
+			return;
+		}
+		const timeMs = Math.round(getRecordingDurationMs(Date.now()));
+		const next = !cameraFullActiveRef.current;
+		cameraFullActiveRef.current = next;
+		setCameraFullActive(next);
+		window.electronAPI?.webcamLayoutToggle?.({
+			timeMs,
+			mode: next ? "camera-full" : "screen",
+		});
+	}, [getRecordingDurationMs, webcamEnabled, recording]);
 
 	const getMicFallbackRecordedElapsedMs = useCallback((now = performance.now()) => {
 		const startedAt = micFallbackRecorderStartedAt.current;
@@ -2126,6 +2146,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		setWebcamEnabled,
 		webcamDeviceId,
 		setWebcamDeviceId,
+		cameraFullActive,
+		toggleCameraLayout,
 		countdownDelay,
 		setCountdownDelay,
 	};

@@ -1,4 +1,4 @@
-import { MicrophoneIcon, MicrophoneSlashIcon, MinusIcon, PauseIcon, PlayIcon, SquareIcon, XIcon } from "@phosphor-icons/react";
+import { MicrophoneIcon, MicrophoneSlashIcon, MinusIcon, MonitorIcon, PauseIcon, PlayIcon, SquareIcon, UserSquareIcon, XIcon } from "@phosphor-icons/react";
 import { useMemo } from "react";
 import { useScopedT } from "@/contexts/I18nContext";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,9 @@ interface RecordingControlsProps {
 	microphoneEnabled: boolean;
 	elapsed: number;
 	onToggleMicrophone: () => void;
+	webcamEnabled: boolean;
+	cameraFullActive: boolean;
+	onToggleCameraLayout: () => void;
 	onPauseResume: () => void;
 	onStopRecording: () => void;
 	onHideHud: () => void;
@@ -22,6 +25,9 @@ export const RecordingControls = ({
 	microphoneEnabled,
 	elapsed,
 	onToggleMicrophone,
+	webcamEnabled,
+	cameraFullActive,
+	onToggleCameraLayout,
 	onPauseResume,
 	onStopRecording,
 	onHideHud,
@@ -75,6 +81,28 @@ export const RecordingControls = ({
 						)}
 					</Button>
 				</span>
+
+				{webcamEnabled && (
+					<Button
+						variant="ghost"
+						size="icon"
+						iconSize="lg"
+						className={cameraFullActive ? styles.ibActive : ""}
+						onClick={onToggleCameraLayout}
+						title={
+							cameraFullActive
+								? t("recording.cameraLayoutToScreen", "Back to screen")
+								: t("recording.cameraLayoutToCameraFull", "Camera fullscreen")
+						}
+						aria-label={
+							cameraFullActive
+								? t("recording.cameraLayoutToScreen", "Back to screen")
+								: t("recording.cameraLayoutToCameraFull", "Camera fullscreen")
+						}
+					>
+						{cameraFullActive ? <MonitorIcon size={18} /> : <UserSquareIcon size={18} />}
+					</Button>
+				)}
 
 				<Separator orientation="vertical" className="mx-[5px] h-6" />
 
@@ -134,6 +162,9 @@ export const RecordingControls = ({
 		microphoneEnabled,
 		elapsed,
 		onToggleMicrophone,
+		webcamEnabled,
+		cameraFullActive,
+		onToggleCameraLayout,
 		onPauseResume,
 		onStopRecording,
 		onHideHud,
