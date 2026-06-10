@@ -137,7 +137,8 @@
 	},
 	"timeline": {
 		"expand": "Espandi timeline",
-		"collapse": "Comprimi timeline"
+		"collapse": "Comprimi timeline",
+		"magnetClipEdit": "Disattiva la calamita per regolare i bordi della clip"
 	},
 	"openRecordingsFolder": "Apri cartella registrazioni"
 }

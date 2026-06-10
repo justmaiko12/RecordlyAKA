@@ -137,7 +137,8 @@
 	},
 	"timeline": {
 		"expand": "Tijdlijn uitvouwen",
-		"collapse": "Tijdlijn samenvouwen"
+		"collapse": "Tijdlijn samenvouwen",
+		"magnetClipEdit": "Zet de magneet uit om clipranden aan te passen"
 	},
 	"openRecordingsFolder": "Opnamemap openen"
 }

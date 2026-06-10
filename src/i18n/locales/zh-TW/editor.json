@@ -137,7 +137,8 @@
 	},
 	"timeline": {
 		"expand": "展開時間軸",
-		"collapse": "摺疊時間軸"
+		"collapse": "摺疊時間軸",
+		"magnetClipEdit": "關閉磁吸後才能調整剪輯邊緣"
 	},
 	"openRecordingsFolder": "打開錄製資料夾"
 }

@@ -168,6 +168,18 @@ import {
 	shouldAutoApplyFreshRecordingZoomsForSource,
 } from "./timeline/zoomSuggestionUtils";
 import {
+	clipsToDisplay,
+	displayMsToTimeline,
+	getDisplayDurationMs,
+	msToDisplay,
+	msToSource,
+	regionToDisplay,
+	spanToSource,
+	spanToTimeline,
+	timelineMsToDisplay,
+	timelineRegionToDisplay,
+} from "./timelineDisplayMapping";
+import {
 	type AnnotationRegion,
 	type AudioRegion,
 	type AutoCaptionSettings,
@@ -3371,6 +3383,79 @@ export default function VideoEditor() {
 		[clipRegions, duration],
 	);
 
+	// --- Magnet-ON collapsed timeline display (boundary mapping only) ---
+	// When the magnet is on, the TimelineEditor receives DISPLAY-space data
+	// (inter-clip gaps collapsed) and every callback is reverse-mapped before
+	// the existing source/timeline-space handlers run. Trim derivation, audio
+	// sync and export config stay in source/timeline space. The memos below
+	// return the ORIGINAL references when the magnet is off so the pass-through
+	// path is reference-equal to today's behavior.
+	const magnetCollapse = magnetEnabled && clipRegions.length > 0;
+	const displayClipRegions = useMemo<ClipRegion[]>(
+		() => (magnetCollapse ? clipsToDisplay(clipRegions) : clipRegions),
+		[magnetCollapse, clipRegions],
+	);
+	// Zoom and audio regions live in TIMELINE space (zooms are mapped to source
+	// via effectiveZoomRegions; audio plays against timelinePlayheadTime).
+	const displayZoomRegions = useMemo(
+		() =>
+			magnetCollapse
+				? zoomRegions.map((region) => timelineRegionToDisplay(region, clipRegions))
+				: zoomRegions,
+		[magnetCollapse, zoomRegions, clipRegions],
+	);
+	const displayAudioRegions = useMemo(
+		() =>
+			magnetCollapse
+				? audioRegions.map((region) => timelineRegionToDisplay(region, clipRegions))
+				: audioRegions,
+		[magnetCollapse, audioRegions, clipRegions],
+	);
+	// Annotation and camera regions live in SOURCE space (preview filters them
+	// against the video element's currentTime).
+	const displayAnnotationRegions = useMemo(
+		() =>
+			magnetCollapse
+				? annotationRegions.map((region) => regionToDisplay(region, clipRegions))
+				: annotationRegions,
+		[magnetCollapse, annotationRegions, clipRegions],
+	);
+	const displayCameraRegions = useMemo(
+		() =>
+			magnetCollapse
+				? webcamLayoutRegions.map((region) => regionToDisplay(region, clipRegions))
+				: webcamLayoutRegions,
+		[magnetCollapse, webcamLayoutRegions, clipRegions],
+	);
+	// Cursor telemetry is SOURCE space; map it so zoom suggestions are computed
+	// in the same space as the displayed zoom regions and total duration.
+	const displayCursorTelemetry = useMemo(
+		() =>
+			magnetCollapse
+				? normalizedCursorTelemetry.map((point) => ({
+						...point,
+						timeMs: msToDisplay(point.timeMs, clipRegions),
+					}))
+				: normalizedCursorTelemetry,
+		[magnetCollapse, normalizedCursorTelemetry, clipRegions],
+	);
+	const displayedPlayheadTime = useMemo(
+		() =>
+			magnetCollapse
+				? timelineMsToDisplay(timelinePlayheadTime * 1000, clipRegions) / 1000
+				: timelinePlayheadTime,
+		[magnetCollapse, timelinePlayheadTime, clipRegions],
+	);
+	const displayedTimelineDuration = useMemo(
+		() => (magnetCollapse ? getDisplayDurationMs(clipRegions) / 1000 : timelineDuration),
+		[magnetCollapse, clipRegions, timelineDuration],
+	);
+	const displaySecondsToTimelineSeconds = useCallback(
+		(time: number) =>
+			magnetCollapse ? displayMsToTimeline(time * 1000, clipRegions) / 1000 : time,
+		[magnetCollapse, clipRegions],
+	);
+
 	// Merge clip speeds into speed regions so playback + export respect per-clip speed
 	const effectiveSpeedRegions = useMemo<SpeedRegion[]>(() => {
 		const clipDerived: SpeedRegion[] = clipRegions
@@ -3471,21 +3556,39 @@ export default function VideoEditor() {
 		[handleSeek],
 	);
 
+	// Keyframes from the timeline handle live in the playhead-prop space
+	// (display space when the magnet collapses the timeline), so skip targets
+	// are computed there and mapped back before seeking.
 	const handlePreviewSkipBack = useCallback(() => {
-		const currentMs = timelinePlayheadTime * 1000;
+		const currentMs = displayedPlayheadTime * 1000;
 		const keyframes = timelineRef.current?.keyframes ?? [];
 		const previous = [...keyframes]
 			.reverse()
 			.find((keyframe) => keyframe.time < currentMs - 50);
-		handleSeek(previous ? previous.time / 1000 : Math.max(0, timelinePlayheadTime - 5));
-	}, [handleSeek, timelinePlayheadTime]);
+		handleSeek(
+			displaySecondsToTimelineSeconds(
+				previous ? previous.time / 1000 : Math.max(0, displayedPlayheadTime - 5),
+			),
+		);
+	}, [handleSeek, displayedPlayheadTime, displaySecondsToTimelineSeconds]);
 
 	const handlePreviewSkipForward = useCallback(() => {
-		const currentMs = timelinePlayheadTime * 1000;
+		const currentMs = displayedPlayheadTime * 1000;
 		const keyframes = timelineRef.current?.keyframes ?? [];
 		const next = keyframes.find((keyframe) => keyframe.time > currentMs + 50);
-		handleSeek(next ? next.time / 1000 : Math.min(timelineDuration, timelinePlayheadTime + 5));
-	}, [handleSeek, timelineDuration, timelinePlayheadTime]);
+		handleSeek(
+			displaySecondsToTimelineSeconds(
+				next
+					? next.time / 1000
+					: Math.min(displayedTimelineDuration, displayedPlayheadTime + 5),
+			),
+		);
+	}, [
+		handleSeek,
+		displayedTimelineDuration,
+		displayedPlayheadTime,
+		displaySecondsToTimelineSeconds,
+	]);
 
 	const handleSelectZoom = useCallback((id: string | null) => {
 		setSelectedZoomId(id);
@@ -4127,6 +4230,120 @@ export default function VideoEditor() {
 			}
 		},
 		[selectedAnnotationId],
+	);
+
+	// --- Magnet-ON reverse mapping for TimelineEditor callbacks ---
+	// Each wrapper converts DISPLAY-space values back into the space the
+	// existing handler expects (timeline space for seek/split/zoom/audio,
+	// source space for annotation/camera) BEFORE clamp/update logic runs.
+	// With the magnet off (or no clips) they pass values through unchanged.
+	const handleTimelineDisplaySeek = useCallback(
+		(time: number) => {
+			handleTimelineSeek(displaySecondsToTimelineSeconds(time));
+		},
+		[handleTimelineSeek, displaySecondsToTimelineSeconds],
+	);
+
+	const handleClipSplitFromTimeline = useCallback(
+		(splitMs: number) => {
+			handleClipSplit(magnetCollapse ? displayMsToTimeline(splitMs, clipRegions) : splitMs);
+		},
+		[handleClipSplit, magnetCollapse, clipRegions],
+	);
+
+	// Clip body drags and edge resizes cannot be expressed in the collapsed
+	// display (clips are packed contiguously), so block them with a hint
+	// instead of remapping. Selection and delete still work; deleting a clip
+	// ripples naturally because the display recomputes from remaining clips.
+	const handleClipSpanChangeFromTimeline = useCallback(
+		(id: string, span: Span) => {
+			if (magnetCollapse) {
+				toast.warning(
+					t("editor.timeline.magnetClipEdit", "Turn the magnet off to adjust clip edges"),
+				);
+				return;
+			}
+			handleClipSpanChange(id, span);
+		},
+		[handleClipSpanChange, magnetCollapse, t],
+	);
+
+	const handleZoomAddedFromTimeline = useCallback(
+		(span: Span) => {
+			handleZoomAdded(magnetCollapse ? spanToTimeline(span, clipRegions) : span);
+		},
+		[handleZoomAdded, magnetCollapse, clipRegions],
+	);
+
+	const handleZoomSuggestedFromTimeline = useCallback(
+		(span: Span, focus: ZoomFocus) => {
+			handleZoomSuggested(magnetCollapse ? spanToTimeline(span, clipRegions) : span, focus);
+		},
+		[handleZoomSuggested, magnetCollapse, clipRegions],
+	);
+
+	const handleZoomSpanChangeFromTimeline = useCallback(
+		(id: string, span: Span) => {
+			handleZoomSpanChange(id, magnetCollapse ? spanToTimeline(span, clipRegions) : span);
+		},
+		[handleZoomSpanChange, magnetCollapse, clipRegions],
+	);
+
+	const handleAudioAddedFromTimeline = useCallback(
+		(span: Span, audioPath: string, trackIndex?: number) => {
+			handleAudioAdded(
+				magnetCollapse ? spanToTimeline(span, clipRegions) : span,
+				audioPath,
+				trackIndex,
+			);
+		},
+		[handleAudioAdded, magnetCollapse, clipRegions],
+	);
+
+	const handleAudioSpanChangeFromTimeline = useCallback(
+		(id: string, span: Span, trackIndex?: number) => {
+			handleAudioSpanChange(
+				id,
+				magnetCollapse ? spanToTimeline(span, clipRegions) : span,
+				trackIndex,
+			);
+		},
+		[handleAudioSpanChange, magnetCollapse, clipRegions],
+	);
+
+	const handleAnnotationAddedFromTimeline = useCallback(
+		(span: Span, trackIndex?: number) => {
+			handleAnnotationAdded(
+				magnetCollapse ? spanToSource(span, clipRegions) : span,
+				trackIndex,
+			);
+		},
+		[handleAnnotationAdded, magnetCollapse, clipRegions],
+	);
+
+	const handleAnnotationSpanChangeFromTimeline = useCallback(
+		(id: string, span: Span, trackIndex?: number) => {
+			handleAnnotationSpanChange(
+				id,
+				magnetCollapse ? spanToSource(span, clipRegions) : span,
+				trackIndex,
+			);
+		},
+		[handleAnnotationSpanChange, magnetCollapse, clipRegions],
+	);
+
+	const handleCameraSpanChangeFromTimeline = useCallback(
+		(id: string, span: { start: number; end: number }) => {
+			handleCameraSpanChange(id, magnetCollapse ? spanToSource(span, clipRegions) : span);
+		},
+		[handleCameraSpanChange, magnetCollapse, clipRegions],
+	);
+
+	const handleCameraAddAtMsFromTimeline = useCallback(
+		(timeMs: number) => {
+			handleCameraAddAtMs(magnetCollapse ? msToSource(timeMs, clipRegions) : timeMs);
+		},
+		[handleCameraAddAtMs, magnetCollapse, clipRegions],
 	);
 
 	const handleAnnotationContentChange = useCallback((id: string, content: string) => {
@@ -6396,7 +6613,7 @@ export default function VideoEditor() {
 							<div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
 								<div className="flex items-center gap-1.5 pointer-events-auto">
 									<span className="mr-1 text-[10px] font-medium tabular-nums text-muted-foreground">
-										{formatTime(timelinePlayheadTime)}
+										{formatTime(displayedPlayheadTime)}
 									</span>
 									<Button
 										variant="ghost"
@@ -6430,7 +6647,7 @@ export default function VideoEditor() {
 										<SkipForward className="w-3.5 h-3.5" weight="fill" />
 									</Button>
 									<span className="text-[10px] font-medium text-muted-foreground/70 tabular-nums ml-1">
-										{formatTime(timelineDuration)}
+										{formatTime(displayedTimelineDuration)}
 									</span>
 								</div>
 							</div>
@@ -6496,47 +6713,47 @@ export default function VideoEditor() {
 				>
 					<TimelineEditor
 						ref={timelineRef}
-						videoDuration={timelineDuration}
+						videoDuration={displayedTimelineDuration}
 						currentTime={currentTime}
-						playheadTime={timelinePlayheadTime}
-						onSeek={handleTimelineSeek}
+						playheadTime={displayedPlayheadTime}
+						onSeek={handleTimelineDisplaySeek}
 						videoPath={videoPath}
 						videoSourcePath={videoSourcePath}
 						cursorTelemetrySourcePath={cursorTelemetrySourcePath}
-						cursorTelemetry={normalizedCursorTelemetry}
+						cursorTelemetry={displayCursorTelemetry}
 						autoSuggestZoomsTrigger={autoSuggestZoomsTrigger}
 						onAutoSuggestZoomsConsumed={handleAutoSuggestZoomsConsumed}
 						disableSuggestedZooms={!autoApplyFreshRecordingAutoZooms}
-						zoomRegions={zoomRegions}
-						onZoomAdded={handleZoomAdded}
-						onZoomSuggested={handleZoomSuggested}
-						onZoomSpanChange={handleZoomSpanChange}
+						zoomRegions={displayZoomRegions}
+						onZoomAdded={handleZoomAddedFromTimeline}
+						onZoomSuggested={handleZoomSuggestedFromTimeline}
+						onZoomSpanChange={handleZoomSpanChangeFromTimeline}
 						onZoomDelete={handleZoomDelete}
 						selectedZoomId={selectedZoomId}
 						onSelectZoom={handleSelectZoom}
 						trimRegions={trimRegions}
-						clipRegions={clipRegions}
-						onClipSplit={handleClipSplit}
-						onClipSpanChange={handleClipSpanChange}
+						clipRegions={displayClipRegions}
+						onClipSplit={handleClipSplitFromTimeline}
+						onClipSpanChange={handleClipSpanChangeFromTimeline}
 						selectedClipId={selectedClipId}
 						onSelectClip={handleSelectClip}
-						audioRegions={audioRegions}
-						onAudioAdded={handleAudioAdded}
-						onAudioSpanChange={handleAudioSpanChange}
+						audioRegions={displayAudioRegions}
+						onAudioAdded={handleAudioAddedFromTimeline}
+						onAudioSpanChange={handleAudioSpanChangeFromTimeline}
 						onAudioDelete={handleAudioDelete}
 						selectedAudioId={selectedAudioId}
 						onSelectAudio={handleSelectAudio}
-						cameraRegions={webcamLayoutRegions}
-						onCameraSpanChange={handleCameraSpanChange}
+						cameraRegions={displayCameraRegions}
+						onCameraSpanChange={handleCameraSpanChangeFromTimeline}
 						onCameraDelete={handleCameraDelete}
-						onCameraAddAtMs={handleCameraAddAtMs}
+						onCameraAddAtMs={handleCameraAddAtMsFromTimeline}
 						selectedCameraId={selectedCameraId}
 						onSelectCamera={handleSelectCamera}
 						cameraTrackVisible={Boolean(webcam.enabled && webcam.sourcePath)}
 						cameraRegionsDimmed={!webcamLayoutRegionsEnabled}
-						annotationRegions={annotationRegions}
-						onAnnotationAdded={handleAnnotationAdded}
-						onAnnotationSpanChange={handleAnnotationSpanChange}
+						annotationRegions={displayAnnotationRegions}
+						onAnnotationAdded={handleAnnotationAddedFromTimeline}
+						onAnnotationSpanChange={handleAnnotationSpanChangeFromTimeline}
 						onAnnotationDelete={handleAnnotationDelete}
 						selectedAnnotationId={selectedAnnotationId}
 						onSelectAnnotation={handleSelectAnnotation}

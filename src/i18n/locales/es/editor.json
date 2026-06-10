@@ -137,7 +137,8 @@
 	},
 	"timeline": {
 		"expand": "Expandir línea de tiempo",
-		"collapse": "Contraer línea de tiempo"
+		"collapse": "Contraer línea de tiempo",
+		"magnetClipEdit": "Desactiva el magneto para ajustar los bordes del clip"
 	},
 	"openRecordingsFolder": "Abrir carpeta de grabaciones"
 }

@@ -137,7 +137,8 @@
 	},
 	"timeline": {
 		"expand": "Expand Timeline",
-		"collapse": "Collapse Timeline"
+		"collapse": "Collapse Timeline",
+		"magnetClipEdit": "Turn the magnet off to adjust clip edges"
 	},
 	"openRecordingsFolder": "Open recordings folder"
 }
