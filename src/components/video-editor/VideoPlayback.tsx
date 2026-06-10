@@ -779,6 +779,21 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		const webcamTimeOffsetMs = webcam?.timeOffsetMs;
 		const webcamCropRegion = webcam?.cropRegion;
 		const webcamMirror = webcam?.mirror ?? false;
+		const latestWebcamLayoutInputs = {
+			webcamEnabled,
+			webcamMargin,
+			webcamSize,
+			webcamReactToZoom,
+			webcamPositionPreset,
+			webcamPositionX,
+			webcamPositionY,
+			webcamCorner,
+			webcamCornerRadius,
+			webcamShadow,
+			webcamVideoPath,
+		};
+		const webcamLayoutInputsRef = useRef(latestWebcamLayoutInputs);
+		webcamLayoutInputsRef.current = latestWebcamLayoutInputs;
 		const webcamCropPreviewContentStyle = useMemo<React.CSSProperties>(() => {
 			if (!webcamVideoDimensions) {
 				return { opacity: 0 };
@@ -805,76 +820,89 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			};
 		}, [webcamCropRegion, webcamVideoDimensions]);
 
-		const applyWebcamBubbleLayout = useCallback(
-			(zoomScale: number) => {
-				const bubble = webcamBubbleRef.current;
-				const bubbleInner = webcamBubbleInnerRef.current;
-				const overlay = overlayRef.current;
-				if (!bubble || !bubbleInner || !overlay || !webcamEnabled || !webcamVideoPath) {
-					if (bubble) {
-						bubble.style.display = "none";
-					}
-					return;
+		const applyWebcamBubbleLayout = useCallback((zoomScale: number) => {
+			const inputs = webcamLayoutInputsRef.current;
+			const bubble = webcamBubbleRef.current;
+			const bubbleInner = webcamBubbleInnerRef.current;
+			const overlay = overlayRef.current;
+			if (
+				!bubble ||
+				!bubbleInner ||
+				!overlay ||
+				!inputs.webcamEnabled ||
+				!inputs.webcamVideoPath
+			) {
+				if (bubble) {
+					bubble.style.display = "none";
 				}
+				return;
+			}
 
-				const scaledSize = getWebcamOverlaySizePx({
-					containerWidth: overlay.clientWidth,
-					containerHeight: overlay.clientHeight,
-					sizePercent: webcamSize,
-					margin: webcamMargin,
-					zoomScale,
-					reactToZoom: webcamReactToZoom,
-				});
-				const { x, y } = getWebcamOverlayPosition({
-					containerWidth: overlay.clientWidth,
-					containerHeight: overlay.clientHeight,
-					size: scaledSize,
-					margin: webcamMargin,
-					positionPreset: webcamPositionPreset,
-					positionX: webcamPositionX,
-					positionY: webcamPositionY,
-					legacyCorner: webcamCorner,
-				});
+			const scaledSize = getWebcamOverlaySizePx({
+				containerWidth: overlay.clientWidth,
+				containerHeight: overlay.clientHeight,
+				sizePercent: inputs.webcamSize,
+				margin: inputs.webcamMargin,
+				zoomScale,
+				reactToZoom: inputs.webcamReactToZoom,
+			});
+			const { x, y } = getWebcamOverlayPosition({
+				containerWidth: overlay.clientWidth,
+				containerHeight: overlay.clientHeight,
+				size: scaledSize,
+				margin: inputs.webcamMargin,
+				positionPreset: inputs.webcamPositionPreset,
+				positionX: inputs.webcamPositionX,
+				positionY: inputs.webcamPositionY,
+				legacyCorner: inputs.webcamCorner,
+			});
 
-				bubble.style.display = "block";
-				bubble.style.left = `${x}px`;
-				bubble.style.top = `${y}px`;
-				bubble.style.width = `${scaledSize}px`;
-				bubble.style.height = `${scaledSize}px`;
-				bubble.style.aspectRatio = "1 / 1";
-				const squirclePath = getSquircleSvgPath({
-					x: 0,
-					y: 0,
-					width: scaledSize,
-					height: scaledSize,
-					radius: webcamCornerRadius,
-				});
-				bubble.style.filter = `drop-shadow(0 ${Math.round(scaledSize * 0.06)}px ${Math.round(
-					scaledSize * 0.22,
-				)}px rgba(0, 0, 0, ${webcamShadow}))`;
-				bubble.style.borderRadius = "0px";
-				bubble.style.boxShadow = "none";
+			bubble.style.display = "block";
+			bubble.style.left = `${x}px`;
+			bubble.style.top = `${y}px`;
+			bubble.style.width = `${scaledSize}px`;
+			bubble.style.height = `${scaledSize}px`;
+			bubble.style.aspectRatio = "1 / 1";
+			const squirclePath = getSquircleSvgPath({
+				x: 0,
+				y: 0,
+				width: scaledSize,
+				height: scaledSize,
+				radius: inputs.webcamCornerRadius,
+			});
+			bubble.style.filter = `drop-shadow(0 ${Math.round(scaledSize * 0.06)}px ${Math.round(
+				scaledSize * 0.22,
+			)}px rgba(0, 0, 0, ${inputs.webcamShadow}))`;
+			bubble.style.borderRadius = "0px";
+			bubble.style.boxShadow = "none";
 
-				bubbleInner.style.borderRadius = "0px";
-				bubbleInner.style.overflow = "hidden";
-				bubbleInner.style.contain = "paint";
-				bubbleInner.style.clipPath = `path('${squirclePath}')`;
-				bubbleInner.style.setProperty("-webkit-clip-path", `path('${squirclePath}')`);
-			},
-			[
-				webcamCorner,
-				webcamCornerRadius,
-				webcamEnabled,
-				webcamMargin,
-				webcamPositionPreset,
-				webcamPositionX,
-				webcamPositionY,
-				webcamReactToZoom,
-				webcamShadow,
-				webcamSize,
-				webcamVideoPath,
-			],
-		);
+			bubbleInner.style.borderRadius = "0px";
+			bubbleInner.style.overflow = "hidden";
+			bubbleInner.style.contain = "paint";
+			bubbleInner.style.clipPath = `path('${squirclePath}')`;
+			bubbleInner.style.setProperty("-webkit-clip-path", `path('${squirclePath}')`);
+		}, []);
+
+		// Webcam layout inputs changed: restyle only the bubble. Must NOT run the
+		// heavy stage-layout effect (it resets the zoom container and causes a
+		// visible scale flicker while dragging position sliders).
+		// biome-ignore lint/correctness/useExhaustiveDependencies: the webcam values are read via webcamLayoutInputsRef inside the stable callback; they are listed here as the re-run trigger.
+		useEffect(() => {
+			applyWebcamBubbleLayout(animationStateRef.current.appliedScale || 1);
+		}, [
+			applyWebcamBubbleLayout,
+			webcamEnabled,
+			webcamMargin,
+			webcamSize,
+			webcamReactToZoom,
+			webcamPositionPreset,
+			webcamPositionX,
+			webcamPositionY,
+			webcamCorner,
+			webcamCornerRadius,
+			webcamShadow,
+			webcamVideoPath,
+		]);
 
 		const clampFocusToStage = useCallback((focus: ZoomFocus, depth: ZoomDepth) => {
 			return clampFocusToStageUtil(focus, depth, stageSizeRef.current);
