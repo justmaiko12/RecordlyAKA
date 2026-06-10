@@ -78,6 +78,7 @@ import {
 	type ZoomRegion,
 	type ZoomTransitionEasing,
 } from "./types";
+import type { WebcamLayoutRegion } from "./webcamLayoutRegions";
 import { normalizeWebcamCropRegion } from "./webcamOverlay";
 
 export const PROJECT_VERSION = 1;
@@ -140,6 +141,8 @@ export interface ProjectEditorState {
 	autoCaptions: CaptionCue[];
 	autoCaptionSettings: AutoCaptionSettings;
 	webcam: WebcamOverlaySettings;
+	webcamLayoutRegions: WebcamLayoutRegion[];
+	webcamLayoutRegionsEnabled: boolean;
 	aspectRatio: AspectRatio;
 	sourceAudioTrackSettingsByClip?: Record<string, SourceAudioTrackSettings>;
 	defaultSourceAudioTrackSettings?: SourceAudioTrackSettings;
@@ -693,6 +696,27 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 				})
 		: [];
 
+	const normalizedWebcamLayoutRegions: WebcamLayoutRegion[] = Array.isArray(
+		editor.webcamLayoutRegions,
+	)
+		? editor.webcamLayoutRegions
+				.filter((region): region is WebcamLayoutRegion =>
+					Boolean(
+						region &&
+							typeof region.id === "string" &&
+							isFiniteNumber(region.startMs) &&
+							isFiniteNumber(region.endMs) &&
+							region.startMs < region.endMs,
+					),
+				)
+				.map((region) => ({
+					id: region.id,
+					startMs: Math.max(0, Math.round(region.startMs)),
+					endMs: Math.round(region.endMs),
+				}))
+				.filter((region) => region.startMs < region.endMs)
+		: [];
+
 	const normalizedAutoCaptions: CaptionCue[] = Array.isArray(
 		(editor as Partial<ProjectEditorState>).autoCaptions,
 	)
@@ -1047,6 +1071,11 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 				? clamp(webcam.margin, 0, 96)
 				: DEFAULT_WEBCAM_MARGIN,
 		},
+		webcamLayoutRegions: normalizedWebcamLayoutRegions,
+		webcamLayoutRegionsEnabled:
+			typeof editor.webcamLayoutRegionsEnabled === "boolean"
+				? editor.webcamLayoutRegionsEnabled
+				: true,
 		sourceAudioTrackSettingsByClip:
 			editor.sourceAudioTrackSettingsByClip &&
 			typeof editor.sourceAudioTrackSettingsByClip === "object"

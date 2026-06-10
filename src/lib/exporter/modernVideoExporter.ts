@@ -38,6 +38,7 @@ import {
 	computeFocusFromTransform,
 	computeZoomTransform,
 } from "@/components/video-editor/videoPlayback/zoomTransform";
+import type { WebcamLayoutRegion } from "@/components/video-editor/webcamLayoutRegions";
 import {
 	getWebcamOverlayPosition,
 	getWebcamOverlaySizePx,
@@ -120,6 +121,7 @@ interface VideoExporterConfig extends ExportConfig {
 	videoPadding?: Padding | number;
 	cropRegion: CropRegion;
 	webcam?: WebcamOverlaySettings;
+	webcamLayoutRegions?: WebcamLayoutRegion[];
 	webcamUrl?: string | null;
 	annotationRegions?: AnnotationRegion[];
 	autoCaptions?: CaptionCue[];
@@ -609,6 +611,7 @@ export class ModernVideoExporter {
 					padding: this.config.padding,
 					cropRegion: this.config.cropRegion,
 					webcam: this.config.webcam,
+					webcamLayoutRegions: this.config.webcamLayoutRegions,
 					webcamUrl: this.config.webcamUrl,
 					videoWidth: videoInfo.width,
 					videoHeight: videoInfo.height,

@@ -221,6 +221,7 @@ import {
 	buildLoopedCursorTelemetry,
 	getDisplayedTimelineWindowMs,
 } from "./videoPlayback/cursorLoopTelemetry";
+import { eventsToWebcamLayoutRegions, type WebcamLayoutRegion } from "./webcamLayoutRegions";
 import { pickWebcamLayoutFields } from "./webcamSettingsFields";
 
 type PendingExportSave = {
@@ -502,6 +503,8 @@ export default function VideoEditor() {
 		initialEditorPreferences.webcam ?? DEFAULT_WEBCAM_OVERLAY,
 	);
 	const [resolvedWebcamVideoUrl, setResolvedWebcamVideoUrl] = useState<string | null>(null);
+	const [webcamLayoutRegions, setWebcamLayoutRegions] = useState<WebcamLayoutRegion[]>([]);
+	const [webcamLayoutRegionsEnabled, setWebcamLayoutRegionsEnabled] = useState(true);
 	const [zoomRegions, setZoomRegions] = useState<ZoomRegion[]>([]);
 	const [cursorTelemetry, setCursorTelemetry] = useState<CursorTelemetryPoint[]>([]);
 	// Tracks the videoSourcePath for which the cursor telemetry IPC has already
@@ -1676,6 +1679,8 @@ export default function VideoEditor() {
 				frame: string | null;
 				cropRegion: CropRegion;
 				webcam: WebcamOverlaySettings;
+				webcamLayoutRegions: WebcamLayoutRegion[];
+				webcamLayoutRegionsEnabled: boolean;
 				zoomRegions: ZoomRegion[];
 				trimRegions: TrimRegion[];
 				clipRegions: ClipRegion[];
@@ -1784,6 +1789,8 @@ export default function VideoEditor() {
 				frame,
 				cropRegion,
 				webcam,
+				webcamLayoutRegions,
+				webcamLayoutRegionsEnabled,
 				zoomRegions,
 				trimRegions,
 				clipRegions,
@@ -1850,6 +1857,8 @@ export default function VideoEditor() {
 			padding,
 			cropRegion,
 			webcam,
+			webcamLayoutRegions,
+			webcamLayoutRegionsEnabled,
 			zoomRegions,
 			trimRegions,
 			clipRegions,
@@ -2040,6 +2049,8 @@ export default function VideoEditor() {
 			setFrame(normalizedEditor.frame);
 			setCropRegion(normalizedEditor.cropRegion);
 			setWebcam(normalizedEditor.webcam);
+			setWebcamLayoutRegions(normalizedEditor.webcamLayoutRegions);
+			setWebcamLayoutRegionsEnabled(normalizedEditor.webcamLayoutRegionsEnabled);
 			setZoomRegions(normalizedEditor.zoomRegions);
 			setTrimRegions(normalizedEditor.trimRegions);
 			setClipRegions(normalizedEditor.clipRegions);
@@ -3180,6 +3191,29 @@ export default function VideoEditor() {
 		};
 	}, [videoPath, videoSourcePath]);
 
+	useEffect(() => {
+		let cancelled = false;
+		if (!videoSourcePath) {
+			return;
+		}
+		void (async () => {
+			try {
+				const result = await window.electronAPI.getWebcamLayoutEvents?.(videoSourcePath);
+				if (cancelled || !result?.success || result.events.length === 0) {
+					return;
+				}
+				setWebcamLayoutRegions((current) =>
+					current.length > 0 ? current : eventsToWebcamLayoutRegions(result.events),
+				);
+			} catch (error) {
+				console.warn("Failed to load webcam layout events:", error);
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [videoSourcePath]);
+
 	const normalizedCursorTelemetry = useMemo(() => {
 		if (cursorTelemetry.length === 0) {
 			return [] as CursorTelemetryPoint[];
@@ -3291,6 +3325,11 @@ export default function VideoEditor() {
 				endMs: mapTimelineTimeToSourceTime(region.endMs),
 			})),
 		[zoomRegions, mapTimelineTimeToSourceTime],
+	);
+
+	const effectiveWebcamLayoutRegions = useMemo(
+		() => (webcamLayoutRegionsEnabled ? webcamLayoutRegions : []),
+		[webcamLayoutRegions, webcamLayoutRegionsEnabled],
 	);
 
 	const timelinePlayheadTime = useMemo(
@@ -4453,6 +4492,7 @@ export default function VideoEditor() {
 						webcamUrl:
 							resolvedWebcamVideoUrl ??
 							(webcam.sourcePath ? toFileUrl(webcam.sourcePath) : null),
+						webcamLayoutRegions: effectiveWebcamLayoutRegions,
 						annotationRegions,
 						autoCaptions,
 						autoCaptionSettings,
@@ -4769,6 +4809,7 @@ export default function VideoEditor() {
 			isPlaying,
 			exportQuality,
 			effectiveZoomRegions,
+			effectiveWebcamLayoutRegions,
 			ensureSupportedMp4SourceDimensions,
 			markExportAsSaving,
 			mp4FrameRate,
@@ -5181,6 +5222,7 @@ export default function VideoEditor() {
 			frame={frame}
 			cropRegion={cropRegion}
 			webcam={webcam}
+			webcamLayoutRegions={effectiveWebcamLayoutRegions}
 			webcamVideoPath={webcam.sourcePath ? resolvedWebcamVideoUrl : null}
 			trimRegions={trimRegions}
 			speedRegions={effectiveSpeedRegions}
@@ -6009,6 +6051,9 @@ export default function VideoEditor() {
 								webcamPreviewCurrentTime={currentTime}
 								webcamPreviewPlaying={isPlaying}
 								onWebcamChange={setWebcam}
+								webcamLayoutRegionsAvailable={webcamLayoutRegions.length > 0}
+								webcamLayoutRegionsEnabled={webcamLayoutRegionsEnabled}
+								onWebcamLayoutRegionsEnabledChange={setWebcamLayoutRegionsEnabled}
 								onUploadWebcam={handleUploadWebcam}
 								onClearWebcam={handleClearWebcam}
 								padding={padding}

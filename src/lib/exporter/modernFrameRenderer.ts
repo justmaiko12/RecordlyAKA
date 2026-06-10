@@ -56,6 +56,7 @@ import {
 	createMotionBlurState,
 	type MotionBlurState,
 } from "@/components/video-editor/videoPlayback/zoomTransform";
+import type { WebcamLayoutRegion } from "@/components/video-editor/webcamLayoutRegions";
 import {
 	getWebcamCropSourceRect,
 	getWebcamOverlayPosition,
@@ -126,6 +127,7 @@ interface FrameRenderConfig {
 	padding?: Padding | number;
 	cropRegion: CropRegion;
 	webcam?: WebcamOverlaySettings;
+	webcamLayoutRegions?: WebcamLayoutRegion[];
 	webcamUrl?: string | null;
 	videoWidth: number;
 	videoHeight: number;

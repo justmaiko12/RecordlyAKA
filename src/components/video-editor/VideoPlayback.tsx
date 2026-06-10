@@ -181,6 +181,7 @@ import {
 	createMotionBlurState,
 	type MotionBlurState,
 } from "./videoPlayback/zoomTransform";
+import type { WebcamLayoutRegion } from "./webcamLayoutRegions";
 import {
 	getWebcamCropSourceRect,
 	getWebcamOverlayPosition,
@@ -354,6 +355,7 @@ interface VideoPlaybackProps {
 	frame?: string | null;
 	cropRegion?: import("./types").CropRegion;
 	webcam?: WebcamOverlaySettings;
+	webcamLayoutRegions?: WebcamLayoutRegion[];
 	webcamVideoPath?: string | null;
 	trimRegions?: TrimRegion[];
 	speedRegions?: SpeedRegion[];
@@ -437,6 +439,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			frame = null,
 			cropRegion,
 			webcam,
+			// webcamLayoutRegions intentionally not destructured yet — Task 6 adds the
+			// camera-full rendering that consumes it (kept out to satisfy noUnusedLocals).
 			webcamVideoPath,
 			trimRegions = [],
 			speedRegions = [],

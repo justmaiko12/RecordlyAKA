@@ -780,6 +780,9 @@ interface SettingsPanelProps {
 	webcamPreviewCurrentTime?: number;
 	webcamPreviewPlaying?: boolean;
 	onWebcamChange?: (webcam: WebcamOverlaySettings) => void;
+	webcamLayoutRegionsAvailable?: boolean;
+	webcamLayoutRegionsEnabled?: boolean;
+	onWebcamLayoutRegionsEnabledChange?: (enabled: boolean) => void;
 	onUploadWebcam?: () => void;
 	onClearWebcam?: () => void;
 	padding?: Padding;
@@ -1216,6 +1219,9 @@ export function SettingsPanel({
 	webcamPreviewCurrentTime = 0,
 	webcamPreviewPlaying = false,
 	onWebcamChange,
+	webcamLayoutRegionsAvailable = false,
+	webcamLayoutRegionsEnabled = true,
+	onWebcamLayoutRegionsEnabledChange,
 	onUploadWebcam,
 	onClearWebcam,
 	padding = DEFAULT_PADDING,
@@ -3988,6 +3994,23 @@ export function SettingsPanel({
 										parseInput={(text) => parseFloat(text.replace(/%$/, ""))}
 									/>
 								</>
+							) : null}
+							{webcamLayoutRegionsAvailable ? (
+								<div className="flex items-center justify-between rounded-lg bg-foreground/[0.03] px-2.5 py-1.5">
+									<span className="text-[10px] text-muted-foreground">
+										{tSettings(
+											"effects.webcamUseRecordedSwitches",
+											"Use recorded camera switches",
+										)}
+									</span>
+									<Switch
+										checked={webcamLayoutRegionsEnabled}
+										onCheckedChange={(enabled) =>
+											onWebcamLayoutRegionsEnabledChange?.(enabled)
+										}
+										className="data-[state=checked]:bg-[#2563EB] scale-75"
+									/>
+								</div>
 							) : null}
 							<SliderControl
 								label={tSettings("effects.webcamMargin", "Margin")}

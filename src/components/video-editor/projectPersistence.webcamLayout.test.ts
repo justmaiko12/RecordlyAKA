@@ -1,0 +1,20 @@
+import { describe, expect, it } from "vitest";
+import { normalizeProjectEditor } from "./projectPersistence";
+
+describe("normalizeProjectEditor webcam layout regions", () => {
+	it("normalizes webcam layout regions with defaults", () => {
+		const normalized = normalizeProjectEditor({});
+		expect(normalized.webcamLayoutRegions).toEqual([]);
+		expect(normalized.webcamLayoutRegionsEnabled).toBe(true);
+
+		const withRegions = normalizeProjectEditor({
+			webcamLayoutRegions: [
+				{ id: "a", startMs: 1000, endMs: 2000 },
+				{ id: "bad", startMs: 5, endMs: 5 },
+			],
+			webcamLayoutRegionsEnabled: false,
+		});
+		expect(withRegions.webcamLayoutRegions).toEqual([{ id: "a", startMs: 1000, endMs: 2000 }]);
+		expect(withRegions.webcamLayoutRegionsEnabled).toBe(false);
+	});
+});
