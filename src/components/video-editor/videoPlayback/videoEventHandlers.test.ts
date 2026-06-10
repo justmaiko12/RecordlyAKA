@@ -181,6 +181,153 @@ describe("createVideoEventHandlers", () => {
 		expect(cancelVideoFrameCallback).toHaveBeenCalledWith(23);
 	});
 
+	function createSeekTrackingVideo({ duration = 20 }: { duration?: number } = {}) {
+		let backingTime = 0;
+		const assignedTimes: number[] = [];
+		let frameCallback: PresentedFrameCallback | null = null;
+		const video = {
+			duration,
+			paused: false,
+			ended: false,
+			playbackRate: 1,
+			pause: vi.fn(),
+			requestVideoFrameCallback: vi.fn((callback: PresentedFrameCallback) => {
+				frameCallback = callback;
+				return 31;
+			}),
+			cancelVideoFrameCallback: vi.fn(),
+		} as unknown as MockVideo;
+		Object.defineProperty(video, "currentTime", {
+			get: () => backingTime,
+			set: (value: number) => {
+				assignedTimes.push(value);
+				backingTime = value;
+			},
+		});
+
+		return {
+			video,
+			assignedTimes,
+			fireFrame: (mediaTime: number) => frameCallback?.(0, { mediaTime }),
+			setCurrentTimeSilently: (value: number) => {
+				backingTime = value;
+			},
+		};
+	}
+
+	function createTrimGuardHandlers(
+		video: MockVideo,
+		trimRegions: { id: string; startMs: number; endMs: number }[],
+	) {
+		const onTimeUpdate = vi.fn();
+		const handlers = createVideoEventHandlers({
+			video,
+			isSeekingRef: createMutableRef(false),
+			isPlayingRef: createMutableRef(false),
+			allowPlaybackRef: createMutableRef(true),
+			currentTimeRef: createMutableRef(0),
+			timeUpdateAnimationRef: createMutableRef<number | null>(null),
+			onPlayStateChange: vi.fn(),
+			onTimeUpdate,
+			trimRegionsRef: createMutableRef(trimRegions),
+			speedRegionsRef: createMutableRef([]),
+		});
+		return { handlers, onTimeUpdate };
+	}
+
+	describe("trim skip re-entry guard", () => {
+		it("does not re-skip the same trim region from a stale frame callback", () => {
+			const { video, assignedTimes, fireFrame } = createSeekTrackingVideo();
+			const { handlers, onTimeUpdate } = createTrimGuardHandlers(video, [
+				{ id: "trim-1", startMs: 5000, endMs: 9000 },
+			]);
+
+			handlers.handlePlay();
+			fireFrame(5.2);
+
+			expect(assignedTimes).toEqual([9]);
+			expect(onTimeUpdate).toHaveBeenLastCalledWith(9);
+
+			// A late frame callback still reporting the pre-seek media time must
+			// not trigger a second seek or move the playhead backwards.
+			fireFrame(5.2);
+
+			expect(assignedTimes).toEqual([9]);
+			expect(onTimeUpdate).toHaveBeenLastCalledWith(9);
+		});
+
+		it("clears the pending skip once playback passes the target", () => {
+			const { video, assignedTimes, fireFrame } = createSeekTrackingVideo();
+			const { handlers, onTimeUpdate } = createTrimGuardHandlers(video, [
+				{ id: "trim-1", startMs: 5000, endMs: 9000 },
+				{ id: "trim-2", startMs: 12000, endMs: 15000 },
+			]);
+
+			handlers.handlePlay();
+			fireFrame(5.2);
+			fireFrame(5.2); // stale, ignored
+			fireFrame(9.0); // reaches the target -> pending state clears
+
+			expect(onTimeUpdate).toHaveBeenLastCalledWith(9);
+
+			// With the pending state cleared, entering the next trim region
+			// must trigger a fresh skip.
+			fireFrame(12.5);
+
+			expect(assignedTimes).toEqual([9, 15]);
+			expect(onTimeUpdate).toHaveBeenLastCalledWith(15);
+		});
+
+		it("user scrubbing into a trim region still skips once", () => {
+			const { video, assignedTimes, setCurrentTimeSilently } = createSeekTrackingVideo();
+			video.paused = true;
+			const { handlers, onTimeUpdate } = createTrimGuardHandlers(video, [
+				{ id: "trim-1", startMs: 5000, endMs: 9000 },
+			]);
+
+			// User scrubs to 6.0s (external currentTime assignment).
+			setCurrentTimeSilently(6.0);
+			handlers.handleSeeking();
+			handlers.handleSeeked();
+
+			expect(assignedTimes).toEqual([9]);
+
+			// Our own corrective seek fires seeking/seeked again in a real
+			// browser; it must not seek a second time.
+			handlers.handleSeeking();
+			handlers.handleSeeked();
+
+			expect(assignedTimes).toEqual([9]);
+			expect(onTimeUpdate).toHaveBeenLastCalledWith(9);
+		});
+
+		it("a user scrub away from the pending target clears the guard", () => {
+			const { video, assignedTimes, fireFrame, setCurrentTimeSilently } =
+				createSeekTrackingVideo();
+			const { handlers, onTimeUpdate } = createTrimGuardHandlers(video, [
+				{ id: "trim-1", startMs: 5000, endMs: 9000 },
+			]);
+
+			handlers.handlePlay();
+			fireFrame(5.2);
+			expect(assignedTimes).toEqual([9]);
+
+			// User scrubs back to 2.0s before playback reaches the target.
+			setCurrentTimeSilently(2.0);
+			handlers.handleSeeking();
+			handlers.handleSeeked();
+
+			expect(assignedTimes).toEqual([9]);
+			expect(onTimeUpdate).toHaveBeenLastCalledWith(2);
+
+			// Re-entering the trim region after the scrub must skip again.
+			fireFrame(5.5);
+
+			expect(assignedTimes).toEqual([9, 9]);
+			expect(onTimeUpdate).toHaveBeenLastCalledWith(9);
+		});
+	});
+
 	it("skips removed footage after a paused seek", () => {
 		const video = createMockVideo({
 			currentTime: 1.25,

@@ -42,6 +42,13 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 	} = params;
 	const presentedFrameVideo = video as PresentedFrameVideoElement;
 	let videoFrameRequestId: number | null = null;
+	// While a trim-region skip seek is in flight, frame callbacks can still
+	// report pre-seek media times. Tracking the seek target lets us ignore
+	// those stale observations instead of re-triggering the seek (which caused
+	// a skip -> replay loop with a frozen playhead).
+	let pendingTrimSkipTargetMs: number | null = null;
+	const PENDING_SKIP_EPSILON_MS = 1;
+	const USER_SEEK_CLEAR_THRESHOLD_MS = 50;
 	enablePitchPreservingPlayback(video);
 
 	const emitTime = (timeValue: number) => {
@@ -69,10 +76,26 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 		);
 	};
 
+	// Returns true when the observed time is a stale pre-seek observation that
+	// must be ignored; clears the pending target once playback reaches it.
+	const isStaleObservationWhileSkipPending = (currentTimeMs: number): boolean => {
+		if (pendingTrimSkipTargetMs === null) {
+			return false;
+		}
+
+		if (currentTimeMs < pendingTrimSkipTargetMs - PENDING_SKIP_EPSILON_MS) {
+			return true;
+		}
+
+		pendingTrimSkipTargetMs = null;
+		return false;
+	};
+
 	const skipPastTrimRegion = (trimRegion: TrimRegion) => {
 		const skipToTime = trimRegion.endMs / 1000;
 		const clampedSkipToTime = Math.min(skipToTime, video.duration);
 
+		pendingTrimSkipTargetMs = clampedSkipToTime * 1000;
 		video.currentTime = clampedSkipToTime;
 		emitTime(clampedSkipToTime);
 
@@ -129,6 +152,12 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 
 		const presentedTime = getPresentedTime(metadata);
 		const currentTimeMs = presentedTime * 1000;
+
+		if (isStaleObservationWhileSkipPending(currentTimeMs)) {
+			scheduleNextUpdate();
+			return;
+		}
+
 		const activeTrimRegion = findActiveTrimRegion(currentTimeMs);
 
 		// If we're in a trim region during playback, skip to the end of it
@@ -168,6 +197,11 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 		isSeekingRef.current = false;
 
 		const currentTimeMs = video.currentTime * 1000;
+
+		if (isStaleObservationWhileSkipPending(currentTimeMs)) {
+			return;
+		}
+
 		const activeTrimRegion = findActiveTrimRegion(currentTimeMs);
 
 		// Never leave the preview parked on removed footage after a seek.
@@ -180,6 +214,17 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 
 	const handleSeeking = () => {
 		isSeekingRef.current = true;
+
+		// A seek that targets somewhere other than our pending skip target is
+		// user-initiated (scrub) — the in-flight skip no longer applies.
+		const currentTimeMs = video.currentTime * 1000;
+		if (
+			pendingTrimSkipTargetMs !== null &&
+			Math.abs(currentTimeMs - pendingTrimSkipTargetMs) > USER_SEEK_CLEAR_THRESHOLD_MS
+		) {
+			pendingTrimSkipTargetMs = null;
+		}
+
 		emitTime(video.currentTime);
 	};
 
