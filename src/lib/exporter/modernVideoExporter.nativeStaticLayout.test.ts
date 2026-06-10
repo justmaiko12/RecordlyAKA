@@ -718,6 +718,68 @@ describe("ModernVideoExporter native static-layout eligibility", () => {
 		).toBeNull();
 	});
 
+	it("rejects native static-layout when magnet is off and trims export as black gaps", () => {
+		const exporter = createExporter({
+			magnetEnabled: false,
+			trimRegions: [{ id: "trim-1", startMs: 10_000, endMs: 12_000 }],
+		});
+
+		expect(
+			exporter.getNativeStaticLayoutSkipReasons({ audioMode: "none" }, videoInfo, 60),
+		).toContain("unsupported-black-gaps");
+	});
+
+	it("keeps native static-layout eligible when magnet is off without trims", () => {
+		const exporter = createExporter({ magnetEnabled: false });
+
+		expect(
+			exporter.getNativeStaticLayoutSkipReasons({ audioMode: "none" }, videoInfo, 60),
+		).not.toContain("unsupported-black-gaps");
+	});
+
+	it("keeps native static-layout eligible when magnet stays on with trims", () => {
+		const exporter = createExporter({
+			trimRegions: [{ id: "trim-1", startMs: 10_000, endMs: 12_000 }],
+		});
+
+		expect(
+			exporter.getNativeStaticLayoutSkipReasons(
+				{
+					audioMode: "trim-source",
+					audioSourcePath: "recording.mp4",
+				},
+				videoInfo,
+				58,
+			),
+		).not.toContain("unsupported-black-gaps");
+	});
+
+	it("forces offline-rendered audio when gaps export as black", () => {
+		const exporter = createExporter({
+			magnetEnabled: false,
+			trimRegions: [{ id: "trim-1", startMs: 10_000, endMs: 12_000 }],
+		});
+
+		expect(exporter.buildNativeAudioPlan(videoInfo)).toMatchObject({
+			audioMode: "edited-track",
+			strategy: "offline-render-fallback",
+		});
+	});
+
+	it("keeps trim-source audio when magnet stays on with trims", () => {
+		const exporter = createExporter({
+			trimRegions: [{ id: "trim-1", startMs: 10_000, endMs: 12_000 }],
+		});
+
+		expect(exporter.buildNativeAudioPlan(videoInfo)).toMatchObject({
+			audioMode: "trim-source",
+			trimSegments: [
+				{ startMs: 0, endMs: 10_000 },
+				{ startMs: 12_000, endMs: 60_000 },
+			],
+		});
+	});
+
 	it("allows native speed timelines with a resolvable webcam source", () => {
 		const speedRegions: SpeedRegion[] = [
 			{ id: "speed-1", startMs: 1_000, endMs: 4_000, speed: 1.5 },

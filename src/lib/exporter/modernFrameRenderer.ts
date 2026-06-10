@@ -427,6 +427,7 @@ export class FrameRenderer {
 	private backgroundTextureSource: MutableVideoTextureSource | null = null;
 	private videoMaskGraphics: Graphics | null = null;
 	private webcamMaskGraphics: Graphics | null = null;
+	private blackFrameGraphics: Graphics | null = null;
 	private zoomBlurFilter: ZoomBlurFilter | null = null;
 	private motionBlurFilter: MotionBlurFilter | null = null;
 	private backgroundBlurFilter: BlurFilter | null = null;
@@ -3339,6 +3340,70 @@ export class FrameRenderer {
 		this.outputCanvasOverride = null;
 		this.app.render();
 		this.compositeExtensions(timeMs, cursorTimeMs);
+	}
+
+	/**
+	 * Renders a fully black frame for black-gap exports (timeline magnet off).
+	 * Hides the background, screen, and overlay (webcam/annotation/caption)
+	 * containers, renders an opaque black cover, then restores visibility so
+	 * the next renderFrame call is unaffected.
+	 */
+	async renderBlackFrame(_timestampUs: number, _frameDurationUs?: number): Promise<void> {
+		if (!this.app) {
+			throw new Error("Renderer not initialized");
+		}
+
+		if (!this.blackFrameGraphics) {
+			this.blackFrameGraphics = new Graphics();
+			this.blackFrameGraphics
+				.rect(0, 0, this.config.width, this.config.height)
+				.fill({ color: 0x000000 });
+			this.blackFrameGraphics.visible = false;
+			this.app.stage.addChild(this.blackFrameGraphics);
+		}
+
+		const backgroundVisible = this.backgroundContainer?.visible ?? true;
+		const cameraVisible = this.cameraContainer?.visible ?? true;
+		const overlayVisible = this.overlayContainer?.visible ?? true;
+
+		if (this.backgroundContainer) {
+			this.backgroundContainer.visible = false;
+		}
+		if (this.cameraContainer) {
+			this.cameraContainer.visible = false;
+		}
+		if (this.overlayContainer) {
+			this.overlayContainer.visible = false;
+		}
+		this.blackFrameGraphics.visible = true;
+
+		try {
+			this.outputCanvasOverride = null;
+			this.app.render();
+
+			// Keep the extension composite canvas consistent when extensions are
+			// active, since getCanvas() prefers it over the Pixi canvas.
+			if (this.shouldCompositeExtensionFrame() && this.compositeCtx && this.compositeCanvas) {
+				this.compositeCtx.fillStyle = "#000000";
+				this.compositeCtx.fillRect(
+					0,
+					0,
+					this.compositeCanvas.width,
+					this.compositeCanvas.height,
+				);
+			}
+		} finally {
+			this.blackFrameGraphics.visible = false;
+			if (this.backgroundContainer) {
+				this.backgroundContainer.visible = backgroundVisible;
+			}
+			if (this.cameraContainer) {
+				this.cameraContainer.visible = cameraVisible;
+			}
+			if (this.overlayContainer) {
+				this.overlayContainer.visible = overlayVisible;
+			}
+		}
 	}
 
 	private shouldCompositeExtensionFrame(): boolean {
