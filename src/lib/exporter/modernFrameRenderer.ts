@@ -133,6 +133,8 @@ interface FrameRenderConfig {
 	cropRegion: CropRegion;
 	webcam?: WebcamOverlaySettings;
 	webcamLayoutRegions?: WebcamLayoutRegion[];
+	/** Camera-full rendering style; plumbed in Task 2, consumed by the camera-full layout in Task 3. */
+	webcamLayoutStyle?: "fit" | "fill";
 	webcamUrl?: string | null;
 	videoWidth: number;
 	videoHeight: number;

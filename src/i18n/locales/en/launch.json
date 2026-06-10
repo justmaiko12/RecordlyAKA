@@ -34,6 +34,8 @@
 		"showFloatingWebcamPreview": "Show Floating Preview",
 		"selectWebcamToEnable": "Select a webcam to enable",
 		"noWebcamsFound": "No webcams found",
+		"webcamStyleFit": "Camera fullscreen: fit with background",
+		"webcamStyleFill": "Camera fullscreen: fill screen",
 		"recordingsFolder": "Recordings Path",
 		"language": "Language",
 		"paused": "PAUSED",

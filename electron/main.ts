@@ -26,7 +26,10 @@ import {
 	killWindowsCaptureProcess,
 	registerIpcHandlers,
 } from "./ipc/handlers";
-import { beginWebcamLayoutSession } from "./ipc/recording/webcamLayoutEvents";
+import {
+	beginWebcamLayoutSession,
+	setWebcamLayoutSessionStyle,
+} from "./ipc/recording/webcamLayoutEvents";
 import { ensureMediaServer } from "./mediaServer";
 import { ensurePackagedRendererServer } from "./rendererServer";
 import {
@@ -53,6 +56,7 @@ import {
 	createHudOverlayWindow,
 	createSourceSelectorWindow,
 	getHudOverlayWindow,
+	getSelectedWebcamLayoutStyle,
 	getTeleprompterWindow,
 	getUpdateToastWindow,
 	hideUpdateToastWindow,
@@ -985,6 +989,7 @@ app.whenReady().then(async () => {
 			if (recording) {
 				reassertHudOverlayMouseState();
 				beginWebcamLayoutSession();
+				setWebcamLayoutSessionStyle(getSelectedWebcamLayoutStyle());
 				registerCameraLayoutShortcut(() => {
 					getHudOverlayWindow()?.webContents.send("webcam-layout-hotkey");
 				});

@@ -216,9 +216,11 @@ interface Window {
 		onWebcamLayoutHotkey: (callback: () => void) => () => void;
 		getWebcamLayoutEvents: (videoPath: string) => Promise<{
 			success: boolean;
+			style?: "fit" | "fill";
 			events: Array<{ timeMs: number; mode: "screen" | "camera-full" }>;
 		}>;
 		webcamDeviceChanged: (deviceId: string | null) => void;
+		webcamLayoutStyleChanged: (style: "fit" | "fill") => void;
 		getSelectedWebcamDevice: () => Promise<string | null>;
 		onTeleprompterCameraMode: (
 			callback: (mode: "screen" | "camera-full") => void,

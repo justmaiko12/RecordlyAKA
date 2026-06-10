@@ -1135,3 +1135,15 @@ ipcMain.on("webcam-device-changed", (_event, deviceId: string | null) => {
 ipcMain.handle("get-selected-webcam-device", () => {
 	return selectedWebcamDeviceId;
 });
+
+// Facecam fullscreen style chosen in the HUD before recording; read by the
+// recording-start path so the layout-events sidecar carries it to the editor.
+let selectedWebcamLayoutStyle: "fit" | "fill" = "fit";
+
+ipcMain.on("webcam-layout-style-changed", (_event, style: unknown) => {
+	selectedWebcamLayoutStyle = style === "fill" ? "fill" : "fit";
+});
+
+export function getSelectedWebcamLayoutStyle(): "fit" | "fill" {
+	return selectedWebcamLayoutStyle;
+}

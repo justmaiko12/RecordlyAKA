@@ -12,7 +12,7 @@ import {
 	XIcon,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RxDragHandleDots2 } from "react-icons/rx";
 import { Separator } from "@/components/ui/separator";
 import { useScopedT } from "../../contexts/I18nContext";
@@ -43,6 +43,8 @@ import { RecordingControls } from "./RecordingControls";
 import { MarqueeText } from "./SourceSelector";
 
 const SHOW_DEV_UPDATE_PREVIEW = import.meta.env.DEV;
+
+const WEBCAM_LAYOUT_STYLE_STORAGE_KEY = "recordly-webcam-layout-style";
 
 export function LaunchWindow() {
 	return (
@@ -136,6 +138,15 @@ function LaunchWindowContent() {
 	useEffect(() => {
 		window.electronAPI?.webcamDeviceChanged?.(webcamDeviceId ?? null);
 	}, [webcamDeviceId]);
+
+	const [webcamLayoutStyle, setWebcamLayoutStyle] = useState<"fit" | "fill">(() =>
+		window.localStorage.getItem(WEBCAM_LAYOUT_STYLE_STORAGE_KEY) === "fill" ? "fill" : "fit",
+	);
+
+	useEffect(() => {
+		window.localStorage.setItem(WEBCAM_LAYOUT_STYLE_STORAGE_KEY, webcamLayoutStyle);
+		window.electronAPI?.webcamLayoutStyleChanged?.(webcamLayoutStyle);
+	}, [webcamLayoutStyle]);
 
 	const {
 		showFloatingWebcamPreview,
@@ -304,6 +315,8 @@ function LaunchWindowContent() {
 				)}
 				showFloatingWebcamPreview={showFloatingWebcamPreview}
 				onToggleFloatingPreview={() => setShowFloatingWebcamPreview((current) => !current)}
+				webcamLayoutStyle={webcamLayoutStyle}
+				onWebcamLayoutStyleChange={setWebcamLayoutStyle}
 				showWebcamControls={showWebcamControls}
 				setWebcamPreviewNode={setWebcamPreviewNode}
 				videoDevices={videoDevices}

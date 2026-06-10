@@ -17,4 +17,14 @@ describe("normalizeProjectEditor webcam layout regions", () => {
 		expect(withRegions.webcamLayoutRegions).toEqual([{ id: "a", startMs: 1000, endMs: 2000 }]);
 		expect(withRegions.webcamLayoutRegionsEnabled).toBe(false);
 	});
+
+	it("normalizes webcam layout style", () => {
+		expect(normalizeProjectEditor({}).webcamLayoutStyle).toBe("fit");
+		expect(normalizeProjectEditor({ webcamLayoutStyle: "fill" }).webcamLayoutStyle).toBe(
+			"fill",
+		);
+		expect(
+			normalizeProjectEditor({ webcamLayoutStyle: "junk" as never }).webcamLayoutStyle,
+		).toBe("fit");
+	});
 });

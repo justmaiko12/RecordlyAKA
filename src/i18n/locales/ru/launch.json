@@ -34,6 +34,8 @@
 		"showFloatingWebcamPreview": "Включить предпросмотр",
 		"selectWebcamToEnable": "Выберите веб-камеру",
 		"noWebcamsFound": "Нет доступных веб-камер",
+		"webcamStyleFit": "Камера на весь экран: вписать с фоном",
+		"webcamStyleFill": "Камера на весь экран: заполнить экран",
 		"recordingsFolder": "Место сохранения",
 		"language": "Язык",
 		"paused": "ПАУЗА",

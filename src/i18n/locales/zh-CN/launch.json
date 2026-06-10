@@ -34,6 +34,8 @@
 		"showFloatingWebcamPreview": "显示悬浮预览",
 		"selectWebcamToEnable": "选择一个摄像头以启用",
 		"noWebcamsFound": "未找到摄像头",
+		"webcamStyleFit": "摄像头全屏：适应并显示背景",
+		"webcamStyleFill": "摄像头全屏：填满屏幕",
 		"recordingsFolder": "录制文件夹",
 		"language": "语言",
 		"paused": "已暂停",

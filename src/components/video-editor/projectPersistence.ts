@@ -78,7 +78,11 @@ import {
 	type ZoomRegion,
 	type ZoomTransitionEasing,
 } from "./types";
-import type { WebcamLayoutRegion } from "./webcamLayoutRegions";
+import {
+	normalizeWebcamLayoutStyle,
+	type WebcamLayoutRegion,
+	type WebcamLayoutStyle,
+} from "./webcamLayoutRegions";
 import { normalizeWebcamCropRegion } from "./webcamOverlay";
 
 export const PROJECT_VERSION = 1;
@@ -143,6 +147,7 @@ export interface ProjectEditorState {
 	webcam: WebcamOverlaySettings;
 	webcamLayoutRegions: WebcamLayoutRegion[];
 	webcamLayoutRegionsEnabled: boolean;
+	webcamLayoutStyle: WebcamLayoutStyle;
 	aspectRatio: AspectRatio;
 	sourceAudioTrackSettingsByClip?: Record<string, SourceAudioTrackSettings>;
 	defaultSourceAudioTrackSettings?: SourceAudioTrackSettings;
@@ -1076,6 +1081,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 			typeof editor.webcamLayoutRegionsEnabled === "boolean"
 				? editor.webcamLayoutRegionsEnabled
 				: true,
+		webcamLayoutStyle: normalizeWebcamLayoutStyle(editor.webcamLayoutStyle),
 		sourceAudioTrackSettingsByClip:
 			editor.sourceAudioTrackSettingsByClip &&
 			typeof editor.sourceAudioTrackSettingsByClip === "object"

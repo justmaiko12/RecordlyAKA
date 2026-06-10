@@ -361,6 +361,8 @@ interface VideoPlaybackProps {
 	cropRegion?: import("./types").CropRegion;
 	webcam?: WebcamOverlaySettings;
 	webcamLayoutRegions?: WebcamLayoutRegion[];
+	/** Camera-full rendering style; accepted here but consumed by the renderer in Task 3. */
+	webcamLayoutStyle?: "fit" | "fill";
 	webcamVideoPath?: string | null;
 	trimRegions?: TrimRegion[];
 	speedRegions?: SpeedRegion[];

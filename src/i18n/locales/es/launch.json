@@ -34,6 +34,8 @@
 		"showFloatingWebcamPreview": "Mostrar vista flotante",
 		"selectWebcamToEnable": "Selecciona una cámara para activar",
 		"noWebcamsFound": "No se encontraron cámaras",
+		"webcamStyleFit": "Cámara a pantalla completa: ajustar con fondo",
+		"webcamStyleFill": "Cámara a pantalla completa: llenar la pantalla",
 		"recordingsFolder": "Carpeta de grabaciones",
 		"language": "Idioma",
 		"paused": "PAUSADO",

@@ -227,6 +227,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	webcamDeviceChanged: (deviceId: string | null) => {
 		ipcRenderer.send("webcam-device-changed", deviceId);
 	},
+	webcamLayoutStyleChanged: (style: "fit" | "fill") => {
+		ipcRenderer.send("webcam-layout-style-changed", style);
+	},
 	getSelectedWebcamDevice: () => {
 		return ipcRenderer.invoke("get-selected-webcam-device") as Promise<string | null>;
 	},

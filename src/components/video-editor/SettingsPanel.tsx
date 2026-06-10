@@ -783,6 +783,8 @@ interface SettingsPanelProps {
 	webcamLayoutRegionsAvailable?: boolean;
 	webcamLayoutRegionsEnabled?: boolean;
 	onWebcamLayoutRegionsEnabledChange?: (enabled: boolean) => void;
+	webcamLayoutStyle?: "fit" | "fill";
+	onWebcamLayoutStyleChange?: (style: "fit" | "fill") => void;
 	onUploadWebcam?: () => void;
 	onClearWebcam?: () => void;
 	padding?: Padding;
@@ -1222,6 +1224,8 @@ export function SettingsPanel({
 	webcamLayoutRegionsAvailable = false,
 	webcamLayoutRegionsEnabled = true,
 	onWebcamLayoutRegionsEnabledChange,
+	webcamLayoutStyle = "fit",
+	onWebcamLayoutStyleChange,
 	onUploadWebcam,
 	onClearWebcam,
 	padding = DEFAULT_PADDING,
@@ -4010,6 +4014,53 @@ export function SettingsPanel({
 										}
 										className="data-[state=checked]:bg-[#2563EB] scale-75"
 									/>
+								</div>
+							) : null}
+							{webcamLayoutRegionsAvailable ? (
+								<div className="rounded-lg bg-foreground/[0.03] px-2.5 py-2">
+									<div className="mb-2 text-[10px] text-muted-foreground">
+										{tSettings(
+											"effects.webcamLayoutStyle",
+											"Camera fullscreen style",
+										)}
+									</div>
+									<div className="grid grid-cols-2 gap-1.5">
+										{[
+											{
+												style: "fit" as const,
+												label: tSettings(
+													"effects.webcamLayoutStyleFit",
+													"Fit with background",
+												),
+											},
+											{
+												style: "fill" as const,
+												label: tSettings(
+													"effects.webcamLayoutStyleFill",
+													"Fill screen",
+												),
+											},
+										].map((option) => {
+											const isActive = webcamLayoutStyle === option.style;
+											return (
+												<Button
+													key={option.style}
+													type="button"
+													onClick={() =>
+														onWebcamLayoutStyleChange?.(option.style)
+													}
+													className={cn(
+														"h-8 rounded-lg border px-0 text-[11px] font-semibold transition-all",
+														isActive
+															? "border-[#2563EB] bg-[#2563EB] text-white"
+															: "border-foreground/10 bg-foreground/5 text-muted-foreground hover:border-foreground/20 hover:bg-foreground/10",
+													)}
+												>
+													{option.label}
+												</Button>
+											);
+										})}
+									</div>
 								</div>
 							) : null}
 							<SliderControl

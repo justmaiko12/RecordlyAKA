@@ -221,7 +221,12 @@ import {
 	buildLoopedCursorTelemetry,
 	getDisplayedTimelineWindowMs,
 } from "./videoPlayback/cursorLoopTelemetry";
-import { eventsToWebcamLayoutRegions, type WebcamLayoutRegion } from "./webcamLayoutRegions";
+import {
+	eventsToWebcamLayoutRegions,
+	normalizeWebcamLayoutStyle,
+	type WebcamLayoutRegion,
+	type WebcamLayoutStyle,
+} from "./webcamLayoutRegions";
 import { pickWebcamLayoutFields } from "./webcamSettingsFields";
 
 type PendingExportSave = {
@@ -505,6 +510,7 @@ export default function VideoEditor() {
 	const [resolvedWebcamVideoUrl, setResolvedWebcamVideoUrl] = useState<string | null>(null);
 	const [webcamLayoutRegions, setWebcamLayoutRegions] = useState<WebcamLayoutRegion[]>([]);
 	const [webcamLayoutRegionsEnabled, setWebcamLayoutRegionsEnabled] = useState(true);
+	const [webcamLayoutStyle, setWebcamLayoutStyle] = useState<WebcamLayoutStyle>("fit");
 	const [zoomRegions, setZoomRegions] = useState<ZoomRegion[]>([]);
 	const [cursorTelemetry, setCursorTelemetry] = useState<CursorTelemetryPoint[]>([]);
 	// Tracks the videoSourcePath for which the cursor telemetry IPC has already
@@ -1681,6 +1687,7 @@ export default function VideoEditor() {
 				webcam: WebcamOverlaySettings;
 				webcamLayoutRegions: WebcamLayoutRegion[];
 				webcamLayoutRegionsEnabled: boolean;
+				webcamLayoutStyle: WebcamLayoutStyle;
 				zoomRegions: ZoomRegion[];
 				trimRegions: TrimRegion[];
 				clipRegions: ClipRegion[];
@@ -1791,6 +1798,7 @@ export default function VideoEditor() {
 				webcam,
 				webcamLayoutRegions,
 				webcamLayoutRegionsEnabled,
+				webcamLayoutStyle,
 				zoomRegions,
 				trimRegions,
 				clipRegions,
@@ -1859,6 +1867,7 @@ export default function VideoEditor() {
 			webcam,
 			webcamLayoutRegions,
 			webcamLayoutRegionsEnabled,
+			webcamLayoutStyle,
 			zoomRegions,
 			trimRegions,
 			clipRegions,
@@ -2051,6 +2060,7 @@ export default function VideoEditor() {
 			setWebcam(normalizedEditor.webcam);
 			setWebcamLayoutRegions(normalizedEditor.webcamLayoutRegions);
 			setWebcamLayoutRegionsEnabled(normalizedEditor.webcamLayoutRegionsEnabled);
+			setWebcamLayoutStyle(normalizedEditor.webcamLayoutStyle);
 			setZoomRegions(normalizedEditor.zoomRegions);
 			setTrimRegions(normalizedEditor.trimRegions);
 			setClipRegions(normalizedEditor.clipRegions);
@@ -3202,9 +3212,16 @@ export default function VideoEditor() {
 				if (cancelled || !result?.success || result.events.length === 0) {
 					return;
 				}
-				setWebcamLayoutRegions((current) =>
-					current.length > 0 ? current : eventsToWebcamLayoutRegions(result.events),
-				);
+				setWebcamLayoutRegions((current) => {
+					if (current.length > 0) {
+						return current;
+					}
+					// Fresh load: the project provided no regions, so seed both the
+					// regions AND the recorded style from the sidecar together. A
+					// project that already has regions keeps its persisted style.
+					setWebcamLayoutStyle(normalizeWebcamLayoutStyle(result.style));
+					return eventsToWebcamLayoutRegions(result.events);
+				});
 			} catch (error) {
 				console.warn("Failed to load webcam layout events:", error);
 			}
@@ -4498,6 +4515,7 @@ export default function VideoEditor() {
 							resolvedWebcamVideoUrl ??
 							(webcam.sourcePath ? toFileUrl(webcam.sourcePath) : null),
 						webcamLayoutRegions: effectiveWebcamLayoutRegions,
+						webcamLayoutStyle,
 						annotationRegions,
 						autoCaptions,
 						autoCaptionSettings,
@@ -4815,6 +4833,7 @@ export default function VideoEditor() {
 			exportQuality,
 			effectiveZoomRegions,
 			effectiveWebcamLayoutRegions,
+			webcamLayoutStyle,
 			ensureSupportedMp4SourceDimensions,
 			markExportAsSaving,
 			mp4FrameRate,
@@ -5228,6 +5247,7 @@ export default function VideoEditor() {
 			cropRegion={cropRegion}
 			webcam={webcam}
 			webcamLayoutRegions={effectiveWebcamLayoutRegions}
+			webcamLayoutStyle={webcamLayoutStyle}
 			webcamVideoPath={webcam.sourcePath ? resolvedWebcamVideoUrl : null}
 			trimRegions={trimRegions}
 			speedRegions={effectiveSpeedRegions}
@@ -6056,6 +6076,8 @@ export default function VideoEditor() {
 								webcamLayoutRegionsAvailable={webcamLayoutRegions.length > 0}
 								webcamLayoutRegionsEnabled={webcamLayoutRegionsEnabled}
 								onWebcamLayoutRegionsEnabledChange={setWebcamLayoutRegionsEnabled}
+								webcamLayoutStyle={webcamLayoutStyle}
+								onWebcamLayoutStyleChange={setWebcamLayoutStyle}
 								onUploadWebcam={handleUploadWebcam}
 								onClearWebcam={handleClearWebcam}
 								padding={padding}

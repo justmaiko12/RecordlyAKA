@@ -7,7 +7,9 @@ import {
 	getWebcamLayoutEventsPath,
 	persistWebcamLayoutEvents,
 	readWebcamLayoutEvents,
+	readWebcamLayoutSidecar,
 	recordWebcamLayoutEvent,
+	setWebcamLayoutSessionStyle,
 } from "./webcamLayoutEvents";
 
 describe("webcam layout events session", () => {
@@ -25,7 +27,7 @@ describe("webcam layout events session", () => {
 		await persistWebcamLayoutEvents(videoPath);
 
 		const raw = JSON.parse(await fs.readFile(getWebcamLayoutEventsPath(videoPath), "utf8"));
-		expect(raw.version).toBe(1);
+		expect(raw.version).toBe(2);
 		expect(raw.events).toHaveLength(2);
 
 		const read = await readWebcamLayoutEvents(videoPath);
@@ -67,6 +69,30 @@ describe("webcam layout events session", () => {
 		recordWebcamLayoutEvent({ timeMs: 5, mode: "bogus" } as never);
 		await persistWebcamLayoutEvents(videoPath);
 		await expect(fs.stat(getWebcamLayoutEventsPath(videoPath))).rejects.toThrow();
+	});
+
+	it("persists the layout style and reads it back, defaulting v1 sidecars to fit", async () => {
+		beginWebcamLayoutSession();
+		setWebcamLayoutSessionStyle("fill");
+		recordWebcamLayoutEvent({ timeMs: 5000, mode: "camera-full" });
+		await persistWebcamLayoutEvents(videoPath);
+
+		const raw = JSON.parse(await fs.readFile(getWebcamLayoutEventsPath(videoPath), "utf8"));
+		expect(raw.version).toBe(2);
+		expect(raw.style).toBe("fill");
+
+		const read = await readWebcamLayoutSidecar(videoPath);
+		expect(read.style).toBe("fill");
+		expect(read.events).toHaveLength(1);
+
+		// v1 compatibility
+		await fs.writeFile(
+			getWebcamLayoutEventsPath(videoPath),
+			JSON.stringify({ version: 1, events: [{ timeMs: 1, mode: "camera-full" }] }),
+		);
+		const v1 = await readWebcamLayoutSidecar(videoPath);
+		expect(v1.style).toBe("fit");
+		expect(v1.events).toHaveLength(1);
 	});
 
 	it("returns empty array for missing/corrupt sidecars", async () => {

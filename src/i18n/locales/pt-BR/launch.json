@@ -34,6 +34,8 @@
 		"showFloatingWebcamPreview": "Mostrar prévia flutuante",
 		"selectWebcamToEnable": "Selecione uma webcam para ativar",
 		"noWebcamsFound": "Nenhuma webcam encontrada",
+		"webcamStyleFit": "Câmera em tela cheia: ajustar com fundo",
+		"webcamStyleFill": "Câmera em tela cheia: preencher a tela",
 		"recordingsFolder": "Caminho das gravações",
 		"language": "Idioma",
 		"paused": "PAUSADO",

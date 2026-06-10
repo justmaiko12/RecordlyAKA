@@ -34,6 +34,8 @@
 		"showFloatingWebcamPreview": "Mostra anteprima fluttuante",
 		"selectWebcamToEnable": "Seleziona una webcam da abilitare",
 		"noWebcamsFound": "Nessuna webcam trovata",
+		"webcamStyleFit": "Fotocamera a schermo intero: adatta con sfondo",
+		"webcamStyleFill": "Fotocamera a schermo intero: riempi lo schermo",
 		"recordingsFolder": "Percorso registrazioni",
 		"language": "Lingua",
 		"paused": "IN PAUSA",

@@ -69,7 +69,7 @@ import {
 	waitForNativeCaptureStop,
 } from "../recording/mac";
 import {
-	readWebcamLayoutEvents,
+	readWebcamLayoutSidecar,
 	recordWebcamLayoutEvent,
 	type WebcamLayoutMode,
 } from "../recording/webcamLayoutEvents";
@@ -1426,9 +1426,10 @@ export function registerRecordingHandlers(
 
 	ipcMain.handle("get-webcam-layout-events", async (_event, videoPath: string) => {
 		if (!videoPath) {
-			return { success: true, events: [] };
+			return { success: true, style: "fit", events: [] };
 		}
-		return { success: true, events: await readWebcamLayoutEvents(videoPath) };
+		const sidecar = await readWebcamLayoutSidecar(videoPath);
+		return { success: true, style: sidecar.style, events: sidecar.events };
 	});
 
 	ipcMain.handle("mux-native-windows-recording", async (_event, expectedDurationMs?: number) => {

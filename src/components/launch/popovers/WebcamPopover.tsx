@@ -1,4 +1,6 @@
 import {
+	CornersIn,
+	CornersOut,
 	Eye,
 	EyeSlash as EyeOff,
 	VideoCamera as Video,
@@ -20,6 +22,8 @@ export function WebcamPopover({
 	canToggleFloatingPreview,
 	showFloatingWebcamPreview,
 	onToggleFloatingPreview,
+	webcamLayoutStyle,
+	onWebcamLayoutStyleChange,
 	showWebcamControls,
 	setWebcamPreviewNode,
 	videoDevices,
@@ -34,6 +38,8 @@ export function WebcamPopover({
 	canToggleFloatingPreview: boolean;
 	showFloatingWebcamPreview: boolean;
 	onToggleFloatingPreview: () => void;
+	webcamLayoutStyle: "fit" | "fill";
+	onWebcamLayoutStyleChange: (style: "fit" | "fill") => void;
 	showWebcamControls: boolean;
 	setWebcamPreviewNode: (node: HTMLVideoElement | null) => void;
 	videoDevices: DeviceOption[];
@@ -83,6 +89,20 @@ export function WebcamPopover({
 								: t("recording.showFloatingWebcamPreview")}
 						</DropdownItem>
 					) : null}
+					<DropdownItem
+						icon={<CornersIn size={16} />}
+						selected={webcamLayoutStyle === "fit"}
+						onClick={() => onWebcamLayoutStyleChange("fit")}
+					>
+						{t("recording.webcamStyleFit", "Camera fullscreen: fit with background")}
+					</DropdownItem>
+					<DropdownItem
+						icon={<CornersOut size={16} />}
+						selected={webcamLayoutStyle === "fill"}
+						onClick={() => onWebcamLayoutStyleChange("fill")}
+					>
+						{t("recording.webcamStyleFill", "Camera fullscreen: fill screen")}
+					</DropdownItem>
 				</>
 			)}
 			{!webcamEnabled && (

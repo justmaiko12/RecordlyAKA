@@ -2,12 +2,20 @@ import fs from "node:fs/promises";
 
 export type WebcamLayoutMode = "screen" | "camera-full";
 
+export type WebcamLayoutStyle = "fit" | "fill";
+
 export interface WebcamLayoutEvent {
 	timeMs: number;
 	mode: WebcamLayoutMode;
 }
 
+export interface WebcamLayoutSidecar {
+	style: WebcamLayoutStyle;
+	events: WebcamLayoutEvent[];
+}
+
 let sessionEvents: WebcamLayoutEvent[] | null = null;
+let sessionStyle: WebcamLayoutStyle = "fit";
 
 export function getWebcamLayoutEventsPath(videoPath: string): string {
 	return `${videoPath}.webcam-layout-events.json`;
@@ -15,6 +23,11 @@ export function getWebcamLayoutEventsPath(videoPath: string): string {
 
 export function beginWebcamLayoutSession(): void {
 	sessionEvents = [];
+	sessionStyle = "fit";
+}
+
+export function setWebcamLayoutSessionStyle(style: unknown): void {
+	sessionStyle = style === "fill" ? "fill" : "fit";
 }
 
 function isValidEvent(event: WebcamLayoutEvent): boolean {
@@ -48,7 +61,7 @@ export async function persistWebcamLayoutEvents(videoPath: string): Promise<void
 	try {
 		await fs.writeFile(
 			getWebcamLayoutEventsPath(videoPath),
-			JSON.stringify({ version: 1, events }),
+			JSON.stringify({ version: 2, style: sessionStyle, events }),
 			"utf8",
 		);
 	} catch (error) {
@@ -56,12 +69,23 @@ export async function persistWebcamLayoutEvents(videoPath: string): Promise<void
 	}
 }
 
-export async function readWebcamLayoutEvents(videoPath: string): Promise<WebcamLayoutEvent[]> {
+/**
+ * Reads the sidecar next to a video. v1 sidecars (no style field) default to
+ * "fit"; missing/corrupt sidecars yield an empty, fit-styled result.
+ */
+export async function readWebcamLayoutSidecar(videoPath: string): Promise<WebcamLayoutSidecar> {
 	try {
 		const raw = await fs.readFile(getWebcamLayoutEventsPath(videoPath), "utf8");
-		const parsed = JSON.parse(raw) as { events?: WebcamLayoutEvent[] };
-		return Array.isArray(parsed.events) ? parsed.events.filter(isValidEvent) : [];
+		const parsed = JSON.parse(raw) as { style?: unknown; events?: WebcamLayoutEvent[] };
+		return {
+			style: parsed.style === "fill" ? "fill" : "fit",
+			events: Array.isArray(parsed.events) ? parsed.events.filter(isValidEvent) : [],
+		};
 	} catch {
-		return [];
+		return { style: "fit", events: [] };
 	}
+}
+
+export async function readWebcamLayoutEvents(videoPath: string): Promise<WebcamLayoutEvent[]> {
+	return (await readWebcamLayoutSidecar(videoPath)).events;
 }

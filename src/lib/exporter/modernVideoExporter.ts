@@ -122,6 +122,8 @@ interface VideoExporterConfig extends ExportConfig {
 	cropRegion: CropRegion;
 	webcam?: WebcamOverlaySettings;
 	webcamLayoutRegions?: WebcamLayoutRegion[];
+	/** Camera-full rendering style; plumbed in Task 2, consumed by the camera-full layout in Task 3. */
+	webcamLayoutStyle?: "fit" | "fill";
 	webcamUrl?: string | null;
 	annotationRegions?: AnnotationRegion[];
 	autoCaptions?: CaptionCue[];
@@ -612,6 +614,7 @@ export class ModernVideoExporter {
 					cropRegion: this.config.cropRegion,
 					webcam: this.config.webcam,
 					webcamLayoutRegions: this.config.webcamLayoutRegions,
+					webcamLayoutStyle: this.config.webcamLayoutStyle,
 					webcamUrl: this.config.webcamUrl,
 					videoWidth: videoInfo.width,
 					videoHeight: videoInfo.height,
