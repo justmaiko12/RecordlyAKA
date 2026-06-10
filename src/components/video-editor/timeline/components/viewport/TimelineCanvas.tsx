@@ -443,6 +443,31 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 					</Row>
 				))}
 
+			{showCameraTrack && (
+				<Row
+					id={CAMERA_ROW_ID}
+					slim
+					isEmpty={cameraItems.length === 0}
+					hint={HINT_CAMERA}
+					onDoubleClick={onCameraRowDoubleClick}
+				>
+					{cameraItems.map((item) => (
+						<Item
+							id={item.id}
+							key={item.id}
+							rowId={item.rowId}
+							span={item.span}
+							isSelected={item.id === selectedCameraId}
+							onSelectId={onSelectCamera}
+							variant="camera"
+							dimmed={cameraRegionsDimmed}
+						>
+							{item.label}
+						</Item>
+					))}
+				</Row>
+			)}
+
 			<Row
 				id={ZOOM_ROW_ID}
 				isEmpty={zoomItems.length === 0}
@@ -501,31 +526,6 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 						</Item>
 					))}
 			</Row>
-
-			{showCameraTrack && (
-				<Row
-					id={CAMERA_ROW_ID}
-					slim
-					isEmpty={cameraItems.length === 0}
-					hint={HINT_CAMERA}
-					onDoubleClick={onCameraRowDoubleClick}
-				>
-					{cameraItems.map((item) => (
-						<Item
-							id={item.id}
-							key={item.id}
-							rowId={item.rowId}
-							span={item.span}
-							isSelected={item.id === selectedCameraId}
-							onSelectId={onSelectCamera}
-							variant="camera"
-							dimmed={cameraRegionsDimmed}
-						>
-							{item.label}
-						</Item>
-					))}
-				</Row>
-			)}
 
 			{annotationRows.map(({ rowId, items: rowItems }, index) => (
 				<Row

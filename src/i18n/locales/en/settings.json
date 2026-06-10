@@ -143,6 +143,7 @@
 		"webcamLayoutStyle": "Camera fullscreen style",
 		"webcamLayoutStyleFit": "Fit with background",
 		"webcamLayoutStyleFill": "Fill screen",
+		"webcamBubbleControlsHidden": "Position controls apply when the camera is in the corner bubble",
 		"webcamRoundness": "Webcam Roundness",
 		"webcamShadow": "Webcam Shadow",
 		"shadow": "Shadow",

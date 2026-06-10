@@ -95,6 +95,7 @@
 		"webcamLayoutStyle": "Style de caméra plein écran",
 		"webcamLayoutStyleFit": "Ajuster avec arrière-plan",
 		"webcamLayoutStyleFill": "Remplir l'écran",
+		"webcamBubbleControlsHidden": "Les contrôles de position s'appliquent lorsque la caméra est dans la bulle d'angle",
 		"webcamRoundness": "Arrondi de la webcam",
 		"webcamShadow": "Ombre de la webcam",
 		"shadow": "Ombre",

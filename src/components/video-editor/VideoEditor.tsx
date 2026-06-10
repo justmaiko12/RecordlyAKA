@@ -239,6 +239,7 @@ import {
 import {
 	clampWebcamLayoutSpan,
 	eventsToWebcamLayoutRegions,
+	isCameraFullAtMs,
 	normalizeWebcamLayoutStyle,
 	type WebcamLayoutRegion,
 	type WebcamLayoutStyle,
@@ -3376,6 +3377,14 @@ export default function VideoEditor() {
 		[webcamLayoutRegions, webcamLayoutRegionsEnabled, webcam.enabled, webcam.sourcePath],
 	);
 
+	// Same time base as VideoPlayback's camera-full check: currentTime is
+	// source seconds (the prop VideoPlayback mirrors into currentTimeRef as
+	// ms) and the layout regions are source ms.
+	const playheadInCameraFull = useMemo(
+		() => isCameraFullAtMs(effectiveWebcamLayoutRegions, currentTime * 1000),
+		[effectiveWebcamLayoutRegions, currentTime],
+	);
+
 	// With the magnet off, trimmed gaps play as black time and are visible on
 	// the timeline, so the playhead must traverse them (the plain mapping
 	// clamps in-gap source times to a clip boundary, parking the playhead for
@@ -6410,6 +6419,7 @@ export default function VideoEditor() {
 								onWebcamLayoutRegionsEnabledChange={setWebcamLayoutRegionsEnabled}
 								webcamLayoutStyle={webcamLayoutStyle}
 								onWebcamLayoutStyleChange={setWebcamLayoutStyle}
+								playheadInCameraFull={playheadInCameraFull}
 								onUploadWebcam={handleUploadWebcam}
 								onClearWebcam={handleClearWebcam}
 								padding={padding}

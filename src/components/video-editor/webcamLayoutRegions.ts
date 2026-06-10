@@ -56,6 +56,60 @@ export function getCoverRect(content: SizeLike, frame: SizeLike): LetterboxRect 
 }
 
 /**
+ * Smallest rect with the frame's aspect ratio that contains (or, when the
+ * source is too small on an axis, covers as much as possible of) the given
+ * rect, centered on the rect and clamped to the source bounds.
+ *
+ * Used by the camera-full "fill" style: the webcam crop region is stored as a
+ * pixel-square viewport for the corner bubble, so cover-fitting it directly
+ * into a 16:9 frame would discard ~44% of the crop. Expanding the crop to the
+ * frame aspect first keeps the user's chosen focal center while showing as
+ * much of the camera as the frame allows (a ~16:9 camera filling a 16:9
+ * output barely crops). Shared by the preview and the export renderer so both
+ * produce the same framing.
+ */
+export function expandRectToAspect(
+	rect: LetterboxRect,
+	source: SizeLike,
+	frame: SizeLike,
+): LetterboxRect {
+	const aspect = frame.width / frame.height;
+	if (
+		!Number.isFinite(aspect) ||
+		aspect <= 0 ||
+		!Number.isFinite(source.width) ||
+		!Number.isFinite(source.height) ||
+		source.width <= 0 ||
+		source.height <= 0 ||
+		rect.width <= 0 ||
+		rect.height <= 0
+	) {
+		return { ...rect };
+	}
+
+	// Grow the short axis to reach the frame aspect, then clamp to the source
+	// while preserving the aspect (the off-axis shrinks if the source is too
+	// small to contain the expansion).
+	let width = Math.max(rect.width, rect.height * aspect);
+	let height = width / aspect;
+	if (width > source.width) {
+		width = source.width;
+		height = width / aspect;
+	}
+	if (height > source.height) {
+		height = source.height;
+		width = height * aspect;
+	}
+
+	const centerX = rect.x + rect.width / 2;
+	const centerY = rect.y + rect.height / 2;
+	const x = Math.min(Math.max(centerX - width / 2, 0), Math.max(0, source.width - width));
+	const y = Math.min(Math.max(centerY - height / 2, 0), Math.max(0, source.height - height));
+
+	return { x, y, width, height };
+}
+
+/**
  * Clamps a dragged/resized camera segment span against its neighbors and the
  * video duration. Returns null when the span cannot fit anywhere valid.
  */

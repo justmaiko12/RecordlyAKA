@@ -117,6 +117,7 @@
 		"webcamLayoutStyle": "Стиль камеры на весь экран",
 		"webcamLayoutStyleFit": "Вписать с фоном",
 		"webcamLayoutStyleFill": "Заполнить экран",
+		"webcamBubbleControlsHidden": "Настройки положения применяются, когда камера находится в пузырьке в углу",
 		"webcamRoundness": "Скругление веб-камеры",
 		"webcamShadow": "Тень веб-камеры",
 		"shadow": "Тень",

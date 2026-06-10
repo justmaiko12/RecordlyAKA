@@ -547,14 +547,14 @@ describe("ModernFrameRenderer webcam export fallback", () => {
 			};
 			renderer.config.webcamUrl = "file:///tmp/webcam.webm";
 
-				await renderer.setupWebcamSource();
-				const syncPromise = renderer.syncWebcamFrame(1);
+			await renderer.setupWebcamSource();
+			const syncPromise = renderer.syncWebcamFrame(1);
 
 			await vi.advanceTimersByTimeAsync(5_001);
-				await expect(syncPromise).resolves.toBeUndefined();
+			await expect(syncPromise).resolves.toBeUndefined();
 
-				expect(cancelForwardFrameSourceMock).toHaveBeenCalled();
-				expect(destroyForwardFrameSourceMock).toHaveBeenCalled();
+			expect(cancelForwardFrameSourceMock).toHaveBeenCalled();
+			expect(destroyForwardFrameSourceMock).toHaveBeenCalled();
 			expect(revoke).toHaveBeenCalled();
 			expect(renderer.webcamForwardFrameSource).toBeNull();
 			expect(renderer.webcamVideoElement).toBeNull();
@@ -782,6 +782,99 @@ describe("ModernFrameRenderer webcam export fallback", () => {
 		expect(bubbleLayout.shadowStrength).toBeGreaterThan(0);
 	});
 
+	it("expands a square bubble crop to the frame aspect for camera-full fill", () => {
+		const renderer = createRenderer() as any;
+		renderer.config.webcam = {
+			...DEFAULT_WEBCAM_OVERLAY,
+			enabled: true,
+			// Max centered pixel-square crop of a 1280x720 webcam: 720x720 at
+			// x = 280/1280 = 0.21875 (the crop panel always stores squares).
+			cropRegion: { x: 0.21875, y: 0, width: 0.5625, height: 1 },
+		};
+		renderer.config.webcamLayoutRegions = [{ id: "layout-1", startMs: 5_000, endMs: 9_000 }];
+		renderer.config.webcamLayoutStyle = "fill";
+		renderer.lastSyncedWebcamTime = 6;
+		const previousHtmlVideoElement = (
+			globalThis as typeof globalThis & { HTMLVideoElement?: unknown }
+		).HTMLVideoElement;
+		class MockHtmlVideoElement {
+			currentTime = 6;
+			readyState = 2;
+			seeking = false;
+			videoWidth = 1280;
+			videoHeight = 720;
+			duration = Number.NaN;
+		}
+		Object.assign(globalThis, { HTMLVideoElement: MockHtmlVideoElement });
+		renderer.webcamVideoElement = new MockHtmlVideoElement();
+		renderer.cameraContainer = { visible: true };
+		renderer.webcamRootContainer = {
+			visible: false,
+			position: { set: vi.fn() },
+		};
+		renderer.webcamContainer = {
+			addChildAt: vi.fn(),
+		};
+		renderer.webcamMaskGraphics = {
+			clear: vi.fn(),
+			moveTo: vi.fn(),
+			lineTo: vi.fn(),
+			closePath: vi.fn(),
+			fill: vi.fn(),
+		};
+		renderer.webcamShadowLayers = [];
+		renderer.animationState = {
+			appliedScale: 1,
+		};
+
+		try {
+			renderer.currentVideoTime = 6;
+			renderer.updateWebcamOverlay();
+
+			// The square 720x720 crop expands to the 16:9 output aspect around
+			// its center: the full 1280x720 webcam frame -> fill barely crops.
+			expect(renderer.webcamFrameCacheCtx.drawImage).toHaveBeenCalledWith(
+				renderer.webcamVideoElement,
+				0,
+				0,
+				1280,
+				720,
+				0,
+				0,
+				1280,
+				720,
+			);
+			const fillLayout = renderer.webcamLayoutCache;
+			expect(fillLayout.sourceWidth).toBe(1280);
+			expect(fillLayout.sourceHeight).toBe(720);
+			expect(fillLayout.width).toBeCloseTo(1920);
+			expect(fillLayout.height).toBeCloseTo(1080);
+
+			// Outside the region the bubble goes back to the square crop.
+			renderer.currentVideoTime = 2;
+			renderer.lastSyncedWebcamTime = 2;
+			renderer.webcamVideoElement.currentTime = 2;
+			renderer.updateWebcamOverlay();
+
+			expect(renderer.webcamFrameCacheCtx.drawImage).toHaveBeenLastCalledWith(
+				renderer.webcamVideoElement,
+				280,
+				0,
+				720,
+				720,
+				0,
+				0,
+				720,
+				720,
+			);
+			const bubbleLayout = renderer.webcamLayoutCache;
+			expect(bubbleLayout.sourceWidth).toBe(720);
+			expect(bubbleLayout.sourceHeight).toBe(720);
+		} finally {
+			Object.assign(globalThis, { HTMLVideoElement: previousHtmlVideoElement });
+		}
+	});
+
 	it("snapshots media-element webcam frames into the cache before rendering", () => {
 		const renderer = createRenderer() as any;
 		renderer.config.webcam = {
@@ -813,6 +906,7 @@ describe("ModernFrameRenderer webcam export fallback", () => {
 				640,
 				360,
 				true,
+				false,
 			);
 
 			expect(renderableSource?.source).toBe(renderer.webcamFrameCacheCanvas);
@@ -856,6 +950,7 @@ describe("ModernFrameRenderer webcam export fallback", () => {
 				640,
 				360,
 				true,
+				false,
 			);
 
 			expect(renderableSource?.source).toBe(webcamFrame);

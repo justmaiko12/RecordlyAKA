@@ -95,6 +95,7 @@
 		"webcamLayoutStyle": "Stijl camera volledig scherm",
 		"webcamLayoutStyleFit": "Passend met achtergrond",
 		"webcamLayoutStyleFill": "Scherm vullen",
+		"webcamBubbleControlsHidden": "Positie-instellingen gelden wanneer de camera in de hoekbubbel staat",
 		"webcamRoundness": "Webcam-afronding",
 		"webcamShadow": "Webcamschaduw",
 		"shadow": "Schaduw",

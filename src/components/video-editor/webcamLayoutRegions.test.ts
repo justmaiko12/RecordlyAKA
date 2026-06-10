@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	clampWebcamLayoutSpan,
 	eventsToWebcamLayoutRegions,
+	expandRectToAspect,
 	getCoverRect,
 	getLetterboxRect,
 	isCameraFullAtMs,
@@ -160,6 +161,85 @@ describe("clampWebcamLayoutSpan", () => {
 		expect(
 			clampWebcamLayoutSpan({ startMs: 1200, endMs: 1300 }, others, "x", 10000),
 		).toBeNull();
+	});
+});
+
+describe("expandRectToAspect", () => {
+	const source = { width: 1920, height: 1080 };
+
+	it("widens a square bubble crop to the full 16:9 frame on a 16:9 camera", () => {
+		// Max centered square crop (the crop panel always stores pixel-square
+		// regions for the bubble): 1080x1080 at x=420.
+		const expanded = expandRectToAspect({ x: 420, y: 0, width: 1080, height: 1080 }, source, {
+			width: 1280,
+			height: 720,
+		});
+		expect(expanded).toEqual({ x: 0, y: 0, width: 1920, height: 1080 });
+	});
+
+	it("keeps the crop center when expansion fits inside the source", () => {
+		// Small square crop near the left: 540x540 at (100, 270).
+		const expanded = expandRectToAspect({ x: 100, y: 270, width: 540, height: 540 }, source, {
+			width: 1280,
+			height: 720,
+		});
+		// Target aspect 16:9 -> width = 540 * (16/9) = 960, height stays 540.
+		expect(expanded.width).toBeCloseTo(960);
+		expect(expanded.height).toBeCloseTo(540);
+		// Centered on crop center x=370 -> ideal x=-110, clamped to 0.
+		expect(expanded.x).toBeCloseTo(0);
+		expect(expanded.y).toBeCloseTo(270);
+	});
+
+	it("contains a wide near-full crop by expanding to the frame aspect", () => {
+		// Task hand-check input: crop {x:0.05, y:0, w:0.9, h:1} of 1920x1080.
+		const expanded = expandRectToAspect({ x: 96, y: 0, width: 1728, height: 1080 }, source, {
+			width: 1280,
+			height: 720,
+		});
+		// 1728x1080 has aspect 1.6 < 16/9: width grows to 1920 (clamped) and the
+		// whole source is shown -> fill barely crops.
+		expect(expanded).toEqual({ x: 0, y: 0, width: 1920, height: 1080 });
+	});
+
+	it("shrinks the off-axis when the source cannot contain the expansion", () => {
+		// Square crop on a square source going to a 16:9 frame: width cannot
+		// exceed the source, so height shrinks to keep the frame aspect.
+		const expanded = expandRectToAspect(
+			{ x: 0, y: 0, width: 1000, height: 1000 },
+			{ width: 1000, height: 1000 },
+			{ width: 1280, height: 720 },
+		);
+		expect(expanded.width).toBeCloseTo(1000);
+		expect(expanded.height).toBeCloseTo(562.5);
+		expect(expanded.x).toBeCloseTo(0);
+		// Centered on crop center y=500.
+		expect(expanded.y).toBeCloseTo(500 - 562.5 / 2);
+	});
+
+	it("expands vertically for crops wider than the frame aspect", () => {
+		// 4:1 ultra-wide crop into a 16:9 frame: height grows.
+		const expanded = expandRectToAspect({ x: 0, y: 400, width: 1600, height: 400 }, source, {
+			width: 1280,
+			height: 720,
+		});
+		expect(expanded.width).toBeCloseTo(1600);
+		expect(expanded.height).toBeCloseTo(900);
+		expect(expanded.y).toBeCloseTo(600 - 450);
+	});
+
+	it("returns the rect unchanged for degenerate frames or sources", () => {
+		const rect = { x: 10, y: 10, width: 100, height: 100 };
+		expect(expandRectToAspect(rect, source, { width: 0, height: 0 })).toEqual(rect);
+		expect(
+			expandRectToAspect(rect, { width: 0, height: 0 }, { width: 1280, height: 720 }),
+		).toEqual(rect);
+		expect(
+			expandRectToAspect({ x: 0, y: 0, width: 0, height: 0 }, source, {
+				width: 1280,
+				height: 720,
+			}),
+		).toEqual({ x: 0, y: 0, width: 0, height: 0 });
 	});
 });
 

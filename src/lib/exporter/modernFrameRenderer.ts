@@ -15,8 +15,8 @@ import type {
 	AnnotationRegion,
 	AutoCaptionSettings,
 	CaptionCue,
-	CursorClickEffectStyle,
 	CropRegion,
+	CursorClickEffectStyle,
 	CursorStyle,
 	CursorTelemetryPoint,
 	Padding,
@@ -58,6 +58,7 @@ import {
 } from "@/components/video-editor/videoPlayback/zoomTransform";
 import {
 	CAMERA_FULL_PADDING_FRACTION,
+	expandRectToAspect,
 	getLetterboxRect,
 	isCameraFullAtMs,
 	type WebcamLayoutRegion,
@@ -633,14 +634,14 @@ export class FrameRenderer {
 					massMultiplier: this.config.cursorSpringMassMultiplier,
 				},
 				motionBlur: this.config.cursorMotionBlur ?? 0,
-				clickEffect:
-					this.config.cursorClickEffect ?? DEFAULT_CURSOR_CONFIG.clickEffect,
+				clickEffect: this.config.cursorClickEffect ?? DEFAULT_CURSOR_CONFIG.clickEffect,
 				clickEffectColor:
 					this.config.cursorClickEffectColor ?? DEFAULT_CURSOR_CONFIG.clickEffectColor,
 				clickEffectScale:
 					this.config.cursorClickEffectScale ?? DEFAULT_CURSOR_CONFIG.clickEffectScale,
 				clickEffectOpacity:
-					this.config.cursorClickEffectOpacity ?? DEFAULT_CURSOR_CONFIG.clickEffectOpacity,
+					this.config.cursorClickEffectOpacity ??
+					DEFAULT_CURSOR_CONFIG.clickEffectOpacity,
 				clickEffectDurationMs:
 					this.config.cursorClickEffectDurationMs ??
 					DEFAULT_CURSOR_CONFIG.clickEffectDurationMs,
@@ -2503,8 +2504,26 @@ export class FrameRenderer {
 		source: CanvasImageSource | VideoFrame,
 		width: number,
 		height: number,
+		expandCropToFrameAspect: boolean,
 	): boolean {
-		const sourceRect = getWebcamCropSourceRect(this.config.webcam?.cropRegion, width, height);
+		let sourceRect = getWebcamCropSourceRect(this.config.webcam?.cropRegion, width, height);
+		if (expandCropToFrameAspect) {
+			// Camera-full fill: the stored crop is a pixel-square bubble viewport.
+			// Expand it to the output frame aspect (centered on the crop, clamped
+			// to the source) so the fill barely crops; mirrors the preview's
+			// camera-full fill branch in VideoPlayback.
+			const expanded = expandRectToAspect(
+				{ x: sourceRect.sx, y: sourceRect.sy, width: sourceRect.sw, height: sourceRect.sh },
+				{ width, height },
+				{ width: this.config.width, height: this.config.height },
+			);
+			sourceRect = {
+				sx: expanded.x,
+				sy: expanded.y,
+				sw: expanded.width,
+				sh: expanded.height,
+			};
+		}
 		if (!this.ensureWebcamFrameCache(sourceRect.sw, sourceRect.sh)) {
 			return false;
 		}
@@ -2555,19 +2574,20 @@ export class FrameRenderer {
 		liveSourceWidth: number,
 		liveSourceHeight: number,
 		canUseLiveSource: boolean,
+		expandCropToFrameAspect: boolean,
 	): WebcamRenderSource | null {
 		if (canUseLiveSource && liveSource && liveSourceWidth > 0 && liveSourceHeight > 0) {
 			const usesDefaultCropRegion = isWebcamCropRegionDefault(this.config.webcam?.cropRegion);
 			const needsCacheBackedSource =
 				!usesDefaultCropRegion ||
-				(typeof HTMLVideoElement !== "undefined" &&
-					liveSource instanceof HTMLVideoElement);
+				(typeof HTMLVideoElement !== "undefined" && liveSource instanceof HTMLVideoElement);
 
 			if (needsCacheBackedSource) {
 				this.refreshWebcamFrameCache(
 					liveSource,
 					liveSourceWidth,
 					liveSourceHeight,
+					expandCropToFrameAspect,
 				);
 				const cachedSource = this.getCachedWebcamRenderSource();
 				if (cachedSource) {
@@ -2908,11 +2928,13 @@ export class FrameRenderer {
 			(!activeWebcamVideoElement ||
 				(activeWebcamVideoElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
 					!activeWebcamVideoElement.seeking));
+		const cameraFullFill = cameraFull && this.config.webcamLayoutStyle === "fill";
 		const renderableWebcamSource = this.resolveRenderableWebcamSource(
 			webcamSource,
 			liveSourceDimensions.width,
 			liveSourceDimensions.height,
 			canUseLiveSource,
+			cameraFullFill,
 		);
 
 		if (!renderableWebcamSource) {
@@ -2931,7 +2953,6 @@ export class FrameRenderer {
 			return;
 		}
 
-		const cameraFullFill = cameraFull && this.config.webcamLayoutStyle === "fill";
 		let layoutRect: { x: number; y: number; width: number; height: number };
 		if (cameraFullFill) {
 			// Fill style: the webcam covers the whole output frame edge to edge.

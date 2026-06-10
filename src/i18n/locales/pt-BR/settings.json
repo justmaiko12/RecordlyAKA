@@ -95,6 +95,7 @@
 		"webcamLayoutStyle": "Estilo de câmera em tela cheia",
 		"webcamLayoutStyleFit": "Ajustar com fundo",
 		"webcamLayoutStyleFill": "Preencher a tela",
+		"webcamBubbleControlsHidden": "Os controles de posição se aplicam quando a câmera está na bolha do canto",
 		"webcamRoundness": "Arredondamento da webcam",
 		"webcamShadow": "Sombra da webcam",
 		"shadow": "Sombra",

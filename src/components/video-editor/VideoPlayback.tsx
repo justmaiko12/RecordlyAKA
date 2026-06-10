@@ -169,10 +169,7 @@ import { clampFocusToStage as clampFocusToStageUtil } from "./videoPlayback/focu
 import { layoutVideoContent as layoutVideoContentUtil } from "./videoPlayback/layoutUtils";
 import { updateOverlayIndicator } from "./videoPlayback/overlayUtils";
 import { createVideoEventHandlers } from "./videoPlayback/videoEventHandlers";
-import {
-	getWebcamMediaTargetTimeSeconds,
-	shouldSeekWebcamMedia,
-} from "./videoPlayback/webcamSync";
+import { getWebcamMediaTargetTimeSeconds, shouldSeekWebcamMedia } from "./videoPlayback/webcamSync";
 import { findDominantRegion } from "./videoPlayback/zoomRegionUtils";
 import {
 	applyZoomTransform,
@@ -183,6 +180,7 @@ import {
 } from "./videoPlayback/zoomTransform";
 import {
 	CAMERA_FULL_PADDING_FRACTION,
+	expandRectToAspect,
 	getCoverRect,
 	getLetterboxRect,
 	isCameraFullAtMs,
@@ -936,13 +934,22 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 							videoDims.width,
 							videoDims.height,
 						);
-						const coverRect = getCoverRect(
-							{ width: sw, height: sh },
+						// The stored crop is a pixel-square bubble viewport; expand it
+						// to the frame aspect (centered, clamped to the source) so the
+						// fill barely crops instead of cover-fitting the square. The
+						// exporter applies the same expansion to its frame cache.
+						const expanded = expandRectToAspect(
+							{ x: sx, y: sy, width: sw, height: sh },
+							videoDims,
 							{ width: overlay.clientWidth, height: overlay.clientHeight },
 						);
-						const scale = coverRect.width / sw;
-						content.style.left = `${coverRect.x - sx * scale}px`;
-						content.style.top = `${coverRect.y - sy * scale}px`;
+						const coverRect = getCoverRect(
+							{ width: expanded.width, height: expanded.height },
+							{ width: overlay.clientWidth, height: overlay.clientHeight },
+						);
+						const scale = coverRect.width / expanded.width;
+						content.style.left = `${coverRect.x - expanded.x * scale}px`;
+						content.style.top = `${coverRect.y - expanded.y * scale}px`;
 						content.style.width = `${videoDims.width * scale}px`;
 						content.style.height = `${videoDims.height * scale}px`;
 					}

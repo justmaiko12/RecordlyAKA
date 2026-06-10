@@ -95,6 +95,7 @@
 		"webcamLayoutStyle": "Estilo de cámara a pantalla completa",
 		"webcamLayoutStyleFit": "Ajustar con fondo",
 		"webcamLayoutStyleFill": "Llenar la pantalla",
+		"webcamBubbleControlsHidden": "Los controles de posición se aplican cuando la cámara está en la burbuja de la esquina",
 		"webcamRoundness": "Redondez de cámara",
 		"webcamShadow": "Sombra de cámara",
 		"shadow": "Sombra",

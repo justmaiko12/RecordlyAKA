@@ -177,9 +177,10 @@ function isHexWallpaper(value: string): boolean {
 
 function hexToRgba(hex: string, alpha: number) {
 	const normalized = isHexWallpaper(hex) ? hex : DEFAULT_CURSOR_CLICK_EFFECT_COLOR;
-	const value = normalized.length === 4
-		? `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`
-		: normalized;
+	const value =
+		normalized.length === 4
+			? `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`
+			: normalized;
 	const color = Number.parseInt(value.slice(1), 16);
 	const red = (color >> 16) & 255;
 	const green = (color >> 8) & 255;
@@ -527,8 +528,23 @@ function CursorClickEffectPreview({
 					viewBox="0 0 40 40"
 					aria-hidden="true"
 				>
-					<circle cx="20" cy="20" r="11.5" fill="none" stroke="currentColor" strokeWidth="1.8" opacity="0.75" />
-					<path d="M12.5 27.5 27.5 12.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.2" opacity="0.92" />
+					<circle
+						cx="20"
+						cy="20"
+						r="11.5"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="1.8"
+						opacity="0.75"
+					/>
+					<path
+						d="M12.5 27.5 27.5 12.5"
+						fill="none"
+						stroke="currentColor"
+						strokeLinecap="round"
+						strokeWidth="2.2"
+						opacity="0.92"
+					/>
 				</svg>
 			) : null}
 			{effect === "ripple" ? (
@@ -569,13 +585,17 @@ function CursorClickEffectPreview({
 					viewBox="0 0 48 48"
 					aria-hidden="true"
 				>
-					<g
-						fill="none"
-						stroke="currentColor"
-					>
+					<g fill="none" stroke="currentColor">
 						<circle cx="24" cy="24" r="9" strokeWidth="1.8" opacity="0.72" />
 						<circle cx="24" cy="24" r="14.5" strokeWidth="1.5" opacity="0.4" />
-						<circle cx="24" cy="24" r="4.25" fill="currentColor" opacity="0.22" stroke="none" />
+						<circle
+							cx="24"
+							cy="24"
+							r="4.25"
+							fill="currentColor"
+							opacity="0.22"
+							stroke="none"
+						/>
 					</g>
 				</svg>
 			) : null}
@@ -658,7 +678,10 @@ function CursorClickEffectCards({
 						>
 							<div className="flex h-full flex-col items-center justify-between gap-3">
 								<div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[8px] px-2 py-1.5">
-									<CursorClickEffectPreview effect={effect.id} color={effectColor} />
+									<CursorClickEffectPreview
+										effect={effect.id}
+										color={effectColor}
+									/>
 								</div>
 							</div>
 						</ToggleGroupItem>
@@ -785,6 +808,8 @@ interface SettingsPanelProps {
 	onWebcamLayoutRegionsEnabledChange?: (enabled: boolean) => void;
 	webcamLayoutStyle?: "fit" | "fill";
 	onWebcamLayoutStyleChange?: (style: "fit" | "fill") => void;
+	/** Playhead currently inside a camera-full segment: bubble-only controls are hidden. */
+	playheadInCameraFull?: boolean;
 	onUploadWebcam?: () => void;
 	onClearWebcam?: () => void;
 	padding?: Padding;
@@ -1226,6 +1251,7 @@ export function SettingsPanel({
 	onWebcamLayoutRegionsEnabledChange,
 	webcamLayoutStyle = "fit",
 	onWebcamLayoutStyleChange,
+	playheadInCameraFull = false,
 	onUploadWebcam,
 	onClearWebcam,
 	padding = DEFAULT_PADDING,
@@ -3703,12 +3729,15 @@ export function SettingsPanel({
 										<div className="flex flex-wrap gap-1.5">
 											{CLICK_EFFECT_COLOR_OPTIONS.map((color) => {
 												const isSelected =
-													cursorClickEffectColor.toLowerCase() === color.toLowerCase();
+													cursorClickEffectColor.toLowerCase() ===
+													color.toLowerCase();
 												return (
 													<button
 														key={color}
 														type="button"
-														onClick={() => onCursorClickEffectColorChange?.(color)}
+														onClick={() =>
+															onCursorClickEffectColorChange?.(color)
+														}
 														className={cn(
 															"h-6 w-6 rounded-[8px] border transition-transform hover:scale-[1.04]",
 															isSelected
@@ -3722,7 +3751,9 @@ export function SettingsPanel({
 											})}
 											<button
 												type="button"
-												onClick={() => cursorClickEffectColorInputRef.current?.click()}
+												onClick={() =>
+													cursorClickEffectColorInputRef.current?.click()
+												}
 												className="relative h-6 w-10 overflow-hidden rounded-[8px] border border-foreground/10 text-[8px] font-semibold uppercase tracking-[0.18em] text-foreground"
 												style={{
 													background: `linear-gradient(135deg, ${cursorClickEffectColor} 0%, ${cursorClickEffectColor} 58%, rgba(255,255,255,0.92) 58%, rgba(255,255,255,0.92) 100%)`,
@@ -3883,17 +3914,19 @@ export function SettingsPanel({
 									className="data-[state=checked]:bg-[#2563EB] scale-75"
 								/>
 							</div>
-							<SliderControl
-								label={tSettings("effects.webcamSize")}
-								value={webcam?.size ?? DEFAULT_WEBCAM_SIZE}
-								defaultValue={DEFAULT_WEBCAM_SIZE}
-								min={10}
-								max={100}
-								step={1}
-								onChange={(v) => updateWebcam({ size: v })}
-								formatValue={(v) => `${Math.round(v)}%`}
-								parseInput={(text) => parseFloat(text.replace(/%$/, ""))}
-							/>
+							{!playheadInCameraFull && (
+								<SliderControl
+									label={tSettings("effects.webcamSize")}
+									value={webcam?.size ?? DEFAULT_WEBCAM_SIZE}
+									defaultValue={DEFAULT_WEBCAM_SIZE}
+									min={10}
+									max={100}
+									step={1}
+									onChange={(v) => updateWebcam({ size: v })}
+									formatValue={(v) => `${Math.round(v)}%`}
+									parseInput={(text) => parseFloat(text.replace(/%$/, ""))}
+								/>
+							)}
 							<div className="rounded-lg bg-foreground/[0.03] px-2.5 py-2">
 								<div className="mb-2 flex items-center justify-between gap-2">
 									<div className="text-[10px] text-muted-foreground">
@@ -3919,51 +3952,63 @@ export function SettingsPanel({
 									onCropChange={(cropRegion) => updateWebcam({ cropRegion })}
 								/>
 							</div>
-							<div className="rounded-lg bg-foreground/[0.03] px-2.5 py-2">
-								<div className="mb-2 text-[10px] text-muted-foreground">
-									{tSettings("effects.webcamPosition", "Position")}
+							{playheadInCameraFull && (
+								<div className="rounded-lg bg-foreground/[0.03] px-2.5 py-1.5 text-[10px] leading-4 text-muted-foreground/70">
+									{tSettings(
+										"effects.webcamBubbleControlsHidden",
+										"Position controls apply when the camera is in the corner bubble",
+									)}
 								</div>
-								<div className="grid grid-cols-3 gap-1.5">
-									{WEBCAM_POSITION_PRESETS.map((option) => {
-										const isActive = webcamPositionPreset === option.preset;
-										return (
-											<Button
-												key={option.preset}
-												type="button"
-												onClick={() =>
-													applyWebcamPositionPreset(option.preset)
-												}
-												className={cn(
-													"h-8 rounded-lg border px-0 text-sm font-semibold transition-all",
-													isActive
-														? "border-[#2563EB] bg-[#2563EB] text-white"
-														: "border-foreground/10 bg-foreground/5 text-muted-foreground hover:border-foreground/20 hover:bg-foreground/10",
-												)}
-											>
-												{option.label}
-											</Button>
-										);
-									})}
+							)}
+							{!playheadInCameraFull && (
+								<div className="rounded-lg bg-foreground/[0.03] px-2.5 py-2">
+									<div className="mb-2 text-[10px] text-muted-foreground">
+										{tSettings("effects.webcamPosition", "Position")}
+									</div>
+									<div className="grid grid-cols-3 gap-1.5">
+										{WEBCAM_POSITION_PRESETS.map((option) => {
+											const isActive = webcamPositionPreset === option.preset;
+											return (
+												<Button
+													key={option.preset}
+													type="button"
+													onClick={() =>
+														applyWebcamPositionPreset(option.preset)
+													}
+													className={cn(
+														"h-8 rounded-lg border px-0 text-sm font-semibold transition-all",
+														isActive
+															? "border-[#2563EB] bg-[#2563EB] text-white"
+															: "border-foreground/10 bg-foreground/5 text-muted-foreground hover:border-foreground/20 hover:bg-foreground/10",
+													)}
+												>
+													{option.label}
+												</Button>
+											);
+										})}
+									</div>
+									<div className="mt-2 flex items-center justify-between rounded-lg bg-black/10 px-2.5 py-1.5">
+										<span className="text-[10px] text-muted-foreground">
+											{tSettings(
+												"effects.webcamCustomPosition",
+												"Custom position",
+											)}
+										</span>
+										<Switch
+											checked={webcamPositionPreset === "custom"}
+											onCheckedChange={(checked) =>
+												applyWebcamPositionPreset(
+													checked
+														? "custom"
+														: DEFAULT_WEBCAM_POSITION_PRESET,
+												)
+											}
+											className="data-[state=checked]:bg-[#2563EB] scale-75"
+										/>
+									</div>
 								</div>
-								<div className="mt-2 flex items-center justify-between rounded-lg bg-black/10 px-2.5 py-1.5">
-									<span className="text-[10px] text-muted-foreground">
-										{tSettings(
-											"effects.webcamCustomPosition",
-											"Custom position",
-										)}
-									</span>
-									<Switch
-										checked={webcamPositionPreset === "custom"}
-										onCheckedChange={(checked) =>
-											applyWebcamPositionPreset(
-												checked ? "custom" : DEFAULT_WEBCAM_POSITION_PRESET,
-											)
-										}
-										className="data-[state=checked]:bg-[#2563EB] scale-75"
-									/>
-								</div>
-							</div>
-							{webcamPositionPreset === "custom" ? (
+							)}
+							{!playheadInCameraFull && webcamPositionPreset === "custom" ? (
 								<>
 									<SliderControl
 										label={tSettings("effects.webcamHorizontal", "Horizontal")}
@@ -4063,39 +4108,49 @@ export function SettingsPanel({
 									</div>
 								</div>
 							) : null}
-							<SliderControl
-								label={tSettings("effects.webcamMargin", "Margin")}
-								value={webcam?.margin ?? DEFAULT_WEBCAM_MARGIN}
-								defaultValue={DEFAULT_WEBCAM_MARGIN}
-								min={0}
-								max={96}
-								step={1}
-								onChange={(v) => updateWebcam({ margin: v })}
-								formatValue={(v) => `${Math.round(v)}px`}
-								parseInput={(text) => parseFloat(text.replace(/px$/, ""))}
-							/>
-							<SliderControl
-								label={tSettings("effects.webcamRoundness")}
-								value={webcam?.cornerRadius ?? DEFAULT_WEBCAM_CORNER_RADIUS}
-								defaultValue={DEFAULT_WEBCAM_CORNER_RADIUS}
-								min={0}
-								max={160}
-								step={1}
-								onChange={(v) => updateWebcam({ cornerRadius: v })}
-								formatValue={(v) => `${Math.round(v)}px`}
-								parseInput={(text) => parseFloat(text.replace(/px$/, ""))}
-							/>
-							<SliderControl
-								label={tSettings("effects.webcamShadow")}
-								value={webcam?.shadow ?? DEFAULT_WEBCAM_SHADOW}
-								defaultValue={DEFAULT_WEBCAM_SHADOW}
-								min={0}
-								max={1}
-								step={0.01}
-								onChange={(v) => updateWebcam({ shadow: v })}
-								formatValue={(v) => `${Math.round(v * 100)}%`}
-								parseInput={(text) => parseFloat(text.replace(/%$/, "")) / 100}
-							/>
+							{!playheadInCameraFull && (
+								<SliderControl
+									label={tSettings("effects.webcamMargin", "Margin")}
+									value={webcam?.margin ?? DEFAULT_WEBCAM_MARGIN}
+									defaultValue={DEFAULT_WEBCAM_MARGIN}
+									min={0}
+									max={96}
+									step={1}
+									onChange={(v) => updateWebcam({ margin: v })}
+									formatValue={(v) => `${Math.round(v)}px`}
+									parseInput={(text) => parseFloat(text.replace(/px$/, ""))}
+								/>
+							)}
+							{/* Fill renders edge-to-edge: roundness/shadow only apply to the
+							    bubble and the camera-full "fit" letterbox. */}
+							{!(playheadInCameraFull && webcamLayoutStyle === "fill") && (
+								<>
+									<SliderControl
+										label={tSettings("effects.webcamRoundness")}
+										value={webcam?.cornerRadius ?? DEFAULT_WEBCAM_CORNER_RADIUS}
+										defaultValue={DEFAULT_WEBCAM_CORNER_RADIUS}
+										min={0}
+										max={160}
+										step={1}
+										onChange={(v) => updateWebcam({ cornerRadius: v })}
+										formatValue={(v) => `${Math.round(v)}px`}
+										parseInput={(text) => parseFloat(text.replace(/px$/, ""))}
+									/>
+									<SliderControl
+										label={tSettings("effects.webcamShadow")}
+										value={webcam?.shadow ?? DEFAULT_WEBCAM_SHADOW}
+										defaultValue={DEFAULT_WEBCAM_SHADOW}
+										min={0}
+										max={1}
+										step={0.01}
+										onChange={(v) => updateWebcam({ shadow: v })}
+										formatValue={(v) => `${Math.round(v * 100)}%`}
+										parseInput={(text) =>
+											parseFloat(text.replace(/%$/, "")) / 100
+										}
+									/>
+								</>
+							)}
 							<div className="rounded-lg bg-foreground/[0.03] px-2.5 py-2">
 								<div className="flex flex-col gap-2">
 									<div className="min-w-0">
