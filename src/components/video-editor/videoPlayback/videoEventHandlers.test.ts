@@ -418,6 +418,7 @@ describe("createVideoEventHandlers", () => {
 			const onPlayStateChange = vi.fn();
 			const onGapStateChange = vi.fn();
 			const allowPlaybackRef = createMutableRef(true);
+			const magnetEnabledRef = createMutableRef(false);
 			const handlers = createVideoEventHandlers({
 				video,
 				isSeekingRef: createMutableRef(false),
@@ -429,7 +430,7 @@ describe("createVideoEventHandlers", () => {
 				onTimeUpdate,
 				trimRegionsRef: createMutableRef(trimRegions),
 				speedRegionsRef: createMutableRef([]),
-				magnetEnabledRef: createMutableRef(false),
+				magnetEnabledRef,
 				onGapStateChange,
 			});
 
@@ -461,6 +462,7 @@ describe("createVideoEventHandlers", () => {
 				onPlayStateChange,
 				onGapStateChange,
 				allowPlaybackRef,
+				magnetEnabledRef,
 				lastTime: () => onTimeUpdate.mock.lastCall?.[0],
 			};
 		}
@@ -611,6 +613,35 @@ describe("createVideoEventHandlers", () => {
 			expect(s.lastTime()).toBe(6);
 			expect(s.playMock).not.toHaveBeenCalled();
 			expect(s.onGapStateChange).not.toHaveBeenCalledWith(true);
+		});
+
+		it("re-enabling the magnet mid-gap cancels the drive, seeks to the gap end and resumes", () => {
+			const s = createGapDriveSetup([gapRegion]);
+
+			s.handlers.handlePlay();
+			s.setCurrentTimeSilently(5.25);
+			wallNowMs = 1000;
+			s.fireFrame(5.25);
+			wallNowMs = 1500;
+			runGapTick();
+			expect(s.lastTime()).toBe(5.75);
+
+			// The user flips the magnet back on while black time is playing: gaps
+			// are collapsed/skipped again, so the drive must finish immediately.
+			s.magnetEnabledRef.current = true;
+			wallNowMs = 2000;
+			runGapTick();
+
+			expect(s.assignedTimes).toEqual([9]);
+			expect(s.lastTime()).toBe(9);
+			expect(s.onGapStateChange).toHaveBeenLastCalledWith(false);
+			expect(s.playMock).toHaveBeenCalledTimes(1);
+
+			// The canceled drive must not keep ticking.
+			wallNowMs = 9000;
+			runGapTick();
+			expect(s.lastTime()).toBe(9);
+			expect(s.assignedTimes).toEqual([9]);
 		});
 
 		it("scrubbing into a gap while playing starts the driver from the scrub position", () => {

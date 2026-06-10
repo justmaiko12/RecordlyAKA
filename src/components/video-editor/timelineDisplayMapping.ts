@@ -1,6 +1,7 @@
 import {
 	type ClipRegion,
 	getClipSourceEndMs,
+	getTimelineDurationMs,
 	mapSourceTimeToTimelineTime,
 	mapTimelineTimeToSourceTime,
 	sortClipRegions,
@@ -154,6 +155,155 @@ export function spanToSource(
 		start: msToSource(span.start, clips),
 		end: msToSource(span.end, clips),
 	};
+}
+
+// --- Magnet-OFF gap-aware mapping ---
+//
+// With the magnet off the timeline renders clips at their TIMELINE-space
+// anchors ([startMs, endMs], speed-adjusted widths) with the inter-clip gaps
+// visible, and trimmed source ranges play back as black time. The plain
+// mapSourceTimeToTimelineTime/mapTimelineTimeToSourceTime pair clamps in-gap
+// times to the nearest clip boundary, which parks the playhead during a gap
+// and makes gap positions unreachable by seeking. The gap-aware pair instead
+// treats gaps as first-class: a SOURCE-space gap [sourceEnd(i), start(i+1)]
+// maps linearly onto its rendered TIMELINE-space span [endMs(i), start(i+1)],
+// so the playhead enters the gap at the previous clip's rendered end, leaves
+// it at the next clip's rendered start, and moves linearly in between (an
+// identity offset when both neighbors run at speed 1).
+
+interface GapAwareSegment {
+	sourceStartMs: number;
+	sourceEndMs: number;
+	timelineStartMs: number;
+	timelineEndMs: number;
+	speed: number;
+}
+
+function buildGapAwareSegments(clips: ClipRegion[]): GapAwareSegment[] {
+	return sortClipRegions(clips).map((clip) => ({
+		sourceStartMs: Math.round(clip.startMs),
+		sourceEndMs: getClipSourceEndMs(clip),
+		timelineStartMs: Math.round(clip.startMs),
+		timelineEndMs: Math.round(clip.endMs),
+		speed: Number.isFinite(clip.speed) && clip.speed > 0 ? clip.speed : 1,
+	}));
+}
+
+/** Linearly maps a point from one span onto another, clamping degenerate spans. */
+function lerpSpan(
+	value: number,
+	fromStart: number,
+	fromEnd: number,
+	toStart: number,
+	toEnd: number,
+): number {
+	const fromWidth = fromEnd - fromStart;
+	if (fromWidth <= 0) {
+		return Math.round(toEnd);
+	}
+	const ratio = Math.min(1, Math.max(0, (value - fromStart) / fromWidth));
+	return Math.round(toStart + ratio * (toEnd - toStart));
+}
+
+/**
+ * Like mapSourceTimeToTimelineTime, but SOURCE times inside a gap advance
+ * through the gap's rendered span instead of clamping to a clip boundary.
+ * `sourceDurationMs` (when known) scales the trailing gap onto the ruler end
+ * (getTimelineDurationMs); without it the trailing gap is a plain offset from
+ * the last clip's rendered end.
+ */
+export function gapAwareSourceToTimelineMs(
+	sourceMs: number,
+	clips: ClipRegion[],
+	sourceDurationMs?: number,
+): number {
+	const roundedMs = Math.round(sourceMs);
+	const segments = buildGapAwareSegments(clips);
+	if (segments.length === 0) {
+		return roundedMs;
+	}
+
+	let previousSourceEndMs = 0;
+	let previousTimelineEndMs = 0;
+	for (const segment of segments) {
+		if (roundedMs < segment.sourceStartMs) {
+			// Inside the gap before this clip (leading or inter-clip).
+			return lerpSpan(
+				roundedMs,
+				previousSourceEndMs,
+				segment.sourceStartMs,
+				previousTimelineEndMs,
+				segment.timelineStartMs,
+			);
+		}
+		if (roundedMs <= segment.sourceEndMs) {
+			return Math.round(
+				segment.timelineStartMs + (roundedMs - segment.sourceStartMs) / segment.speed,
+			);
+		}
+		previousSourceEndMs = segment.sourceEndMs;
+		previousTimelineEndMs = segment.timelineEndMs;
+	}
+
+	// Trailing gap after the last clip.
+	if (sourceDurationMs !== undefined && sourceDurationMs > previousSourceEndMs) {
+		return lerpSpan(
+			roundedMs,
+			previousSourceEndMs,
+			Math.round(sourceDurationMs),
+			previousTimelineEndMs,
+			getTimelineDurationMs(clips, sourceDurationMs),
+		);
+	}
+	return previousTimelineEndMs + (roundedMs - previousSourceEndMs);
+}
+
+/**
+ * Inverse of gapAwareSourceToTimelineMs: TIMELINE times inside a rendered gap
+ * span map into the trimmed SOURCE range instead of clamping to a boundary.
+ */
+export function gapAwareTimelineToSourceMs(
+	timelineMs: number,
+	clips: ClipRegion[],
+	sourceDurationMs?: number,
+): number {
+	const roundedMs = Math.round(timelineMs);
+	const segments = buildGapAwareSegments(clips);
+	if (segments.length === 0) {
+		return roundedMs;
+	}
+
+	let previousSourceEndMs = 0;
+	let previousTimelineEndMs = 0;
+	for (const segment of segments) {
+		if (roundedMs < segment.timelineStartMs) {
+			return lerpSpan(
+				roundedMs,
+				previousTimelineEndMs,
+				segment.timelineStartMs,
+				previousSourceEndMs,
+				segment.sourceStartMs,
+			);
+		}
+		if (roundedMs <= segment.timelineEndMs) {
+			return Math.round(
+				segment.sourceStartMs + (roundedMs - segment.timelineStartMs) * segment.speed,
+			);
+		}
+		previousSourceEndMs = segment.sourceEndMs;
+		previousTimelineEndMs = segment.timelineEndMs;
+	}
+
+	if (sourceDurationMs !== undefined && sourceDurationMs > previousSourceEndMs) {
+		return lerpSpan(
+			roundedMs,
+			previousTimelineEndMs,
+			getTimelineDurationMs(clips, sourceDurationMs),
+			previousSourceEndMs,
+			Math.round(sourceDurationMs),
+		);
+	}
+	return previousSourceEndMs + (roundedMs - previousTimelineEndMs);
 }
 
 /** Maps a TIMELINE-space region into DISPLAY space, preserving other fields. */

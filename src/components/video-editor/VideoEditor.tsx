@@ -170,6 +170,8 @@ import {
 import {
 	clipsToDisplay,
 	displayMsToTimeline,
+	gapAwareSourceToTimelineMs,
+	gapAwareTimelineToSourceMs,
 	getDisplayDurationMs,
 	msToDisplay,
 	msToSource,
@@ -3374,9 +3376,18 @@ export default function VideoEditor() {
 		[webcamLayoutRegions, webcamLayoutRegionsEnabled, webcam.enabled, webcam.sourcePath],
 	);
 
+	// With the magnet off, trimmed gaps play as black time and are visible on
+	// the timeline, so the playhead must traverse them (the plain mapping
+	// clamps in-gap source times to a clip boundary, parking the playhead for
+	// the gap's duration and then jumping). Magnet-on keeps the plain mapping
+	// byte-identical.
 	const timelinePlayheadTime = useMemo(
-		() => mapSourceTimeToTimelineTime(currentTime * 1000) / 1000,
-		[currentTime, mapSourceTimeToTimelineTime],
+		() =>
+			(magnetEnabled
+				? mapSourceTimeToTimelineTime(currentTime * 1000)
+				: gapAwareSourceToTimelineMs(currentTime * 1000, clipRegions, duration * 1000)) /
+			1000,
+		[currentTime, mapSourceTimeToTimelineTime, magnetEnabled, clipRegions, duration],
 	);
 	const timelineDuration = useMemo(
 		() => getTimelineDurationMs(clipRegions, duration * 1000) / 1000,
@@ -3544,9 +3555,21 @@ export default function VideoEditor() {
 				playback?.pause();
 			}
 
-			video.currentTime = mapTimelineTimeToSourceTime(time * 1000) / 1000;
+			// With the magnet off, gaps are visible and playable black time, so a
+			// click inside a gap must seek INTO it (the plain mapping clamps to the
+			// nearest clip boundary). Magnet-on keeps the plain mapping.
+			video.currentTime = magnetEnabled
+				? mapTimelineTimeToSourceTime(time * 1000) / 1000
+				: gapAwareTimelineToSourceMs(time * 1000, clipRegions, duration * 1000) / 1000;
 		},
-		[getActivePlayback, isPlaying, mapTimelineTimeToSourceTime],
+		[
+			getActivePlayback,
+			isPlaying,
+			mapTimelineTimeToSourceTime,
+			magnetEnabled,
+			clipRegions,
+			duration,
+		],
 	);
 
 	const handleTimelineSeek = useCallback(
@@ -6750,7 +6773,9 @@ export default function VideoEditor() {
 						selectedCameraId={selectedCameraId}
 						onSelectCamera={handleSelectCamera}
 						cameraTrackVisible={Boolean(webcam.enabled && webcam.sourcePath)}
-						cameraRegionsDimmed={!webcamLayoutRegionsEnabled}
+						cameraRegionsDimmed={
+							!webcamLayoutRegionsEnabled || !(webcam.enabled && webcam.sourcePath)
+						}
 						annotationRegions={displayAnnotationRegions}
 						onAnnotationAdded={handleAnnotationAddedFromTimeline}
 						onAnnotationSpanChange={handleAnnotationSpanChangeFromTimeline}

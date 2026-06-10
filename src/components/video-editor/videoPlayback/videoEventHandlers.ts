@@ -238,6 +238,13 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 			return;
 		}
 
+		if (magnetEnabledRef.current) {
+			// The magnet was re-enabled mid-gap: gaps are skipped again, so stop
+			// driving black time — seek to the gap end and resume real playback.
+			finishGapDrive(drive.regionEndMs);
+			return;
+		}
+
 		const positionMs = drive.baseMs + (performance.now() - drive.anchorMs);
 		if (positionMs >= drive.regionEndMs) {
 			finishGapDrive(drive.regionEndMs);

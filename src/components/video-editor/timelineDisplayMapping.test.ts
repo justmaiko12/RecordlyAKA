@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
 	clipsToDisplay,
 	displayMsToTimeline,
+	gapAwareSourceToTimelineMs,
+	gapAwareTimelineToSourceMs,
 	getDisplayDurationMs,
 	msToDisplay,
 	msToSource,
@@ -191,6 +193,100 @@ describe("regionToDisplay / spanToSource", () => {
 	it("passes through unchanged with no clips", () => {
 		const region = { id: "z", startMs: 100, endMs: 200 };
 		expect(regionToDisplay(region, [])).toEqual(region);
+	});
+});
+
+describe("gapAwareSourceToTimelineMs / gapAwareTimelineToSourceMs (magnet off)", () => {
+	// A clip that starts after a leading gap.
+	const leadingGapClips: ClipRegion[] = [{ id: "e", startMs: 3000, endMs: 5000, speed: 1 }];
+	// A single 2x clip (source [0, 2000], timeline [0, 1000]) with a trailing
+	// gap up to a 3000ms source duration; the ruler runs to
+	// getTimelineDurationMs = max(3000, 1000) = 3000.
+	const trailingSpeedClips: ClipRegion[] = [{ id: "f", startMs: 0, endMs: 1000, speed: 2 }];
+
+	it("matches the clip mapping for source times inside clips", () => {
+		expect(gapAwareSourceToTimelineMs(1000, gappedClips)).toBe(1000);
+		expect(gapAwareSourceToTimelineMs(6000, gappedClips)).toBe(6000);
+		// Source 1000 inside the 2x clip sits at timeline 500.
+		expect(gapAwareSourceToTimelineMs(1000, speedClips)).toBe(500);
+		expect(gapAwareSourceToTimelineMs(5000, speedClips)).toBe(5000);
+	});
+
+	it("advances through an inter-clip gap instead of clamping", () => {
+		// Source gap [2000, 5000] renders between the clips at timeline
+		// [2000, 5000] (speed-1 neighbors), so the mapping is the identity.
+		expect(gapAwareSourceToTimelineMs(3500, gappedClips)).toBe(3500);
+		expect(gapAwareTimelineToSourceMs(3500, gappedClips)).toBe(3500);
+	});
+
+	it("is continuous at gap entry and exit boundaries", () => {
+		// Gap entry == previous clip's rendered end.
+		expect(gapAwareSourceToTimelineMs(2000, gappedClips)).toBe(2000);
+		// Gap exit == next clip's rendered start.
+		expect(gapAwareSourceToTimelineMs(5000, gappedClips)).toBe(5000);
+	});
+
+	it("scales a gap between speed clips to its rendered width", () => {
+		// speedClips: source gap [2000, 4000] (width 2000) renders between the
+		// 2x clip's end (timeline 1000) and the next clip's start (timeline
+		// 4000), i.e. visual width 3000.
+		expect(gapAwareSourceToTimelineMs(2000, speedClips)).toBe(1000); // entry == rendered end of clip c
+		expect(gapAwareSourceToTimelineMs(4000, speedClips)).toBe(4000); // exit == rendered start of clip d
+		expect(gapAwareSourceToTimelineMs(3000, speedClips)).toBe(2500); // midpoint maps to visual midpoint
+		expect(gapAwareTimelineToSourceMs(2500, speedClips)).toBe(3000);
+	});
+
+	it("round-trips source times inside gaps", () => {
+		for (const sourceMs of [2000, 2500, 3000, 3500, 4000]) {
+			expect(
+				gapAwareTimelineToSourceMs(
+					gapAwareSourceToTimelineMs(sourceMs, speedClips),
+					speedClips,
+				),
+			).toBe(sourceMs);
+		}
+		for (const sourceMs of [2000, 3100, 4999]) {
+			expect(
+				gapAwareTimelineToSourceMs(
+					gapAwareSourceToTimelineMs(sourceMs, gappedClips),
+					gappedClips,
+				),
+			).toBe(sourceMs);
+		}
+	});
+
+	it("traverses a leading gap as the identity", () => {
+		expect(gapAwareSourceToTimelineMs(0, leadingGapClips)).toBe(0);
+		expect(gapAwareSourceToTimelineMs(1500, leadingGapClips)).toBe(1500);
+		expect(gapAwareSourceToTimelineMs(3000, leadingGapClips)).toBe(3000);
+		expect(gapAwareTimelineToSourceMs(1500, leadingGapClips)).toBe(1500);
+	});
+
+	it("scales a trailing gap to the ruler end when the source duration is known", () => {
+		// Trailing source gap [2000, 3000] renders from the clip's end (timeline
+		// 1000) to the ruler end (timeline 3000).
+		expect(gapAwareSourceToTimelineMs(2000, trailingSpeedClips, 3000)).toBe(1000);
+		expect(gapAwareSourceToTimelineMs(2500, trailingSpeedClips, 3000)).toBe(2000);
+		expect(gapAwareSourceToTimelineMs(3000, trailingSpeedClips, 3000)).toBe(3000);
+		expect(gapAwareTimelineToSourceMs(2000, trailingSpeedClips, 3000)).toBe(2500);
+		expect(gapAwareTimelineToSourceMs(3000, trailingSpeedClips, 3000)).toBe(3000);
+	});
+
+	it("offsets a trailing gap from the rendered clip end without a source duration", () => {
+		// gappedClips end at source == timeline 10000, so the trailing gap is an
+		// identity offset.
+		expect(gapAwareSourceToTimelineMs(11000, gappedClips)).toBe(11000);
+		expect(gapAwareTimelineToSourceMs(11000, gappedClips)).toBe(11000);
+	});
+
+	it("clamps beyond the known durations", () => {
+		expect(gapAwareSourceToTimelineMs(9999, trailingSpeedClips, 3000)).toBe(3000);
+		expect(gapAwareTimelineToSourceMs(9999, trailingSpeedClips, 3000)).toBe(3000);
+	});
+
+	it("is the identity with no clips", () => {
+		expect(gapAwareSourceToTimelineMs(1234, [])).toBe(1234);
+		expect(gapAwareTimelineToSourceMs(1234, [])).toBe(1234);
 	});
 });
 
