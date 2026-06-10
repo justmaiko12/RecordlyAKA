@@ -133,7 +133,7 @@ interface FrameRenderConfig {
 	cropRegion: CropRegion;
 	webcam?: WebcamOverlaySettings;
 	webcamLayoutRegions?: WebcamLayoutRegion[];
-	/** Camera-full rendering style; plumbed in Task 2, consumed by the camera-full layout in Task 3. */
+	/** Camera-full rendering style: "fit" letterboxes the webcam, "fill" covers the frame. */
 	webcamLayoutStyle?: "fit" | "fill";
 	webcamUrl?: string | null;
 	videoWidth: number;
@@ -2930,8 +2930,13 @@ export class FrameRenderer {
 			return;
 		}
 
+		const cameraFullFill = cameraFull && this.config.webcamLayoutStyle === "fill";
 		let layoutRect: { x: number; y: number; width: number; height: number };
-		if (cameraFull) {
+		if (cameraFullFill) {
+			// Fill style: the webcam covers the whole output frame edge to edge.
+			// The sprite cover-fit inside the rect crops the overflowing axis.
+			layoutRect = { x: 0, y: 0, width: this.config.width, height: this.config.height };
+		} else if (cameraFull) {
 			// Letterbox the cropped webcam over the background. The renderable
 			// source dimensions already reflect the crop region (cropped sources
 			// render via the frame cache canvas), and with the rect at exactly
@@ -2967,8 +2972,9 @@ export class FrameRenderer {
 			});
 			layoutRect = { x: position.x, y: position.y, width: size, height: size };
 		}
-		const radius = Math.max(0, webcam.cornerRadius ?? 18);
-		const shadowStrength = clampUnitInterval(webcam.shadow ?? 0);
+		// Fill renders edge to edge: no squircle rounding and no drop shadow.
+		const radius = cameraFullFill ? 0 : Math.max(0, webcam.cornerRadius ?? 18);
+		const shadowStrength = cameraFullFill ? 0 : clampUnitInterval(webcam.shadow ?? 0);
 
 		this.webcamRootContainer.visible = true;
 

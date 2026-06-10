@@ -715,6 +715,73 @@ describe("ModernFrameRenderer webcam export fallback", () => {
 		expect(bubbleLayout.width).not.toBeCloseTo(cameraFullLayout.width);
 	});
 
+	it("fills the full frame during camera-full segments when the layout style is fill", () => {
+		const renderer = createRenderer() as any;
+		renderer.config.webcam = {
+			...DEFAULT_WEBCAM_OVERLAY,
+			enabled: true,
+		};
+		renderer.config.webcamLayoutRegions = [{ id: "layout-1", startMs: 5_000, endMs: 9_000 }];
+		renderer.config.webcamLayoutStyle = "fill";
+		renderer.lastSyncedWebcamTime = 6;
+		renderer.webcamVideoElement = {
+			currentTime: 6,
+			readyState: 2,
+			seeking: false,
+			videoWidth: 640,
+			videoHeight: 360,
+			duration: Number.NaN,
+		};
+		renderer.cameraContainer = { visible: true };
+		renderer.webcamRootContainer = {
+			visible: false,
+			position: { set: vi.fn() },
+		};
+		renderer.webcamContainer = {
+			addChildAt: vi.fn(),
+		};
+		renderer.webcamMaskGraphics = {
+			clear: vi.fn(),
+			moveTo: vi.fn(),
+			lineTo: vi.fn(),
+			closePath: vi.fn(),
+			fill: vi.fn(),
+		};
+		renderer.webcamShadowLayers = [];
+		renderer.animationState = {
+			appliedScale: 1,
+		};
+
+		renderer.currentVideoTime = 6;
+		renderer.updateWebcamOverlay();
+
+		// Screen hidden, webcam stretched edge-to-edge with no rounding/shadow.
+		expect(renderer.cameraContainer.visible).toBe(false);
+		expect(renderer.webcamRootContainer.visible).toBe(true);
+		const fillLayout = renderer.webcamLayoutCache;
+		expect(fillLayout.width).toBeCloseTo(1920);
+		expect(fillLayout.height).toBeCloseTo(1080);
+		expect(fillLayout.positionX).toBeCloseTo(0);
+		expect(fillLayout.positionY).toBeCloseTo(0);
+		expect(fillLayout.radius).toBe(0);
+		expect(fillLayout.shadowStrength).toBe(0);
+		const [fillX, fillY] = renderer.webcamRootContainer.position.set.mock.calls.at(-1);
+		expect(fillX).toBeCloseTo(0);
+		expect(fillY).toBeCloseTo(0);
+
+		// Outside the region: screen restored, bubble keeps its rounding/shadow.
+		renderer.currentVideoTime = 2;
+		renderer.lastSyncedWebcamTime = 2;
+		renderer.webcamVideoElement.currentTime = 2;
+		renderer.updateWebcamOverlay();
+
+		expect(renderer.cameraContainer.visible).toBe(true);
+		const bubbleLayout = renderer.webcamLayoutCache;
+		expect(bubbleLayout.width).toBeCloseTo(bubbleLayout.height);
+		expect(bubbleLayout.radius).toBeGreaterThan(0);
+		expect(bubbleLayout.shadowStrength).toBeGreaterThan(0);
+	});
+
 	it("snapshots media-element webcam frames into the cache before rendering", () => {
 		const renderer = createRenderer() as any;
 		renderer.config.webcam = {

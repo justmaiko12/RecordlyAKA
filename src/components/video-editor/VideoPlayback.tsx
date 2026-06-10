@@ -183,6 +183,7 @@ import {
 } from "./videoPlayback/zoomTransform";
 import {
 	CAMERA_FULL_PADDING_FRACTION,
+	getCoverRect,
 	getLetterboxRect,
 	isCameraFullAtMs,
 	type WebcamLayoutRegion,
@@ -361,7 +362,7 @@ interface VideoPlaybackProps {
 	cropRegion?: import("./types").CropRegion;
 	webcam?: WebcamOverlaySettings;
 	webcamLayoutRegions?: WebcamLayoutRegion[];
-	/** Camera-full rendering style; accepted here but consumed by the renderer in Task 3. */
+	/** Camera-full rendering style: "fit" letterboxes the webcam, "fill" covers the frame. */
 	webcamLayoutStyle?: "fit" | "fill";
 	webcamVideoPath?: string | null;
 	trimRegions?: TrimRegion[];
@@ -451,6 +452,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			cropRegion,
 			webcam,
 			webcamLayoutRegions = EMPTY_WEBCAM_LAYOUT_REGIONS,
+			webcamLayoutStyle = "fit",
 			webcamVideoPath,
 			trimRegions = [],
 			speedRegions = [],
@@ -534,6 +536,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		const webcamVideoRef = useRef<HTMLVideoElement | null>(null);
 		const webcamBubbleRef = useRef<HTMLDivElement | null>(null);
 		const webcamBubbleInnerRef = useRef<HTMLDivElement | null>(null);
+		const webcamCropContentRef = useRef<HTMLDivElement | null>(null);
 		const [webcamVideoDimensions, setWebcamVideoDimensions] = useState<{
 			width: number;
 			height: number;
@@ -807,6 +810,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			webcamVideoPath,
 			webcamCropRegion,
 			webcamVideoDimensions,
+			webcamLayoutStyle,
 		};
 		const webcamLayoutInputsRef = useRef(latestWebcamLayoutInputs);
 		webcamLayoutInputsRef.current = latestWebcamLayoutInputs;
@@ -857,6 +861,29 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				return;
 			}
 
+			// Restores the percent-based cover position that React renders via
+			// webcamCropPreviewContentStyle (same formula). The camera-full fill
+			// branch overrides these inline styles with pixel values, so every
+			// other branch must explicitly put them back — clearing them would
+			// also erase React's own inline values until the memo next changes.
+			const applyPercentContentLayout = () => {
+				const content = webcamCropContentRef.current;
+				const videoDims = inputs.webcamVideoDimensions;
+				if (!content || !videoDims) {
+					return;
+				}
+				const { sx, sy, sw, sh } = getWebcamCropSourceRect(
+					inputs.webcamCropRegion,
+					videoDims.width,
+					videoDims.height,
+				);
+				const coverScale = Math.max(1 / sw, 1 / sh);
+				content.style.left = `${((1 - sw * coverScale) / 2 - sx * coverScale) * 100}%`;
+				content.style.top = `${((1 - sh * coverScale) / 2 - sy * coverScale) * 100}%`;
+				content.style.width = `${videoDims.width * coverScale * 100}%`;
+				content.style.height = `${videoDims.height * coverScale * 100}%`;
+			};
+
 			if (cameraFullActiveRef.current) {
 				// Camera-full segment: the screen layer is hidden, so zoomScale is
 				// intentionally ignored — the camera stays letterboxed over the
@@ -873,6 +900,50 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					contentWidth = sw;
 					contentHeight = sh;
 				}
+
+				if (inputs.webcamLayoutStyle === "fill") {
+					// Fill style: the bubble covers the whole frame edge to edge —
+					// no squircle clip, no drop shadow. The inner content is
+					// positioned in pixels (aspect-correct cover of the frame,
+					// matching the exporter's sprite cover-fit) because the
+					// percent-based cover math is only aspect-true in square boxes.
+					bubble.style.display = "block";
+					bubble.style.left = "0px";
+					bubble.style.top = "0px";
+					bubble.style.width = `${overlay.clientWidth}px`;
+					bubble.style.height = `${overlay.clientHeight}px`;
+					bubble.style.aspectRatio = "auto";
+					bubble.style.filter = "none";
+					bubble.style.borderRadius = "0px";
+					bubble.style.boxShadow = "none";
+
+					bubbleInner.style.borderRadius = "0px";
+					bubbleInner.style.overflow = "hidden";
+					bubbleInner.style.contain = "paint";
+					bubbleInner.style.clipPath = "none";
+					bubbleInner.style.setProperty("-webkit-clip-path", "none");
+
+					const content = webcamCropContentRef.current;
+					if (content && videoDims) {
+						const { sx, sy, sw, sh } = getWebcamCropSourceRect(
+							inputs.webcamCropRegion,
+							videoDims.width,
+							videoDims.height,
+						);
+						const coverRect = getCoverRect(
+							{ width: sw, height: sh },
+							{ width: overlay.clientWidth, height: overlay.clientHeight },
+						);
+						const scale = coverRect.width / sw;
+						content.style.left = `${coverRect.x - sx * scale}px`;
+						content.style.top = `${coverRect.y - sy * scale}px`;
+						content.style.width = `${videoDims.width * scale}px`;
+						content.style.height = `${videoDims.height * scale}px`;
+					}
+					return;
+				}
+
+				applyPercentContentLayout();
 				const rect = getLetterboxRect(
 					{ width: contentWidth, height: contentHeight },
 					{ width: overlay.clientWidth, height: overlay.clientHeight },
@@ -911,6 +982,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				return;
 			}
 
+			applyPercentContentLayout();
 			const scaledSize = getWebcamOverlaySizePx({
 				containerWidth: overlay.clientWidth,
 				containerHeight: overlay.clientHeight,
@@ -977,6 +1049,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			webcamVideoPath,
 			webcamCropRegion,
 			webcamVideoDimensions,
+			webcamLayoutStyle,
 		]);
 
 		const updateWebcamLayoutMode = useCallback(
@@ -3065,6 +3138,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 										}}
 									>
 										<div
+											ref={webcamCropContentRef}
 											className="pointer-events-none absolute"
 											style={webcamCropPreviewContentStyle}
 										>
