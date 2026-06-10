@@ -367,6 +367,8 @@ interface VideoPlaybackProps {
 	webcamVideoPath?: string | null;
 	trimRegions?: TrimRegion[];
 	speedRegions?: SpeedRegion[];
+	/** When false (magnet off), trims play back as black wall-clock time instead of being skipped. */
+	magnetEnabled?: boolean;
 	aspectRatio: AspectRatio;
 	annotationRegions?: AnnotationRegion[];
 	autoCaptions?: CaptionCue[];
@@ -456,6 +458,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			webcamVideoPath,
 			trimRegions = [],
 			speedRegions = [],
+			magnetEnabled = true,
 			aspectRatio,
 			annotationRegions = [],
 			autoCaptions = [],
@@ -582,6 +585,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		const layoutVideoContentRef = useRef<(() => void) | null>(null);
 		const trimRegionsRef = useRef<TrimRegion[]>([]);
 		const speedRegionsRef = useRef<SpeedRegion[]>([]);
+		const magnetEnabledRef = useRef(magnetEnabled);
+		// True while the wall-clock gap driver is playing a trim region as black time.
+		const [gapDriveActive, setGapDriveActive] = useState(false);
 		const lastWebcamSyncTimeRef = useRef<number | null>(null);
 		const lastBackgroundSyncTimeRef = useRef<number | null>(null);
 		const bgVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -1683,6 +1689,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		}, [trimRegions]);
 
 		useEffect(() => {
+			magnetEnabledRef.current = magnetEnabled;
+		}, [magnetEnabled]);
+
+		useEffect(() => {
 			speedRegionsRef.current = speedRegions;
 		}, [speedRegions]);
 
@@ -2327,6 +2337,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					onTimeUpdate,
 					trimRegionsRef,
 					speedRegionsRef,
+					magnetEnabledRef,
+					onGapStateChange: setGapDriveActive,
 				});
 
 			video.addEventListener("play", handlePlay);
@@ -3042,6 +3054,19 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			return 16 / 9;
 		})();
 
+		// Magnet off: the playhead can sit inside (or wall-clock-play through) a
+		// trim region — those moments render as pure black in the preview frame.
+		// Deriving from currentTime also covers scrubbing into a gap while paused,
+		// when the gap driver is not running.
+		const currentTimeMsForGap = currentTime * 1000;
+		const inBlackGap =
+			!magnetEnabled &&
+			(gapDriveActive ||
+				trimRegions.some(
+					(region) =>
+						currentTimeMsForGap >= region.startMs && currentTimeMsForGap < region.endMs,
+				));
+
 		return (
 			<div
 				ref={previewFrameRef}
@@ -3306,6 +3331,13 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 							));
 						})()}
 					</div>
+				)}
+				{/* Magnet off: trimmed ranges play as black time. Rendered as the last
+					visual child of the preview frame so it covers the background, the
+					Pixi canvas and the webcam bubble. Selected annotations boost their
+					z-index by +1000 (AnnotationOverlay), so this must sit above that. */}
+				{inBlackGap && (
+					<div className="pointer-events-none absolute inset-0 z-[1100] bg-black" />
 				)}
 				{/* Keep the source video off-screen instead of display:none so the
 					browser continues producing presented frames for Pixi and preview sync. */}

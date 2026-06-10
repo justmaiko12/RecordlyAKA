@@ -3434,7 +3434,9 @@ export default function VideoEditor() {
 		const video = playback?.video;
 		if (!playback || !video) return;
 
-		if (!video.paused && !video.ended) {
+		// While the magnet-off gap driver plays black time the media element is
+		// paused but the editor is still playing — the toggle must pause it.
+		if ((!video.paused || isPlaying) && !video.ended) {
 			playback.pause();
 		} else {
 			startPlayback();
@@ -3451,13 +3453,15 @@ export default function VideoEditor() {
 			const video = playback?.video;
 			if (!video) return;
 
-			if (options.pause && !video.paused) {
+			// isPlaying covers the magnet-off gap driver, which keeps the media
+			// element paused while the editor is still logically playing.
+			if (options.pause && (!video.paused || isPlaying)) {
 				playback?.pause();
 			}
 
 			video.currentTime = mapTimelineTimeToSourceTime(time * 1000) / 1000;
 		},
-		[getActivePlayback, mapTimelineTimeToSourceTime],
+		[getActivePlayback, isPlaying, mapTimelineTimeToSourceTime],
 	);
 
 	const handleTimelineSeek = useCallback(
@@ -5338,6 +5342,7 @@ export default function VideoEditor() {
 			webcamVideoPath={webcam.sourcePath ? resolvedWebcamVideoUrl : null}
 			trimRegions={trimRegions}
 			speedRegions={effectiveSpeedRegions}
+			magnetEnabled={magnetEnabled}
 			annotationRegions={annotationRegions}
 			autoCaptions={autoCaptions}
 			autoCaptionSettings={autoCaptionSettings}

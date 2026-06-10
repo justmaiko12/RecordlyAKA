@@ -75,6 +75,7 @@ describe("createVideoEventHandlers", () => {
 			onTimeUpdate,
 			trimRegionsRef: createMutableRef([]),
 			speedRegionsRef: createMutableRef([]),
+			magnetEnabledRef: createMutableRef(true),
 		});
 
 		handlers.handlePlay();
@@ -112,6 +113,7 @@ describe("createVideoEventHandlers", () => {
 			onTimeUpdate,
 			trimRegionsRef: createMutableRef([]),
 			speedRegionsRef: createMutableRef([]),
+			magnetEnabledRef: createMutableRef(true),
 		});
 
 		handlers.handlePlay();
@@ -142,6 +144,7 @@ describe("createVideoEventHandlers", () => {
 			onTimeUpdate,
 			trimRegionsRef: createMutableRef([{ id: "trim-1", startMs: 1000, endMs: 2000 }]),
 			speedRegionsRef: createMutableRef([]),
+			magnetEnabledRef: createMutableRef(true),
 		});
 
 		handlers.handlePlay();
@@ -169,6 +172,7 @@ describe("createVideoEventHandlers", () => {
 			onTimeUpdate: vi.fn(),
 			trimRegionsRef: createMutableRef([]),
 			speedRegionsRef: createMutableRef([]),
+			magnetEnabledRef: createMutableRef(true),
 		});
 
 		handlers.handlePlay();
@@ -231,6 +235,7 @@ describe("createVideoEventHandlers", () => {
 			onTimeUpdate,
 			trimRegionsRef: createMutableRef(trimRegions),
 			speedRegionsRef: createMutableRef([]),
+			magnetEnabledRef: createMutableRef(true),
 		});
 		return { handlers, onTimeUpdate };
 	}
@@ -345,11 +350,286 @@ describe("createVideoEventHandlers", () => {
 			onTimeUpdate,
 			trimRegionsRef: createMutableRef([{ id: "trim-1", startMs: 1000, endMs: 2000 }]),
 			speedRegionsRef: createMutableRef([]),
+			magnetEnabledRef: createMutableRef(true),
 		});
 
 		handlers.handleSeeked();
 
 		expect(video.currentTime).toBe(2);
 		expect(onTimeUpdate).toHaveBeenLastCalledWith(2);
+	});
+
+	describe("wall-clock gap driver (magnet off)", () => {
+		const gapRegion = { id: "trim-1", startMs: 5000, endMs: 9000 };
+		let wallNowMs = 0;
+		let nowSpy: ReturnType<typeof vi.spyOn>;
+		let latestGapTick: FrameRequestCallback | null = null;
+
+		const runGapTick = () => {
+			const tick = latestGapTick;
+			latestGapTick = null;
+			tick?.(0);
+		};
+
+		beforeEach(() => {
+			wallNowMs = 0;
+			latestGapTick = null;
+			requestAnimationFrameMock.mockImplementation((callback: FrameRequestCallback) => {
+				latestGapTick = callback;
+				return 51;
+			});
+			nowSpy = vi.spyOn(performance, "now").mockImplementation(() => wallNowMs);
+		});
+
+		afterEach(() => {
+			nowSpy.mockRestore();
+		});
+
+		function createGapDriveSetup(
+			trimRegions: { id: string; startMs: number; endMs: number }[],
+		) {
+			let backingTime = 0;
+			const assignedTimes: number[] = [];
+			let frameCallback: PresentedFrameCallback | null = null;
+			const pauseMock = vi.fn();
+			const playMock = vi.fn();
+			const video = {
+				duration: 20,
+				paused: false,
+				ended: false,
+				playbackRate: 1,
+				pause: pauseMock,
+				play: playMock,
+				requestVideoFrameCallback: vi.fn((callback: PresentedFrameCallback) => {
+					frameCallback = callback;
+					return 41;
+				}),
+				cancelVideoFrameCallback: vi.fn(),
+			} as unknown as MockVideo;
+			Object.defineProperty(video, "currentTime", {
+				get: () => backingTime,
+				set: (value: number) => {
+					assignedTimes.push(value);
+					backingTime = value;
+				},
+			});
+
+			const onTimeUpdate = vi.fn();
+			const onPlayStateChange = vi.fn();
+			const onGapStateChange = vi.fn();
+			const allowPlaybackRef = createMutableRef(true);
+			const handlers = createVideoEventHandlers({
+				video,
+				isSeekingRef: createMutableRef(false),
+				isPlayingRef: createMutableRef(false),
+				allowPlaybackRef,
+				currentTimeRef: createMutableRef(0),
+				timeUpdateAnimationRef: createMutableRef<number | null>(null),
+				onPlayStateChange,
+				onTimeUpdate,
+				trimRegionsRef: createMutableRef(trimRegions),
+				speedRegionsRef: createMutableRef([]),
+				magnetEnabledRef: createMutableRef(false),
+				onGapStateChange,
+			});
+
+			// Mirror a real media element: pause()/play() flip `paused` and fire
+			// the matching event handler the way the browser queues pause/play
+			// events after the call.
+			pauseMock.mockImplementation(() => {
+				if (video.paused) return;
+				video.paused = true;
+				handlers.handlePause();
+			});
+			playMock.mockImplementation(() => {
+				if (!video.paused) return;
+				video.paused = false;
+				handlers.handlePlay();
+			});
+
+			return {
+				video,
+				assignedTimes,
+				pauseMock,
+				playMock,
+				fireFrame: (mediaTime: number) => frameCallback?.(0, { mediaTime }),
+				setCurrentTimeSilently: (value: number) => {
+					backingTime = value;
+				},
+				handlers,
+				onTimeUpdate,
+				onPlayStateChange,
+				onGapStateChange,
+				allowPlaybackRef,
+				lastTime: () => onTimeUpdate.mock.lastCall?.[0],
+			};
+		}
+
+		it("entering a gap pauses the video and advances time on the wall clock", () => {
+			const s = createGapDriveSetup([gapRegion]);
+
+			s.handlers.handlePlay();
+			s.setCurrentTimeSilently(5.25);
+			wallNowMs = 1000;
+			s.fireFrame(5.25);
+
+			expect(s.pauseMock).toHaveBeenCalledTimes(1);
+			expect(s.onGapStateChange).toHaveBeenLastCalledWith(true);
+			expect(s.lastTime()).toBe(5.25);
+			// The gap is played as time, not skipped: no seek is issued.
+			expect(s.assignedTimes).toEqual([]);
+			// Entering the gap must not flip the editor to "paused".
+			expect(s.onPlayStateChange).not.toHaveBeenCalledWith(false);
+
+			wallNowMs = 1500;
+			runGapTick();
+			expect(s.lastTime()).toBe(5.75);
+
+			wallNowMs = 2350;
+			runGapTick();
+			expect(s.lastTime()).toBe(6.6);
+			expect(s.playMock).not.toHaveBeenCalled();
+		});
+
+		it("reaching the gap end seeks to the gap end and resumes playback exactly once", () => {
+			const s = createGapDriveSetup([gapRegion]);
+
+			s.handlers.handlePlay();
+			s.setCurrentTimeSilently(5.25);
+			wallNowMs = 1000;
+			s.fireFrame(5.25);
+
+			wallNowMs = 1000 + (9000 - 5250);
+			runGapTick();
+
+			expect(s.assignedTimes).toEqual([9]);
+			expect(s.playMock).toHaveBeenCalledTimes(1);
+			expect(s.onGapStateChange).toHaveBeenLastCalledWith(false);
+			expect(s.lastTime()).toBe(9);
+
+			// A stale frame callback reporting a pre-seek time must not re-enter
+			// the gap (Task-2 pending-skip guard).
+			s.fireFrame(5.3);
+			expect(s.assignedTimes).toEqual([9]);
+			expect(s.playMock).toHaveBeenCalledTimes(1);
+		});
+
+		it("a user pause mid-gap freezes the emitted time and play resumes from the stored position", () => {
+			const s = createGapDriveSetup([gapRegion]);
+
+			s.handlers.handlePlay();
+			s.setCurrentTimeSilently(5.25);
+			wallNowMs = 0;
+			s.fireFrame(5.25);
+			wallNowMs = 550;
+			runGapTick();
+			expect(s.lastTime()).toBe(5.8);
+
+			s.handlers.handlePause();
+			expect(s.onPlayStateChange).toHaveBeenLastCalledWith(false);
+
+			// Wall clock keeps running but the frozen driver must not advance.
+			wallNowMs = 9000;
+			runGapTick();
+			expect(s.lastTime()).toBe(5.8);
+			expect(s.assignedTimes).toEqual([]);
+
+			// Resume: playback restarts the driver from the stored position, not
+			// from the media element's parked time.
+			wallNowMs = 20000;
+			s.video.play();
+			s.fireFrame(5.25);
+			expect(s.lastTime()).toBe(5.8);
+			expect(s.onGapStateChange).toHaveBeenLastCalledWith(true);
+
+			wallNowMs = 20100;
+			runGapTick();
+			expect(s.lastTime()).toBe(5.9);
+		});
+
+		it("the editor pause control freezes the driver via the allow-playback ref", () => {
+			const s = createGapDriveSetup([gapRegion]);
+
+			s.handlers.handlePlay();
+			s.setCurrentTimeSilently(5.25);
+			wallNowMs = 0;
+			s.fireFrame(5.25);
+			wallNowMs = 250;
+			runGapTick();
+			expect(s.lastTime()).toBe(5.5);
+
+			// The imperative pause() cannot fire a media "pause" event while the
+			// driver already holds the element paused; the ref is the signal.
+			s.allowPlaybackRef.current = false;
+			runGapTick();
+
+			expect(s.onPlayStateChange).toHaveBeenLastCalledWith(false);
+			expect(s.lastTime()).toBe(5.5);
+
+			wallNowMs = 9000;
+			runGapTick();
+			expect(s.lastTime()).toBe(5.5);
+		});
+
+		it("scrubbing out of a gap cancels the driver and continues playback", () => {
+			const s = createGapDriveSetup([gapRegion]);
+
+			s.handlers.handlePlay();
+			s.setCurrentTimeSilently(5.25);
+			wallNowMs = 0;
+			s.fireFrame(5.25);
+			wallNowMs = 250;
+			runGapTick();
+			expect(s.lastTime()).toBe(5.5);
+
+			s.setCurrentTimeSilently(2.0);
+			s.handlers.handleSeeking();
+			expect(s.onGapStateChange).toHaveBeenLastCalledWith(false);
+			s.handlers.handleSeeked();
+
+			expect(s.lastTime()).toBe(2);
+			// No skip-past-gap seek was issued by the driver.
+			expect(s.assignedTimes).toEqual([]);
+			// Playback was logically running, so leaving the gap resumes the video.
+			expect(s.playMock).toHaveBeenCalledTimes(1);
+
+			// Any stale gap tick is inert after cancellation.
+			wallNowMs = 9000;
+			runGapTick();
+			expect(s.lastTime()).toBe(2);
+		});
+
+		it("a paused scrub into a gap parks on black without skipping", () => {
+			const s = createGapDriveSetup([gapRegion]);
+			s.video.paused = true;
+
+			s.setCurrentTimeSilently(6.0);
+			s.handlers.handleSeeking();
+			s.handlers.handleSeeked();
+
+			expect(s.assignedTimes).toEqual([]);
+			expect(s.lastTime()).toBe(6);
+			expect(s.playMock).not.toHaveBeenCalled();
+			expect(s.onGapStateChange).not.toHaveBeenCalledWith(true);
+		});
+
+		it("scrubbing into a gap while playing starts the driver from the scrub position", () => {
+			const s = createGapDriveSetup([gapRegion]);
+
+			s.handlers.handlePlay();
+			s.setCurrentTimeSilently(7.0);
+			wallNowMs = 100;
+			s.handlers.handleSeeking();
+			s.handlers.handleSeeked();
+
+			expect(s.pauseMock).toHaveBeenCalledTimes(1);
+			expect(s.onGapStateChange).toHaveBeenLastCalledWith(true);
+			expect(s.lastTime()).toBe(7);
+			expect(s.assignedTimes).toEqual([]);
+
+			wallNowMs = 600;
+			runGapTick();
+			expect(s.lastTime()).toBe(7.5);
+		});
 	});
 });
