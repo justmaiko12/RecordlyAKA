@@ -1556,6 +1556,9 @@ export class ModernVideoExporter {
 		if ((this.config.annotationRegions ?? []).length > 0) {
 			reasons.push("unsupported-annotation-overlay");
 		}
+		if ((this.config.webcamLayoutRegions ?? []).length > 0) {
+			reasons.push("unsupported-webcam-layout-regions");
+		}
 		if ((this.config.autoCaptions ?? []).length > 0) {
 			reasons.push("unsupported-caption-overlay");
 		}

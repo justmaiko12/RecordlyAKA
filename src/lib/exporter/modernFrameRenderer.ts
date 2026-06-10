@@ -56,7 +56,12 @@ import {
 	createMotionBlurState,
 	type MotionBlurState,
 } from "@/components/video-editor/videoPlayback/zoomTransform";
-import type { WebcamLayoutRegion } from "@/components/video-editor/webcamLayoutRegions";
+import {
+	CAMERA_FULL_PADDING_FRACTION,
+	getLetterboxRect,
+	isCameraFullAtMs,
+	type WebcamLayoutRegion,
+} from "@/components/video-editor/webcamLayoutRegions";
 import {
 	getWebcamCropSourceRect,
 	getWebcamOverlayPosition,
@@ -213,7 +218,8 @@ interface WebcamRenderSource {
 interface WebcamLayoutCache {
 	sourceWidth: number;
 	sourceHeight: number;
-	size: number;
+	width: number;
+	height: number;
 	positionX: number;
 	positionY: number;
 	radius: number;
@@ -2606,7 +2612,8 @@ export class FrameRenderer {
 			previousLayout.mirror === nextLayout.mirror &&
 			areNearlyEqual(previousLayout.sourceWidth, nextLayout.sourceWidth) &&
 			areNearlyEqual(previousLayout.sourceHeight, nextLayout.sourceHeight) &&
-			areNearlyEqual(previousLayout.size, nextLayout.size) &&
+			areNearlyEqual(previousLayout.width, nextLayout.width) &&
+			areNearlyEqual(previousLayout.height, nextLayout.height) &&
 			areNearlyEqual(previousLayout.positionX, nextLayout.positionX) &&
 			areNearlyEqual(previousLayout.positionY, nextLayout.positionY) &&
 			areNearlyEqual(previousLayout.radius, nextLayout.radius) &&
@@ -2625,10 +2632,10 @@ export class FrameRenderer {
 			this.webcamSprite,
 			nextLayout.sourceWidth,
 			nextLayout.sourceHeight,
-			nextLayout.size,
-			nextLayout.size,
-			nextLayout.size / 2,
-			nextLayout.size / 2,
+			nextLayout.width,
+			nextLayout.height,
+			nextLayout.width / 2,
+			nextLayout.height / 2,
 			nextLayout.mirror,
 		);
 
@@ -2636,28 +2643,32 @@ export class FrameRenderer {
 		drawSquircleOnGraphics(this.webcamMaskGraphics, {
 			x: 0,
 			y: 0,
-			width: nextLayout.size,
-			height: nextLayout.size,
+			width: nextLayout.width,
+			height: nextLayout.height,
 			radius: nextLayout.radius,
 		});
 		this.webcamMaskGraphics.fill({ color: 0xffffff });
 
+		// Bubble layouts are square (width === height === legacy size), so this
+		// basis matches the previous size-driven shadow math exactly; camera-full
+		// rects use the short edge, mirroring the preview's drop-shadow basis.
+		const shadowBasis = Math.min(nextLayout.width, nextLayout.height);
 		for (const layer of this.webcamShadowLayers) {
 			if (nextLayout.shadowStrength <= 0) {
 				layer.container.visible = false;
 				continue;
 			}
 
-			const offsetY = nextLayout.size * layer.offsetScale * nextLayout.shadowStrength;
+			const offsetY = shadowBasis * layer.offsetScale * nextLayout.shadowStrength;
 			this.rasterizeShadowLayer(layer, {
 				x: 0,
 				y: 0,
-				width: nextLayout.size,
-				height: nextLayout.size,
+				width: nextLayout.width,
+				height: nextLayout.height,
 				radius: nextLayout.radius,
 				offsetY,
 				alpha: layer.alphaScale * nextLayout.shadowStrength,
-				blur: Math.max(0, nextLayout.size * layer.blurScale * nextLayout.shadowStrength),
+				blur: Math.max(0, shadowBasis * layer.blurScale * nextLayout.shadowStrength),
 			});
 		}
 
@@ -2848,6 +2859,18 @@ export class FrameRenderer {
 	}
 
 	private updateWebcamOverlay(referenceTimeSeconds = this.currentVideoTime): void {
+		const cameraFull = isCameraFullAtMs(
+			this.config.webcamLayoutRegions ?? [],
+			this.currentVideoTime * 1000,
+		);
+		// Camera-full segments hide the screen layer (video, frame, cursor, and
+		// the screen shadow layers all live inside cameraContainer) while the
+		// sibling backgroundContainer keeps rendering. Assigned unconditionally
+		// every frame so cuts between segments can never leave stale state.
+		if (this.cameraContainer) {
+			this.cameraContainer.visible = !cameraFull;
+		}
+
 		const webcam = this.config.webcam;
 		if (!webcam?.enabled || !this.webcamRootContainer || !this.webcamMaskGraphics) {
 			if (this.webcamRootContainer) {
@@ -2905,25 +2928,43 @@ export class FrameRenderer {
 			return;
 		}
 
-		const margin = webcam.margin ?? 24;
-		const size = getWebcamOverlaySizePx({
-			containerWidth: this.config.width,
-			containerHeight: this.config.height,
-			sizePercent: webcam.size ?? 50,
-			margin,
-			zoomScale: this.animationState.appliedScale || 1,
-			reactToZoom: webcam.reactToZoom ?? true,
-		});
-		const position = getWebcamOverlayPosition({
-			containerWidth: this.config.width,
-			containerHeight: this.config.height,
-			size,
-			margin,
-			positionPreset: webcam.positionPreset ?? webcam.corner,
-			positionX: webcam.positionX ?? 1,
-			positionY: webcam.positionY ?? 1,
-			legacyCorner: webcam.corner,
-		});
+		let layoutRect: { x: number; y: number; width: number; height: number };
+		if (cameraFull) {
+			// Letterbox the cropped webcam over the background. The renderable
+			// source dimensions already reflect the crop region (cropped sources
+			// render via the frame cache canvas), and with the rect at exactly
+			// that aspect the cover fit shows the whole cropped frame. Zoom
+			// intentionally does not affect this rect.
+			layoutRect = getLetterboxRect(
+				{
+					width: renderableWebcamSource.width,
+					height: renderableWebcamSource.height,
+				},
+				{ width: this.config.width, height: this.config.height },
+				Math.min(this.config.width, this.config.height) * CAMERA_FULL_PADDING_FRACTION,
+			);
+		} else {
+			const margin = webcam.margin ?? 24;
+			const size = getWebcamOverlaySizePx({
+				containerWidth: this.config.width,
+				containerHeight: this.config.height,
+				sizePercent: webcam.size ?? 50,
+				margin,
+				zoomScale: this.animationState.appliedScale || 1,
+				reactToZoom: webcam.reactToZoom ?? true,
+			});
+			const position = getWebcamOverlayPosition({
+				containerWidth: this.config.width,
+				containerHeight: this.config.height,
+				size,
+				margin,
+				positionPreset: webcam.positionPreset ?? webcam.corner,
+				positionX: webcam.positionX ?? 1,
+				positionY: webcam.positionY ?? 1,
+				legacyCorner: webcam.corner,
+			});
+			layoutRect = { x: position.x, y: position.y, width: size, height: size };
+		}
 		const radius = Math.max(0, webcam.cornerRadius ?? 18);
 		const shadowStrength = clampUnitInterval(webcam.shadow ?? 0);
 
@@ -2932,9 +2973,10 @@ export class FrameRenderer {
 		const nextLayout: WebcamLayoutCache = {
 			sourceWidth: renderableWebcamSource.width,
 			sourceHeight: renderableWebcamSource.height,
-			size,
-			positionX: position.x,
-			positionY: position.y,
+			width: layoutRect.width,
+			height: layoutRect.height,
+			positionX: layoutRect.x,
+			positionY: layoutRect.y,
 			radius,
 			shadowStrength,
 			mirror: webcam.mirror,

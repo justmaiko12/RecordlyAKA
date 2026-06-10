@@ -399,6 +399,16 @@ describe("ModernVideoExporter native static-layout eligibility", () => {
 		]);
 	});
 
+	it("rejects native static-layout when webcam layout regions are present", () => {
+		const exporter = createExporter({
+			webcamLayoutRegions: [{ id: "layout-1", startMs: 1_000, endMs: 4_000 }],
+		});
+
+		expect(
+			exporter.getNativeStaticLayoutSkipReasons({ audioMode: "none" }, videoInfo, 60),
+		).toEqual(["unsupported-webcam-layout-regions"]);
+	});
+
 	it("reports invalid crop geometry instead of passing native export bad coordinates", () => {
 		const exporter = createExporter({
 			cropRegion: { x: 0, y: 0, width: 0, height: 1 },
