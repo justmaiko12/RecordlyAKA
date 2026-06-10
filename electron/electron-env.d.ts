@@ -212,6 +212,12 @@ interface Window {
 		teleprompterToggle: () => void;
 		teleprompterClose: () => void;
 		onTeleprompterCommand: (callback: (command: string) => void) => () => void;
+		webcamLayoutToggle: (payload: { timeMs: number; mode: "screen" | "camera-full" }) => void;
+		onWebcamLayoutHotkey: (callback: () => void) => () => void;
+		getWebcamLayoutEvents: (videoPath: string) => Promise<{
+			success: boolean;
+			events: Array<{ timeMs: number; mode: "screen" | "camera-full" }>;
+		}>;
 		webcamDeviceChanged: (deviceId: string | null) => void;
 		getSelectedWebcamDevice: () => Promise<string | null>;
 		getHudOverlayCaptureProtection: () => Promise<{ success: boolean; enabled: boolean }>;

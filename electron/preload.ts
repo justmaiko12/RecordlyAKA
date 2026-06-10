@@ -197,6 +197,24 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			ipcRenderer.removeListener("teleprompter-command", listener);
 		};
 	},
+	webcamLayoutToggle: (payload: { timeMs: number; mode: "screen" | "camera-full" }) => {
+		ipcRenderer.send("webcam-layout-toggle", payload);
+	},
+	onWebcamLayoutHotkey: (callback: () => void) => {
+		const listener = () => {
+			callback();
+		};
+		ipcRenderer.on("webcam-layout-hotkey", listener);
+		return () => {
+			ipcRenderer.removeListener("webcam-layout-hotkey", listener);
+		};
+	},
+	getWebcamLayoutEvents: (videoPath: string) => {
+		return ipcRenderer.invoke("get-webcam-layout-events", videoPath) as Promise<{
+			success: boolean;
+			events: Array<{ timeMs: number; mode: "screen" | "camera-full" }>;
+		}>;
+	},
 	webcamDeviceChanged: (deviceId: string | null) => {
 		ipcRenderer.send("webcam-device-changed", deviceId);
 	},
