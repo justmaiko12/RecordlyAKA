@@ -32,10 +32,16 @@ export function recordWebcamLayoutEvent(event: WebcamLayoutEvent): void {
 	sessionEvents.push({ timeMs: Math.round(event.timeMs), mode: event.mode });
 }
 
-/** Writes the sidecar next to the final video and ends the session. No-op without events. */
+/**
+ * Writes the sidecar next to a finalized video. No-op without events.
+ *
+ * Does NOT clear the session: finalize runs once per output file of the same
+ * recording (the screen video AND the separate webcam video), and the editor
+ * looks for the sidecar next to the screen video — every finalized file gets
+ * a copy. The session is cleared by the next beginWebcamLayoutSession().
+ */
 export async function persistWebcamLayoutEvents(videoPath: string): Promise<void> {
 	const events = sessionEvents;
-	sessionEvents = null;
 	if (!events || events.length === 0) {
 		return;
 	}

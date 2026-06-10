@@ -1118,6 +1118,14 @@ ipcMain.on("teleprompter-close", () => {
 	getTeleprompterWindow()?.close();
 });
 
+// Second listener on the recording toggle channel (the recorder of events lives
+// in ipc/register/recording.ts): relays the mode so the teleprompter can show
+// its camera-full highlight while the user reads near the lens.
+ipcMain.on("webcam-layout-toggle", (_event, payload: { mode?: string }) => {
+	const mode = payload?.mode === "camera-full" ? "camera-full" : "screen";
+	getTeleprompterWindow()?.webContents.send("teleprompter-camera-mode", mode);
+});
+
 let selectedWebcamDeviceId: string | null = null;
 
 ipcMain.on("webcam-device-changed", (_event, deviceId: string | null) => {

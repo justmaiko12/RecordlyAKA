@@ -156,6 +156,7 @@ function LaunchWindowContent() {
 		showWebcamControls,
 		webcamPopoverOpen: openId === "webcam",
 		hudOverlayMousePassthroughSupported,
+		hudCompact: recording || finalizing,
 	});
 
 	const {

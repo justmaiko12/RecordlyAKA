@@ -1,8 +1,18 @@
-import { MicrophoneIcon, MicrophoneSlashIcon, MinusIcon, MonitorIcon, PauseIcon, PlayIcon, SquareIcon, UserSquareIcon, XIcon } from "@phosphor-icons/react";
+import {
+	MicrophoneIcon,
+	MicrophoneSlashIcon,
+	MinusIcon,
+	MonitorIcon,
+	PauseIcon,
+	PlayIcon,
+	SquareIcon,
+	UserSquareIcon,
+	XIcon,
+} from "@phosphor-icons/react";
 import { useMemo } from "react";
-import { useScopedT } from "@/contexts/I18nContext";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { useScopedT } from "@/contexts/I18nContext";
 import styles from "./LaunchWindow.module.css";
 
 interface RecordingControlsProps {
@@ -91,16 +101,20 @@ export const RecordingControls = ({
 						onClick={onToggleCameraLayout}
 						title={
 							cameraFullActive
-								? t("recording.cameraLayoutToScreen", "Back to screen")
-								: t("recording.cameraLayoutToCameraFull", "Camera fullscreen")
+								? `${t("recording.cameraLayoutToScreen", "Back to screen")} (⌥/)`
+								: `${t("recording.cameraLayoutToCameraFull", "Camera fullscreen")} (⌥/)`
 						}
 						aria-label={
 							cameraFullActive
-								? t("recording.cameraLayoutToScreen", "Back to screen")
-								: t("recording.cameraLayoutToCameraFull", "Camera fullscreen")
+								? `${t("recording.cameraLayoutToScreen", "Back to screen")} (⌥/)`
+								: `${t("recording.cameraLayoutToCameraFull", "Camera fullscreen")} (⌥/)`
 						}
 					>
-						{cameraFullActive ? <MonitorIcon size={18} /> : <UserSquareIcon size={18} />}
+						{cameraFullActive ? (
+							<MonitorIcon size={18} />
+						) : (
+							<UserSquareIcon size={18} />
+						)}
 					</Button>
 				)}
 

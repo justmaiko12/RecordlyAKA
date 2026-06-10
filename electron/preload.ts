@@ -215,6 +215,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			events: Array<{ timeMs: number; mode: "screen" | "camera-full" }>;
 		}>;
 	},
+	onTeleprompterCameraMode: (callback: (mode: "screen" | "camera-full") => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, mode: "screen" | "camera-full") => {
+			callback(mode);
+		};
+		ipcRenderer.on("teleprompter-camera-mode", listener);
+		return () => {
+			ipcRenderer.removeListener("teleprompter-camera-mode", listener);
+		};
+	},
 	webcamDeviceChanged: (deviceId: string | null) => {
 		ipcRenderer.send("webcam-device-changed", deviceId);
 	},

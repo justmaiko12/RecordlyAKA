@@ -13,12 +13,19 @@ export function useWebcamPreviewOverlay({
 	showWebcamControls,
 	webcamPopoverOpen,
 	hudOverlayMousePassthroughSupported,
+	hudCompact = false,
 }: {
 	webcamEnabled: boolean;
 	webcamDeviceId?: string;
 	showWebcamControls: boolean;
 	webcamPopoverOpen: boolean;
 	hudOverlayMousePassthroughSupported: boolean | null;
+	/**
+	 * While recording/finalizing the HUD window shrinks to a compact strip
+	 * (getHudOverlayBounds passes !hudOverlayRecordingActive), so the 288px
+	 * floating preview would be clipped to a sliver — hide it instead.
+	 */
+	hudCompact?: boolean;
 }) {
 	const [showFloatingWebcamPreview, setShowFloatingWebcamPreview] = useState(true);
 	const [webcamPreviewOffset, setWebcamPreviewOffset] = useState(DEFAULT_WEBCAM_PREVIEW_OFFSET);
@@ -44,6 +51,7 @@ export function useWebcamPreviewOverlay({
 	const isWebcamPreviewDraggingRef = useRef(false);
 	const showRecordingWebcamPreview =
 		webcamEnabled &&
+		!hudCompact &&
 		canShowFloatingWebcamPreview(
 			showFloatingWebcamPreview,
 			hudOverlayMousePassthroughSupported,

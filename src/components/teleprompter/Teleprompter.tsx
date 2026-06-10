@@ -241,13 +241,30 @@ export function Teleprompter() {
 		setEditing(true);
 	}, []);
 
+	// Camera-full layout mode relayed from the recording HUD: highlight the
+	// window blue so the reader knows only the facecam is in frame.
+	const [cameraFullLayout, setCameraFullLayout] = useState(false);
+	useEffect(() => {
+		const unsubscribe = window.electronAPI?.onTeleprompterCameraMode?.((mode) => {
+			setCameraFullLayout(mode === "camera-full");
+		});
+		return unsubscribe;
+	}, []);
+
 	return (
-		<div className="flex h-screen w-screen flex-col overflow-hidden bg-[#161616] text-neutral-100">
+		<div className="relative flex h-screen w-screen flex-col overflow-hidden bg-[#161616] text-neutral-100">
+			{cameraFullLayout && (
+				<div className="pointer-events-none absolute inset-0 z-50 border-[3px] border-blue-500" />
+			)}
 			<header
 				className="flex h-9 shrink-0 items-center gap-2 border-b border-white/10 px-3"
 				style={dragRegion}
 			>
-				<span className="select-none text-xs font-medium text-neutral-400">
+				<span
+					className={`select-none text-xs font-medium ${
+						cameraFullLayout ? "text-blue-400" : "text-neutral-400"
+					}`}
+				>
 					{t("teleprompter.menuLabel", "Teleprompter")}
 				</span>
 				<span className="select-none truncate text-[10px] text-neutral-600">

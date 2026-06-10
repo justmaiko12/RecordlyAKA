@@ -39,7 +39,7 @@ export function unregisterTeleprompterScrollShortcuts(): void {
 	}
 }
 
-const CAMERA_LAYOUT_SHORTCUT = "Alt+F10";
+const CAMERA_LAYOUT_SHORTCUT = "Alt+/";
 
 /** Registered only while a recording is active. */
 export function registerCameraLayoutShortcut(onPressed: () => void): void {

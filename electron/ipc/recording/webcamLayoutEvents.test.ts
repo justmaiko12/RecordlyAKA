@@ -35,6 +35,25 @@ describe("webcam layout events session", () => {
 		]);
 	});
 
+	it("persists the same session to every finalized output file", async () => {
+		// finalizeStoredVideo runs once for the screen video and once for the
+		// separate webcam video; the editor reads next to the screen video.
+		beginWebcamLayoutSession();
+		recordWebcamLayoutEvent({ timeMs: 5000, mode: "camera-full" });
+		const webcamVideoPath = videoPath.replace(/\.mp4$/, "-webcam.mp4");
+		await persistWebcamLayoutEvents(webcamVideoPath);
+		await persistWebcamLayoutEvents(videoPath);
+
+		expect(await readWebcamLayoutEvents(webcamVideoPath)).toHaveLength(1);
+		expect(await readWebcamLayoutEvents(videoPath)).toHaveLength(1);
+
+		// The next session clears the previous events.
+		beginWebcamLayoutSession();
+		const nextVideoPath = path.join(path.dirname(videoPath), "next.mp4");
+		await persistWebcamLayoutEvents(nextVideoPath);
+		await expect(fs.stat(getWebcamLayoutEventsPath(nextVideoPath))).rejects.toThrow();
+	});
+
 	it("writes nothing when no events were recorded", async () => {
 		beginWebcamLayoutSession();
 		await persistWebcamLayoutEvents(videoPath);

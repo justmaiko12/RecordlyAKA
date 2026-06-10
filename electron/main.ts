@@ -53,6 +53,7 @@ import {
 	createHudOverlayWindow,
 	createSourceSelectorWindow,
 	getHudOverlayWindow,
+	getTeleprompterWindow,
 	getUpdateToastWindow,
 	hideUpdateToastWindow,
 	isHudOverlayMousePassthroughSupported,
@@ -990,6 +991,8 @@ app.whenReady().then(async () => {
 			}
 			if (!recording) {
 				unregisterCameraLayoutShortcut();
+				// Recording ended: clear the teleprompter's camera-full highlight.
+				getTeleprompterWindow()?.webContents.send("teleprompter-camera-mode", "screen");
 				restoreWindowSafely(mainWindow);
 			}
 		},

@@ -220,6 +220,9 @@ interface Window {
 		}>;
 		webcamDeviceChanged: (deviceId: string | null) => void;
 		getSelectedWebcamDevice: () => Promise<string | null>;
+		onTeleprompterCameraMode: (
+			callback: (mode: "screen" | "camera-full") => void,
+		) => () => void;
 		getHudOverlayCaptureProtection: () => Promise<{ success: boolean; enabled: boolean }>;
 		getHudOverlayMousePassthroughSupported: () => Promise<{
 			success: boolean;
