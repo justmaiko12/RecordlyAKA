@@ -15,7 +15,7 @@ import type {
 	SourceAudioTrackWithPeaks,
 } from "@/components/video-editor/audio/audioTypes";
 import { cn } from "@/lib/utils";
-import { CLIP_ROW_ID, SOURCE_AUDIO_ROW_ID, ZOOM_ROW_ID } from "../../core/constants";
+import { CAMERA_ROW_ID, CLIP_ROW_ID, SOURCE_AUDIO_ROW_ID, ZOOM_ROW_ID } from "../../core/constants";
 import {
 	getAnnotationTrackIndex,
 	getAnnotationTrackRowId,
@@ -42,6 +42,7 @@ import PlaybackCursor from "../playhead/PlaybackCursor";
 const HINT_CLIP = "Press C to split clip";
 const HINT_ANNOTATION = "Press A to add annotation";
 const HINT_AUDIO = "Click music icon to add audio";
+const HINT_CAMERA = "Double-click to add a camera segment";
 
 interface TimelineCanvasProps {
 	items: TimelineRenderItem[];
@@ -53,11 +54,16 @@ interface TimelineCanvasProps {
 	onSelectClip?: (id: string | null) => void;
 	onSelectAnnotation?: (id: string | null) => void;
 	onSelectAudio?: (id: string | null) => void;
+	onSelectCamera?: (id: string | null) => void;
 	onAddZoomAtMs?: (startMs: number) => void;
+	onCameraAddAtMs?: (startMs: number) => void;
 	selectedZoomId: string | null;
 	selectedClipId?: string | null;
 	selectedAnnotationId?: string | null;
 	selectedAudioId?: string | null;
+	selectedCameraId?: string | null;
+	showCameraTrack?: boolean;
+	cameraRegionsDimmed?: boolean;
 	selectAllBlocksActive?: boolean;
 	onClearBlockSelection?: () => void;
 	keyframes?: { id: string; time: number }[];
@@ -231,10 +237,15 @@ interface TimelineCanvasRowsProps {
 	selectedClipId?: string | null;
 	selectedAnnotationId?: string | null;
 	selectedAudioId?: string | null;
+	selectedCameraId?: string | null;
+	showCameraTrack?: boolean;
+	cameraRegionsDimmed?: boolean;
 	onSelectZoom?: (id: string | null) => void;
 	onSelectClip?: (id: string | null) => void;
 	onSelectAnnotation?: (id: string | null) => void;
 	onSelectAudio?: (id: string | null) => void;
+	onSelectCamera?: (id: string | null) => void;
+	onCameraRowDoubleClick?: MouseEventHandler<HTMLDivElement>;
 	sourceAudioTracks?: SourceAudioTrackWithPeaks[];
 	getSourceAudioTrackSettingsForClip?: (clipId: string | null) => SourceAudioTrackSettings;
 	showSourceAudioTrack?: boolean;
@@ -298,10 +309,15 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 	selectedClipId,
 	selectedAnnotationId,
 	selectedAudioId,
+	selectedCameraId,
+	showCameraTrack = false,
+	cameraRegionsDimmed = false,
 	onSelectZoom,
 	onSelectClip,
 	onSelectAnnotation,
 	onSelectAudio,
+	onSelectCamera,
+	onCameraRowDoubleClick,
 	sourceAudioTracks = [],
 	getSourceAudioTrackSettingsForClip,
 	showSourceAudioTrack = false,
@@ -319,9 +335,10 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 	onZoomRowClick,
 }: TimelineCanvasRowsProps) {
 	const hiddenIds = useMemo(() => new Set(liveHiddenItemIds ?? []), [liveHiddenItemIds]);
-	const { clipItems, zoomItems, annotationRows, audioRows } = useMemo(() => {
+	const { clipItems, zoomItems, cameraItems, annotationRows, audioRows } = useMemo(() => {
 		const nextClipItems: TimelineRenderItem[] = [];
 		const nextZoomItems: TimelineRenderItem[] = [];
+		const nextCameraItems: TimelineRenderItem[] = [];
 		const annotationBuckets = new Map<number, TimelineRenderItem[]>();
 		const audioBuckets = new Map<number, TimelineRenderItem[]>();
 
@@ -332,6 +349,10 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 			}
 			if (item.rowId === ZOOM_ROW_ID) {
 				nextZoomItems.push(item);
+				continue;
+			}
+			if (item.rowId === CAMERA_ROW_ID) {
+				nextCameraItems.push(item);
 				continue;
 			}
 			if (isAnnotationTrackRowId(item.rowId)) {
@@ -365,6 +386,7 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 		return {
 			clipItems: nextClipItems,
 			zoomItems: nextZoomItems,
+			cameraItems: nextCameraItems,
 			annotationRows: annotationRowsSorted,
 			audioRows: audioRowsSorted,
 		};
@@ -480,6 +502,31 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 					))}
 			</Row>
 
+			{showCameraTrack && (
+				<Row
+					id={CAMERA_ROW_ID}
+					slim
+					isEmpty={cameraItems.length === 0}
+					hint={HINT_CAMERA}
+					onDoubleClick={onCameraRowDoubleClick}
+				>
+					{cameraItems.map((item) => (
+						<Item
+							id={item.id}
+							key={item.id}
+							rowId={item.rowId}
+							span={item.span}
+							isSelected={item.id === selectedCameraId}
+							onSelectId={onSelectCamera}
+							variant="camera"
+							dimmed={cameraRegionsDimmed}
+						>
+							{item.label}
+						</Item>
+					))}
+				</Row>
+			)}
+
 			{annotationRows.map(({ rowId, items: rowItems }, index) => (
 				<Row
 					key={rowId}
@@ -532,15 +579,20 @@ export default function TimelineCanvas({
 	currentTimeMs,
 	onSeek,
 	onAddZoomAtMs,
+	onCameraAddAtMs,
 	canPlaceZoomAtMs,
 	onSelectZoom,
 	onSelectClip,
 	onSelectAnnotation,
 	onSelectAudio,
+	onSelectCamera,
 	selectedZoomId,
 	selectedClipId,
 	selectedAnnotationId,
 	selectedAudioId,
+	selectedCameraId,
+	showCameraTrack = false,
+	cameraRegionsDimmed = false,
 	selectAllBlocksActive = false,
 	onClearBlockSelection,
 	keyframes = [],
@@ -578,6 +630,7 @@ export default function TimelineCanvas({
 				onSelectClip?.(null);
 				onSelectAnnotation?.(null);
 				onSelectAudio?.(null);
+				onSelectCamera?.(null);
 			}
 
 			const rect = e.currentTarget.getBoundingClientRect();
@@ -597,6 +650,7 @@ export default function TimelineCanvas({
 			onSelectClip,
 			onSelectAnnotation,
 			onSelectAudio,
+			onSelectCamera,
 			onClearBlockSelection,
 			videoDurationMs,
 			sidebarWidth,
@@ -633,6 +687,7 @@ export default function TimelineCanvas({
 				onSelectClip?.(null);
 				onSelectAnnotation?.(null);
 				onSelectAudio?.(null);
+				onSelectCamera?.(null);
 			}
 
 			const rect = localTimelineRef.current.getBoundingClientRect();
@@ -646,6 +701,7 @@ export default function TimelineCanvas({
 			onSeek,
 			onSelectAnnotation,
 			onSelectAudio,
+			onSelectCamera,
 			onSelectClip,
 			onSelectZoom,
 			videoDurationMs,
@@ -704,8 +760,9 @@ export default function TimelineCanvas({
 			if (isAudioTrackRowId(item.rowId)) audioRowIds.add(item.rowId);
 		}
 		const sourceAudioRows = showSourceAudioTrack ? sourceAudioTracks.length : 0;
-		return 2 + sourceAudioRows + annotationRowIds.size + audioRowIds.size;
-	}, [items, showSourceAudioTrack, sourceAudioTracks.length]);
+		const cameraRows = showCameraTrack ? 1 : 0;
+		return 2 + cameraRows + sourceAudioRows + annotationRowIds.size + audioRowIds.size;
+	}, [items, showCameraTrack, showSourceAudioTrack, sourceAudioTracks.length]);
 	const timelineRowsMinHeightPx = getTimelineRowsMinHeightPx(timelineRowCount);
 	const timelineContentMinHeightPx = getTimelineContentMinHeightPx(timelineRowCount);
 	const timelineViewportStretchFactor = getTimelineViewportStretchFactor(timelineRowCount);
@@ -735,6 +792,36 @@ export default function TimelineCanvas({
 		canPlaceZoomAtMs,
 		valueToPixels,
 	});
+
+	// Mirrors the zoom row's hover-ms math: maps the double-click offset within
+	// the camera row to an absolute timeline ms, ignoring existing regions.
+	const handleCameraRowDoubleClick = useCallback(
+		(event: MouseEvent<HTMLDivElement>) => {
+			event.stopPropagation();
+			if (!onCameraAddAtMs) return;
+			const rect = event.currentTarget.getBoundingClientRect();
+			if (rect.width <= 0) return;
+			const position =
+				direction === "rtl"
+					? Math.max(0, Math.min(rect.right - event.clientX, rect.width))
+					: Math.max(0, Math.min(event.clientX - rect.left, rect.width));
+			const ratio = position / rect.width;
+			const visibleDurationMs = Math.max(1, range.end - range.start);
+			const startMs = Math.max(
+				0,
+				Math.min(range.start + ratio * visibleDurationMs, videoDurationMs),
+			);
+			const insideExisting = items.some(
+				(item) =>
+					item.rowId === CAMERA_ROW_ID &&
+					startMs >= item.span.start &&
+					startMs < item.span.end,
+			);
+			if (insideExisting) return;
+			onCameraAddAtMs(startMs);
+		},
+		[direction, items, onCameraAddAtMs, range.end, range.start, videoDurationMs],
+	);
 
 	return (
 		<div
@@ -786,10 +873,15 @@ export default function TimelineCanvas({
 					selectedClipId={selectedClipId}
 					selectedAnnotationId={selectedAnnotationId}
 					selectedAudioId={selectedAudioId}
+					selectedCameraId={selectedCameraId}
+					showCameraTrack={showCameraTrack}
+					cameraRegionsDimmed={cameraRegionsDimmed}
 					onSelectZoom={onSelectZoom}
 					onSelectClip={onSelectClip}
 					onSelectAnnotation={onSelectAnnotation}
 					onSelectAudio={onSelectAudio}
+					onSelectCamera={onSelectCamera}
+					onCameraRowDoubleClick={handleCameraRowDoubleClick}
 					sourceAudioTracks={sourceAudioTracks}
 					getSourceAudioTrackSettingsForClip={getSourceAudioTrackSettingsForClip}
 					showSourceAudioTrack={showSourceAudioTrack}

@@ -47,6 +47,29 @@ describe("timeline model", () => {
 		expect(items.find((i) => i.id === "au1")?.label).toBe("foo");
 	});
 
+	it("maps camera regions to camera items on the camera row", () => {
+		const items = buildTimelineItems({
+			zoomRegions: [],
+			clipRegions: [],
+			annotationRegions: [],
+			audioRegions: [],
+			cameraRegions: [
+				{ id: "cam1", startMs: 1000, endMs: 4000 },
+				{ id: "cam2", startMs: 6000, endMs: 9000 },
+			],
+		});
+
+		expect(items).toHaveLength(2);
+		expect(items[0]).toMatchObject({
+			id: "cam1",
+			rowId: "row-camera",
+			span: { start: 1000, end: 4000 },
+			label: "Camera",
+			variant: "camera",
+		});
+		expect(items[1]).toMatchObject({ id: "cam2", variant: "camera" });
+	});
+
 	it("exposes clip speed for non-default speed labels", () => {
 		const items = buildTimelineItems({
 			zoomRegions: [],
@@ -93,8 +116,14 @@ describe("timeline model", () => {
 			audioRegions: [
 				{ id: "au1", startMs: 500, endMs: 2000, audioPath: "x.wav", volume: 1, trackIndex: 2 },
 			],
+			cameraRegions: [{ id: "cam1", startMs: 100, endMs: 600 }],
 		});
-		expect(spans.map((s) => s.rowId)).toEqual(["row-zoom", "row-clip", "row-audio-2"]);
+		expect(spans.map((s) => s.rowId)).toEqual([
+			"row-zoom",
+			"row-camera",
+			"row-clip",
+			"row-audio-2",
+		]);
 	});
 
 	it("keeps items in their domain rows during dnd", () => {

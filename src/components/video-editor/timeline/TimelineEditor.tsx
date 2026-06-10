@@ -22,6 +22,7 @@ import KeyframeMarkers from "./components/markers/KeyframeMarkers";
 import TimelineCanvas from "./components/viewport/TimelineCanvas";
 import TimelineWrapper from "./components/wrapper/TimelineWrapper";
 import { calculateTimelineScale } from "./core/time";
+import type { TimelineRegion } from "./core/timelineTypes";
 import { useTimelineAudioPeaks } from "./hooks/useTimelineAudioPeaks";
 import { useTimelineEditorRuntime } from "./hooks/useTimelineEditorRuntime";
 import { useTimelineRange } from "./hooks/useTimelineRange";
@@ -68,6 +69,14 @@ export interface TimelineEditorProps {
 	onAudioDelete?: (id: string) => void;
 	selectedAudioId?: string | null;
 	onSelectAudio?: (id: string | null) => void;
+	cameraRegions?: TimelineRegion[];
+	onCameraSpanChange?: (id: string, span: Span) => void;
+	onCameraDelete?: (id: string) => void;
+	onCameraAddAtMs?: (timeMs: number) => void;
+	selectedCameraId?: string | null;
+	onSelectCamera?: (id: string | null) => void;
+	cameraTrackVisible?: boolean;
+	cameraRegionsDimmed?: boolean;
 	videoPath?: string | null;
 	videoSourcePath?: string | null;
 	cursorTelemetrySourcePath?: string | null;
@@ -142,6 +151,14 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 			onAudioDelete,
 			selectedAudioId,
 			onSelectAudio,
+			cameraRegions = [],
+			onCameraSpanChange,
+			onCameraDelete,
+			onCameraAddAtMs,
+			selectedCameraId,
+			onSelectCamera,
+			cameraTrackVisible = false,
+			cameraRegionsDimmed = false,
 			videoPath,
 			videoSourcePath,
 			cursorTelemetrySourcePath,
@@ -170,6 +187,21 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 					: timelineScale.minItemDurationMs,
 			[timelineScale.minItemDurationMs, totalMs],
 		);
+
+		// Camera regions seeded from an unterminated recording toggle can carry an
+		// open-ended endMs (MAX_SAFE_INTEGER); bound them to the video for display.
+		const boundedCameraRegions = useMemo(
+			() =>
+				totalMs > 0
+					? cameraRegions
+							.filter((region) => region.startMs < totalMs)
+							.map((region) =>
+								region.endMs > totalMs ? { ...region, endMs: totalMs } : region,
+							)
+					: cameraRegions,
+			[cameraRegions, totalMs],
+		);
+		const showCameraTrack = cameraTrackVisible || boundedCameraRegions.length > 0;
 
 		const timelineContainerRef = useRef<HTMLDivElement>(null);
 		const isTimelineFocusedRef = useRef(false);
@@ -315,6 +347,7 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 			handleSelectClip,
 			handleSelectAnnotation,
 			handleSelectAudio,
+			handleSelectCamera,
 			hasOverlap,
 			timelineItems,
 			allRegionSpans,
@@ -361,6 +394,11 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 			onAudioDelete,
 			selectedAudioId,
 			onSelectAudio,
+			cameraRegions: boundedCameraRegions,
+			onCameraSpanChange,
+			onCameraDelete,
+			selectedCameraId,
+			onSelectCamera,
 			isMac,
 			keyShortcuts,
 			isTimelineFocusedRef,
@@ -448,15 +486,20 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 							currentTimeMs={currentTimeMs}
 							onSeek={onSeek}
 							onAddZoomAtMs={addZoomAtMs}
+							onCameraAddAtMs={onCameraAddAtMs}
 							canPlaceZoomAtMs={canPlaceZoomAtMs}
 							onSelectZoom={handleSelectZoom}
 							onSelectClip={handleSelectClip}
 							onSelectAnnotation={handleSelectAnnotation}
 							onSelectAudio={handleSelectAudio}
+							onSelectCamera={handleSelectCamera}
 							selectedZoomId={selectedZoomId}
 							selectedClipId={selectedClipId}
 							selectedAnnotationId={selectedAnnotationId}
 							selectedAudioId={selectedAudioId}
+							selectedCameraId={selectedCameraId}
+							showCameraTrack={showCameraTrack}
+							cameraRegionsDimmed={cameraRegionsDimmed}
 							selectAllBlocksActive={selectAllBlocksActive}
 							onClearBlockSelection={clearSelectedBlocks}
 							keyframes={keyframes}

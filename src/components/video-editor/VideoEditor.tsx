@@ -222,6 +222,7 @@ import {
 	getDisplayedTimelineWindowMs,
 } from "./videoPlayback/cursorLoopTelemetry";
 import {
+	clampWebcamLayoutSpan,
 	eventsToWebcamLayoutRegions,
 	normalizeWebcamLayoutStyle,
 	type WebcamLayoutRegion,
@@ -510,6 +511,7 @@ export default function VideoEditor() {
 	const [resolvedWebcamVideoUrl, setResolvedWebcamVideoUrl] = useState<string | null>(null);
 	const [webcamLayoutRegions, setWebcamLayoutRegions] = useState<WebcamLayoutRegion[]>([]);
 	const [webcamLayoutRegionsEnabled, setWebcamLayoutRegionsEnabled] = useState(true);
+	const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
 	const [webcamLayoutStyle, setWebcamLayoutStyle] = useState<WebcamLayoutStyle>("fit");
 	const [zoomRegions, setZoomRegions] = useState<ZoomRegion[]>([]);
 	const [cursorTelemetry, setCursorTelemetry] = useState<CursorTelemetryPoint[]>([]);
@@ -3481,6 +3483,7 @@ export default function VideoEditor() {
 			setActiveEffectSection("zoom");
 			setSelectedAnnotationId(null);
 			setSelectedAudioId(null);
+			setSelectedCameraId(null);
 		} else {
 			setActiveEffectSection((s) => (s === "zoom" ? "scene" : s));
 		}
@@ -3491,6 +3494,11 @@ export default function VideoEditor() {
 		if (id) {
 			setSelectedZoomId(null);
 			setSelectedAudioId(null);
+			setSelectedCameraId(null);
+			// Clear any stale clip selection: clip outranks this type in the
+			// delete-target priority, so a leftover selection would make Delete
+			// remove the wrong element.
+			setSelectedClipId(null);
 		}
 	}, []);
 
@@ -3513,6 +3521,7 @@ export default function VideoEditor() {
 			setZoomRegions((prev) => [...prev, newRegion]);
 			setSelectedZoomId(id);
 			setSelectedAnnotationId(null);
+			setSelectedCameraId(null);
 			extensionHost.emitEvent({
 				type: "timeline:region-added",
 				data: { id, startMs: newRegion.startMs, endMs: newRegion.endMs },
@@ -3716,10 +3725,67 @@ export default function VideoEditor() {
 			setSelectedZoomId(null);
 			setSelectedAnnotationId(null);
 			setSelectedAudioId(null);
+			setSelectedCameraId(null);
 		} else {
 			setActiveEffectSection((s) => (s === "clip" ? "scene" : s));
 		}
 	}, []);
+
+	const handleSelectCamera = useCallback((id: string | null) => {
+		setSelectedCameraId(id);
+		if (id) {
+			setSelectedZoomId(null);
+			setSelectedAnnotationId(null);
+			setSelectedAudioId(null);
+			// See handleSelectAnnotation: stale clip selection outranks camera.
+			setSelectedClipId(null);
+		}
+	}, []);
+
+	const handleCameraSpanChange = useCallback(
+		(id: string, span: { start: number; end: number }) => {
+			setWebcamLayoutRegions((prev) => {
+				const clamped = clampWebcamLayoutSpan(
+					{ startMs: span.start, endMs: span.end },
+					prev,
+					id,
+					Math.round(duration * 1000),
+				);
+				if (!clamped) return prev;
+				return prev
+					.map((region) =>
+						region.id === id
+							? { ...region, startMs: clamped.startMs, endMs: clamped.endMs }
+							: region,
+					)
+					.sort((a, b) => a.startMs - b.startMs);
+			});
+		},
+		[duration],
+	);
+
+	const handleCameraDelete = useCallback((id: string) => {
+		setWebcamLayoutRegions((prev) => prev.filter((region) => region.id !== id));
+	}, []);
+
+	const handleCameraAddAtMs = useCallback(
+		(timeMs: number) => {
+			setWebcamLayoutRegions((prev) => {
+				const span = clampWebcamLayoutSpan(
+					{ startMs: timeMs, endMs: timeMs + 3000 },
+					prev,
+					"",
+					Math.round(duration * 1000),
+				);
+				if (!span) return prev;
+				return [
+					...prev,
+					{ id: `webcam-layout-${Date.now()}-${Math.round(span.startMs)}`, ...span },
+				].sort((a, b) => a.startMs - b.startMs);
+			});
+		},
+		[duration],
+	);
 
 	const handleClipSplit = useCallback(
 		(splitMs: number) => {
@@ -3906,6 +3972,9 @@ export default function VideoEditor() {
 		if (id) {
 			setSelectedZoomId(null);
 			setSelectedAnnotationId(null);
+			setSelectedCameraId(null);
+			// See handleSelectAnnotation: stale clip selection outranks audio.
+			setSelectedClipId(null);
 			setActiveEffectSection("audio");
 		}
 	}, []);
@@ -3925,6 +3994,7 @@ export default function VideoEditor() {
 		setSelectedAudioId(id);
 		setSelectedZoomId(null);
 		setSelectedAnnotationId(null);
+		setSelectedCameraId(null);
 		setActiveEffectSection("audio");
 	}, []);
 
@@ -4226,6 +4296,15 @@ export default function VideoEditor() {
 			setSelectedAudioId(null);
 		}
 	}, [selectedAudioId, audioRegions]);
+
+	useEffect(() => {
+		if (
+			selectedCameraId &&
+			!webcamLayoutRegions.some((region) => region.id === selectedCameraId)
+		) {
+			setSelectedCameraId(null);
+		}
+	}, [selectedCameraId, webcamLayoutRegions]);
 
 	const showExportSuccessToast = useCallback((filePath: string) => {
 		toast.success(`Exported successfully to ${filePath}`, {
@@ -6421,6 +6500,14 @@ export default function VideoEditor() {
 						onAudioDelete={handleAudioDelete}
 						selectedAudioId={selectedAudioId}
 						onSelectAudio={handleSelectAudio}
+						cameraRegions={webcamLayoutRegions}
+						onCameraSpanChange={handleCameraSpanChange}
+						onCameraDelete={handleCameraDelete}
+						onCameraAddAtMs={handleCameraAddAtMs}
+						selectedCameraId={selectedCameraId}
+						onSelectCamera={handleSelectCamera}
+						cameraTrackVisible={Boolean(webcam.enabled && webcam.sourcePath)}
+						cameraRegionsDimmed={!webcamLayoutRegionsEnabled}
 						annotationRegions={annotationRegions}
 						onAnnotationAdded={handleAnnotationAdded}
 						onAnnotationSpanChange={handleAnnotationSpanChange}

@@ -42,6 +42,26 @@ describe("timelineSelectionUtils", () => {
 		).toBe("clip");
 	});
 
+	it("targets camera selection after the other block types", () => {
+		expect(
+			resolveDeleteSelectionTarget({
+				selectAllBlocksActive: false,
+				selectedKeyframeId: null,
+				selectedZoomId: null,
+				selectedCameraId: "cam-1",
+			}),
+		).toBe("camera");
+		expect(
+			resolveDeleteSelectionTarget({
+				selectAllBlocksActive: false,
+				selectedKeyframeId: null,
+				selectedZoomId: null,
+				selectedAudioId: "au-1",
+				selectedCameraId: "cam-1",
+			}),
+		).toBe("audio");
+	});
+
 	it("returns none when nothing is selected", () => {
 		expect(
 			resolveDeleteSelectionTarget({

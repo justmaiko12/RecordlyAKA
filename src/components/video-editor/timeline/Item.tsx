@@ -6,6 +6,7 @@ import {
 	MouseLeftClickIcon as PhMouseLeftClick,
 	Scissors,
 	SpeakerX,
+	VideoCamera,
 	MagnifyingGlassPlus as ZoomIn,
 } from "@phosphor-icons/react";
 import type { Span } from "dnd-timeline";
@@ -35,7 +36,8 @@ interface ItemProps {
 	waveformGain?: number;
 	waveformNormalize?: boolean;
 	muted?: boolean;
-	variant?: "zoom" | "trim" | "clip" | "annotation" | "speed" | "audio";
+	variant?: "zoom" | "trim" | "clip" | "annotation" | "speed" | "audio" | "camera";
+	dimmed?: boolean;
 	isLoading?: boolean;
 	loadingLabel?: string;
 }
@@ -77,6 +79,7 @@ export default function Item({
 	waveformNormalize = false,
 	muted = false,
 	variant = "zoom",
+	dimmed = false,
 	isLoading = false,
 	loadingLabel,
 	children,
@@ -125,6 +128,7 @@ export default function Item({
 	const isClip = variant === "clip";
 	const isSpeed = variant === "speed";
 	const isAudio = variant === "audio";
+	const isCamera = variant === "camera";
 	const showAudioWaveform = isAudio && Boolean(waveformPeaks);
 	const clipSpeedLabel = isClip ? formatClipSpeedLabel(speedValue ?? 1) : null;
 
@@ -138,7 +142,9 @@ export default function Item({
 					? glassStyles.glassAmber
 					: isAudio
 						? glassStyles.glassDarkGreen
-						: glassStyles.glassYellow;
+						: isCamera
+							? glassStyles.glassBlue
+							: glassStyles.glassYellow;
 
 	const MIN_ITEM_PX = 6;
 	const handleSelect = () => {
@@ -160,7 +166,7 @@ export default function Item({
 			{...attributes}
 			data-timeline-item="true"
 			onPointerDownCapture={handleSelect}
-			className="group h-full"
+			className={cn("group h-full", dimmed && "opacity-50")}
 		>
 			<div
 				className="h-full"
@@ -253,6 +259,13 @@ export default function Item({
 								<>
 									<Music className="w-3.5 h-3.5 shrink-0" />
 									<span className="text-[11px] font-semibold tracking-tight truncate max-w-full">
+										{children}
+									</span>
+								</>
+							) : isCamera ? (
+								<>
+									<VideoCamera className="w-3.5 h-3.5 shrink-0" />
+									<span className="text-[11px] font-semibold tracking-tight whitespace-nowrap">
 										{children}
 									</span>
 								</>
