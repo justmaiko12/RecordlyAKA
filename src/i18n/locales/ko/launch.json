@@ -78,7 +78,11 @@
 		"smallerText": "글자 작게",
 		"biggerText": "글자 크게",
 		"close": "닫기",
-		"hotkeyHint": "⌥F8 재생/일시정지 · ⌥F7/⌥F9 속도 · ⌥T 표시/숨기기"
+		"hotkeyHint": "⌥F8 재생/일시정지 · ⌥F7/⌥F9 속도 · ⌥T 표시/숨기기",
+		"cameraOn": "카메라 표시",
+		"cameraOff": "카메라 숨기기",
+		"cameraFade": "카메라 페이드",
+		"cameraError": "카메라를 사용할 수 없음"
 	},
 	"permissions": {
 		"screenRecordingNeeded": "녹화를 시작하기 전에 Recordly에 화면 녹화 권한이 필요합니다. 시스템 설정을 열었습니다. 권한을 허용한 뒤 Recordly를 종료하고 다시 실행해 주세요.",

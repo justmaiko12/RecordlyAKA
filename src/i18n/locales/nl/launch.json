@@ -78,7 +78,11 @@
 		"smallerText": "Kleinere tekst",
 		"biggerText": "Grotere tekst",
 		"close": "Sluiten",
-		"hotkeyHint": "⌥F8 afspelen/pauzeren · ⌥F7/⌥F9 snelheid · ⌥T tonen/verbergen"
+		"hotkeyHint": "⌥F8 afspelen/pauzeren · ⌥F7/⌥F9 snelheid · ⌥T tonen/verbergen",
+		"cameraOn": "Camera tonen",
+		"cameraOff": "Camera verbergen",
+		"cameraFade": "Camera vervagen",
+		"cameraError": "Camera niet beschikbaar"
 	},
 	"permissions": {
 		"screenRecordingNeeded": "Recordly heeft toestemming voor schermopname nodig voordat je begint. Systeeminstellingen zijn geopend. Schakel het in, sluit Recordly en open het opnieuw.",

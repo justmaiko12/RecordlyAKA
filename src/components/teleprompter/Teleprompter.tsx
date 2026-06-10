@@ -6,11 +6,20 @@ import {
 	PencilSimpleIcon,
 	PlayIcon,
 	PlusIcon,
+	VideoCameraIcon,
+	VideoCameraSlashIcon,
 	XIcon,
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 import { useScopedT } from "@/contexts/I18nContext";
+import {
+	CAMERA_OPACITY_MAX,
+	CAMERA_OPACITY_MIN,
+	clampCameraOpacity,
+	parseStoredCameraOpacity,
+} from "./teleprompterCamera";
 import {
 	advanceScrollTop,
 	DEFAULT_FONT_SIZE_INDEX,
@@ -23,6 +32,8 @@ import {
 const SCRIPT_STORAGE_KEY = "recordly-teleprompter-script";
 const SPEED_STORAGE_KEY = "recordly-teleprompter-speed-index";
 const FONT_STORAGE_KEY = "recordly-teleprompter-font-index";
+const CAMERA_ON_STORAGE_KEY = "recordly-teleprompter-camera-on";
+const CAMERA_OPACITY_STORAGE_KEY = "recordly-teleprompter-camera-opacity";
 
 const dragRegion = { WebkitAppRegion: "drag" } as React.CSSProperties;
 const noDragRegion = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
@@ -50,12 +61,21 @@ export function Teleprompter() {
 	const [fontIndex, setFontIndex] = useState(() =>
 		loadStoredIndex(FONT_STORAGE_KEY, DEFAULT_FONT_SIZE_INDEX, FONT_SIZES.length),
 	);
+	const [cameraOn, setCameraOn] = useState(
+		() => window.localStorage.getItem(CAMERA_ON_STORAGE_KEY) === "true",
+	);
+	const [cameraOpacity, setCameraOpacity] = useState(() =>
+		parseStoredCameraOpacity(window.localStorage.getItem(CAMERA_OPACITY_STORAGE_KEY)),
+	);
+	const [cameraError, setCameraError] = useState(false);
 
 	const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 	const scrollPositionRef = useRef(0);
 	const speedIndexRef = useRef(speedIndex);
 	const editingRef = useRef(editing);
 	const autoScrollingRef = useRef(false);
+	const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+	const cameraStreamRef = useRef<MediaStream | null>(null);
 
 	useEffect(() => {
 		window.localStorage.setItem(SCRIPT_STORAGE_KEY, script);
@@ -73,6 +93,69 @@ export function Teleprompter() {
 	useEffect(() => {
 		editingRef.current = editing;
 	}, [editing]);
+
+	useEffect(() => {
+		window.localStorage.setItem(CAMERA_ON_STORAGE_KEY, String(cameraOn));
+	}, [cameraOn]);
+
+	useEffect(() => {
+		window.localStorage.setItem(CAMERA_OPACITY_STORAGE_KEY, String(cameraOpacity));
+	}, [cameraOpacity]);
+
+	// Camera stream lifecycle — runs only in read mode with the toggle on.
+	useEffect(() => {
+		if (!cameraOn || editing) {
+			return;
+		}
+		let cancelled = false;
+
+		const stopStream = () => {
+			for (const track of cameraStreamRef.current?.getTracks() ?? []) {
+				track.stop();
+			}
+			cameraStreamRef.current = null;
+			if (cameraVideoRef.current) {
+				cameraVideoRef.current.srcObject = null;
+			}
+		};
+
+		void (async () => {
+			setCameraError(false);
+			const deviceId = await window.electronAPI
+				?.getSelectedWebcamDevice?.()
+				.catch(() => null);
+			const constraintsList: MediaStreamConstraints[] = deviceId
+				? [{ video: { deviceId: { exact: deviceId } } }, { video: true }]
+				: [{ video: true }];
+			for (const constraints of constraintsList) {
+				try {
+					const stream = await navigator.mediaDevices.getUserMedia(constraints);
+					if (cancelled) {
+						for (const track of stream.getTracks()) {
+							track.stop();
+						}
+						return;
+					}
+					cameraStreamRef.current = stream;
+					if (cameraVideoRef.current) {
+						cameraVideoRef.current.srcObject = stream;
+					}
+					return;
+				} catch {
+					// Try the next (less strict) constraints.
+				}
+			}
+			if (!cancelled) {
+				setCameraError(true);
+				setCameraOn(false);
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+			stopStream();
+		};
+	}, [cameraOn, editing]);
 
 	// Auto-scroll loop. Fractional position lives in scrollPositionRef so slow
 	// speeds accumulate sub-pixel movement instead of stalling.
@@ -170,7 +253,34 @@ export function Teleprompter() {
 				<span className="select-none truncate text-[10px] text-neutral-600">
 					{t("teleprompter.hotkeyHint", "⌥F8 play/pause · ⌥F7/⌥F9 speed · ⌥T show/hide")}
 				</span>
+				{cameraError && (
+					<span className="select-none text-[10px] text-red-400">
+						{t("teleprompter.cameraError", "Camera unavailable")}
+					</span>
+				)}
 				<div className="ml-auto flex items-center gap-1" style={noDragRegion}>
+					<Button
+						variant="ghost"
+						size="icon"
+						className="h-6 w-6 text-neutral-400 hover:text-neutral-100"
+						onClick={() => setCameraOn((was) => !was)}
+						title={
+							cameraOn
+								? t("teleprompter.cameraOff", "Hide camera")
+								: t("teleprompter.cameraOn", "Show camera")
+						}
+						aria-label={
+							cameraOn
+								? t("teleprompter.cameraOff", "Hide camera")
+								: t("teleprompter.cameraOn", "Show camera")
+						}
+					>
+						{cameraOn ? (
+							<VideoCameraIcon size={13} weight="bold" />
+						) : (
+							<VideoCameraSlashIcon size={13} weight="bold" />
+						)}
+					</Button>
 					{!editing && (
 						<Button
 							variant="ghost"
@@ -218,17 +328,34 @@ export function Teleprompter() {
 				</div>
 			) : (
 				<>
-					<div
-						ref={scrollContainerRef}
-						className="min-h-0 flex-1 overflow-y-auto px-5"
-						onWheel={handleWheel}
-						onScroll={handleScroll}
-					>
+					<div className="relative min-h-0 flex-1">
+						{cameraOn && (
+							<video
+								ref={cameraVideoRef}
+								autoPlay
+								muted
+								playsInline
+								className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+								style={{ transform: "scaleX(-1)", opacity: cameraOpacity }}
+							/>
+						)}
 						<div
-							className="whitespace-pre-wrap pt-6 pb-[70vh] font-medium leading-relaxed"
-							style={{ fontSize: FONT_SIZES[fontIndex] }}
+							ref={scrollContainerRef}
+							className="absolute inset-0 overflow-y-auto px-5"
+							onWheel={handleWheel}
+							onScroll={handleScroll}
 						>
-							{script}
+							<div
+								className="whitespace-pre-wrap pt-6 pb-[70vh] font-medium leading-relaxed"
+								style={{
+									fontSize: FONT_SIZES[fontIndex],
+									textShadow: cameraOn
+										? "0 1px 6px rgba(0, 0, 0, 0.9)"
+										: undefined,
+								}}
+							>
+								{script}
+							</div>
 						</div>
 					</div>
 					<footer className="flex h-10 shrink-0 items-center justify-center gap-1 border-t border-white/10 px-2">
@@ -306,6 +433,22 @@ export function Teleprompter() {
 						>
 							<PlusIcon size={14} weight="bold" />
 						</Button>
+						{cameraOn && (
+							<>
+								<div className="mx-1 h-5 w-px bg-white/10" />
+								<Slider
+									value={[cameraOpacity]}
+									onValueChange={([value]) =>
+										setCameraOpacity(clampCameraOpacity(value))
+									}
+									min={CAMERA_OPACITY_MIN}
+									max={CAMERA_OPACITY_MAX}
+									step={0.05}
+									className="w-20"
+									aria-label={t("teleprompter.cameraFade", "Camera fade")}
+								/>
+							</>
+						)}
 					</footer>
 				</>
 			)}

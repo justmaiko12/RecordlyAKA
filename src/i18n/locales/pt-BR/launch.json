@@ -78,7 +78,11 @@
 		"smallerText": "Texto menor",
 		"biggerText": "Texto maior",
 		"close": "Fechar",
-		"hotkeyHint": "⌥F8 reproduzir/pausar · ⌥F7/⌥F9 velocidade · ⌥T mostrar/ocultar"
+		"hotkeyHint": "⌥F8 reproduzir/pausar · ⌥F7/⌥F9 velocidade · ⌥T mostrar/ocultar",
+		"cameraOn": "Mostrar câmera",
+		"cameraOff": "Ocultar câmera",
+		"cameraFade": "Esmaecimento da câmera",
+		"cameraError": "Câmera indisponível"
 	},
 	"permissions": {
 		"screenRecordingNeeded": "O Recordly precisa da permissão de Gravação de Tela antes de iniciar. Ajustes do Sistema foram abertos. Depois de ativar, feche e reabra o Recordly.",

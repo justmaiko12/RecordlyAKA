@@ -78,7 +78,11 @@
 		"smallerText": "缩小文字",
 		"biggerText": "放大文字",
 		"close": "关闭",
-		"hotkeyHint": "⌥F8 播放/暂停 · ⌥F7/⌥F9 速度 · ⌥T 显示/隐藏"
+		"hotkeyHint": "⌥F8 播放/暂停 · ⌥F7/⌥F9 速度 · ⌥T 显示/隐藏",
+		"cameraOn": "显示摄像头",
+		"cameraOff": "隐藏摄像头",
+		"cameraFade": "摄像头淡化",
+		"cameraError": "摄像头不可用"
 	},
 	"permissions": {
 		"screenRecordingNeeded": "Recordly 需要屏幕录制权限才能开始。系统设置已打开。启用后请退出并重新打开 Recordly。",

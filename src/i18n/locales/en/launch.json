@@ -78,7 +78,11 @@
 		"smallerText": "Smaller text",
 		"biggerText": "Bigger text",
 		"close": "Close",
-		"hotkeyHint": "⌥F8 play/pause · ⌥F7/⌥F9 speed · ⌥T show/hide"
+		"hotkeyHint": "⌥F8 play/pause · ⌥F7/⌥F9 speed · ⌥T show/hide",
+		"cameraOn": "Show camera",
+		"cameraOff": "Hide camera",
+		"cameraFade": "Camera fade",
+		"cameraError": "Camera unavailable"
 	},
 	"permissions": {
 		"screenRecordingNeeded": "Recordly needs Screen Recording permission before you start. System Settings has been opened. After enabling it, quit and reopen Recordly.",

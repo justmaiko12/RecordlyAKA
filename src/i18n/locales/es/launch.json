@@ -78,7 +78,11 @@
 		"smallerText": "Texto más pequeño",
 		"biggerText": "Texto más grande",
 		"close": "Cerrar",
-		"hotkeyHint": "⌥F8 reproducir/pausar · ⌥F7/⌥F9 velocidad · ⌥T mostrar/ocultar"
+		"hotkeyHint": "⌥F8 reproducir/pausar · ⌥F7/⌥F9 velocidad · ⌥T mostrar/ocultar",
+		"cameraOn": "Mostrar cámara",
+		"cameraOff": "Ocultar cámara",
+		"cameraFade": "Atenuación de cámara",
+		"cameraError": "Cámara no disponible"
 	},
 	"permissions": {
 		"screenRecordingNeeded": "Recordly necesita permiso de grabación de pantalla antes de comenzar. Se ha abierto Configuración del sistema. Después de habilitarlo, cierra y vuelve a abrir Recordly.",
