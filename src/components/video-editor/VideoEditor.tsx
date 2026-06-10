@@ -221,6 +221,7 @@ import {
 	buildLoopedCursorTelemetry,
 	getDisplayedTimelineWindowMs,
 } from "./videoPlayback/cursorLoopTelemetry";
+import { pickWebcamLayoutFields } from "./webcamSettingsFields";
 
 type PendingExportSave = {
 	fileName: string;
@@ -910,7 +911,9 @@ export default function VideoEditor() {
 		setPadding({ ...snapshot.padding });
 		setFrame(snapshot.frame);
 		setCropRegion({ ...snapshot.cropRegion });
-		setWebcam({ ...snapshot.webcam });
+		// Apply only layout fields: the preset's webcam source belongs to the
+		// recording it was saved from, not the project it's applied to.
+		setWebcam((current) => ({ ...current, ...pickWebcamLayoutFields(snapshot.webcam) }));
 		setAspectRatio(snapshot.aspectRatio);
 		setExportEncodingMode(snapshot.exportEncodingMode);
 		setExportBackendPreference(snapshot.exportBackendPreference);
