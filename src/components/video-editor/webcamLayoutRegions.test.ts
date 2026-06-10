@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+	clampWebcamLayoutSpan,
 	eventsToWebcamLayoutRegions,
+	getCoverRect,
 	getLetterboxRect,
 	isCameraFullAtMs,
+	normalizeWebcamLayoutStyle,
 	type WebcamLayoutEvent,
 } from "./webcamLayoutRegions";
 
@@ -98,5 +101,73 @@ describe("getLetterboxRect", () => {
 	it("degrades safely on invalid input", () => {
 		const rect = getLetterboxRect({ width: 0, height: 0 }, { width: 1000, height: 500 }, 10);
 		expect(rect).toEqual({ x: 10, y: 10, width: 980, height: 480 });
+	});
+});
+
+describe("getCoverRect", () => {
+	it("covers the frame, cropping the long axis, centered", () => {
+		const rect = getCoverRect({ width: 1600, height: 900 }, { width: 1000, height: 1000 });
+		// scale = max(1000/1600, 1000/900) = 1.111... -> 1777.8 x 1000
+		expect(rect.height).toBeCloseTo(1000);
+		expect(rect.width).toBeCloseTo(1000 * (1600 / 900));
+		expect(rect.x).toBeCloseTo((1000 - 1000 * (1600 / 900)) / 2);
+		expect(rect.y).toBeCloseTo(0);
+	});
+
+	it("degrades safely on invalid content", () => {
+		expect(getCoverRect({ width: 0, height: 0 }, { width: 1000, height: 500 })).toEqual({
+			x: 0,
+			y: 0,
+			width: 1000,
+			height: 500,
+		});
+	});
+});
+
+describe("clampWebcamLayoutSpan", () => {
+	const others = [
+		{ id: "a", startMs: 1000, endMs: 2000 },
+		{ id: "b", startMs: 5000, endMs: 6000 },
+	];
+
+	it("clamps to neighbors and duration", () => {
+		expect(clampWebcamLayoutSpan({ startMs: 1500, endMs: 5500 }, others, "x", 10000)).toEqual({
+			startMs: 2000,
+			endMs: 5000,
+		});
+		expect(clampWebcamLayoutSpan({ startMs: -50, endMs: 800 }, others, "x", 10000)).toEqual({
+			startMs: 0,
+			endMs: 800,
+		});
+		expect(clampWebcamLayoutSpan({ startMs: 9500, endMs: 12000 }, others, "x", 10000)).toEqual({
+			startMs: 9500,
+			endMs: 10000,
+		});
+	});
+
+	it("ignores the region's own id and enforces minimum length", () => {
+		expect(clampWebcamLayoutSpan({ startMs: 1000, endMs: 1010 }, others, "a", 10000)).toEqual({
+			startMs: 1000,
+			endMs: 1100,
+		});
+		expect(clampWebcamLayoutSpan({ startMs: 3000, endMs: 3010 }, others, "x", 10000)).toEqual({
+			startMs: 3000,
+			endMs: 3100,
+		});
+	});
+
+	it("returns null when no valid placement exists", () => {
+		expect(
+			clampWebcamLayoutSpan({ startMs: 1200, endMs: 1300 }, others, "x", 10000),
+		).toBeNull();
+	});
+});
+
+describe("normalizeWebcamLayoutStyle", () => {
+	it("accepts fit/fill and falls back to fit", () => {
+		expect(normalizeWebcamLayoutStyle("fill")).toBe("fill");
+		expect(normalizeWebcamLayoutStyle("fit")).toBe("fit");
+		expect(normalizeWebcamLayoutStyle("bogus")).toBe("fit");
+		expect(normalizeWebcamLayoutStyle(undefined)).toBe("fit");
 	});
 });

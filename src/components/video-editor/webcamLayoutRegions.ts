@@ -26,6 +26,79 @@ export interface LetterboxRect {
 /** Shared padding fraction used by both the preview and export renderers for camera-full layout. */
 export const CAMERA_FULL_PADDING_FRACTION = 0.04;
 
+export type WebcamLayoutStyle = "fit" | "fill";
+
+export const MIN_WEBCAM_LAYOUT_REGION_MS = 100;
+
+export function normalizeWebcamLayoutStyle(value: unknown): WebcamLayoutStyle {
+	return value === "fill" ? "fill" : "fit";
+}
+
+/** Largest content-aspect rect that fully covers the frame, centered (crops overflow). */
+export function getCoverRect(content: SizeLike, frame: SizeLike): LetterboxRect {
+	if (
+		!Number.isFinite(content.width) ||
+		!Number.isFinite(content.height) ||
+		content.width <= 0 ||
+		content.height <= 0
+	) {
+		return { x: 0, y: 0, width: frame.width, height: frame.height };
+	}
+	const scale = Math.max(frame.width / content.width, frame.height / content.height);
+	const width = content.width * scale;
+	const height = content.height * scale;
+	return {
+		x: (frame.width - width) / 2,
+		y: (frame.height - height) / 2,
+		width,
+		height,
+	};
+}
+
+/**
+ * Clamps a dragged/resized camera segment span against its neighbors and the
+ * video duration. Returns null when the span cannot fit anywhere valid.
+ */
+export function clampWebcamLayoutSpan(
+	span: { startMs: number; endMs: number },
+	regions: WebcamLayoutRegion[],
+	ownId: string,
+	durationMs: number,
+): { startMs: number; endMs: number } | null {
+	const others = regions
+		.filter((region) => region.id !== ownId)
+		.sort((a, b) => a.startMs - b.startMs);
+
+	let startMs = Math.max(0, Math.round(span.startMs));
+	let endMs = Math.min(durationMs, Math.round(span.endMs));
+
+	for (const other of others) {
+		// Clamp the span out of each overlapping neighbor, preferring the side
+		// the span already leans toward.
+		const overlaps = startMs < other.endMs && endMs > other.startMs;
+		if (!overlaps) continue;
+		if (startMs >= other.startMs) {
+			startMs = Math.max(startMs, other.endMs);
+		} else {
+			endMs = Math.min(endMs, other.startMs);
+		}
+	}
+
+	// If clamping inverted the span (startMs pushed past endMs), placement is impossible.
+	if (startMs >= endMs) return null;
+
+	if (endMs - startMs < MIN_WEBCAM_LAYOUT_REGION_MS) {
+		endMs = startMs + MIN_WEBCAM_LAYOUT_REGION_MS;
+		if (endMs > durationMs) return null;
+		// Re-check the stretched span against neighbors.
+		for (const other of others) {
+			if (startMs < other.endMs && endMs > other.startMs) return null;
+		}
+	}
+
+	return { startMs, endMs };
+}
+
 function isValidEvent(event: WebcamLayoutEvent): boolean {
 	return (
 		Number.isFinite(event.timeMs) &&
