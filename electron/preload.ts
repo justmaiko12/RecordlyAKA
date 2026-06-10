@@ -182,6 +182,21 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	hudOverlayRendererReady: () => {
 		ipcRenderer.send("hud-overlay-renderer-ready");
 	},
+	teleprompterToggle: () => {
+		ipcRenderer.send("teleprompter-toggle");
+	},
+	teleprompterClose: () => {
+		ipcRenderer.send("teleprompter-close");
+	},
+	onTeleprompterCommand: (callback: (command: string) => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, command: string) => {
+			callback(command);
+		};
+		ipcRenderer.on("teleprompter-command", listener);
+		return () => {
+			ipcRenderer.removeListener("teleprompter-command", listener);
+		};
+	},
 	getHudOverlayCaptureProtection: () => {
 		return ipcRenderer.invoke("get-hud-overlay-capture-protection");
 	},

@@ -209,6 +209,9 @@ interface Window {
 		hudOverlayHide: () => void;
 		hudOverlayClose: () => void;
 		hudOverlayRendererReady: () => void;
+		teleprompterToggle: () => void;
+		teleprompterClose: () => void;
+		onTeleprompterCommand: (callback: (command: string) => void) => () => void;
 		getHudOverlayCaptureProtection: () => Promise<{ success: boolean; enabled: boolean }>;
 		getHudOverlayMousePassthroughSupported: () => Promise<{
 			success: boolean;
