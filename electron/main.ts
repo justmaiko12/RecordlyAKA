@@ -6,6 +6,7 @@ import {
 	BrowserWindow,
 	desktopCapturer,
 	dialog,
+	globalShortcut,
 	ipcMain,
 	Menu,
 	Notification,
@@ -27,6 +28,7 @@ import {
 } from "./ipc/handlers";
 import { ensureMediaServer } from "./mediaServer";
 import { ensurePackagedRendererServer } from "./rendererServer";
+import { registerTeleprompterToggleShortcut } from "./teleprompterShortcuts";
 import type { UpdateToastPayload } from "./updater";
 import {
 	checkForAppUpdates,
@@ -52,6 +54,7 @@ import {
 	reassertHudOverlayMousePassthrough as reassertHudOverlayMouseState,
 	setHudOverlayRecordingActive,
 	showUpdateToastWindow,
+	toggleTeleprompterWindow,
 } from "./windows";
 
 const electronMainDir = path.dirname(fileURLToPath(import.meta.url));
@@ -857,6 +860,13 @@ app.on("before-quit", () => {
 	void cleanupAllExportStreams();
 });
 
+// will-quit (not before-quit): a quit can be canceled by the editor's
+// unsaved-changes dialog, and shortcuts unregistered there would stay dead
+// for the rest of the session.
+app.on("will-quit", () => {
+	globalShortcut.unregisterAll();
+});
+
 app.on("window-all-closed", () => {
 	if (IS_SMOKE_EXPORT || process.platform !== "darwin") {
 		app.quit();
@@ -890,6 +900,8 @@ app.whenReady().then(async () => {
 	});
 
 	session.defaultSession.setDevicePermissionHandler((_details) => true);
+
+	registerTeleprompterToggleShortcut(toggleTeleprompterWindow);
 
 	if (process.platform === "darwin") {
 		const cameraStatus = systemPreferences.getMediaAccessStatus("camera");
