@@ -74,7 +74,7 @@ export function findConflict(
 
 export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 	addZoom: { key: "z" },
-	splitClip: { key: "c" },
+	splitClip: { key: "b" },
 	addAnnotation: { key: "a" },
 	addKeyframe: { key: "f" },
 	deleteSelected: { key: "d", ctrl: true },

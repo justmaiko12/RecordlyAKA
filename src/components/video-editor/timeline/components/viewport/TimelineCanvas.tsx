@@ -39,7 +39,7 @@ import TimelineAxis from "../axis/TimelineAxis";
 import ClipMarkerOverlay from "../overlays/ClipMarkerOverlay";
 import PlaybackCursor from "../playhead/PlaybackCursor";
 
-const HINT_CLIP = "Press C to split clip";
+const HINT_CLIP = "Press B to split clip";
 const HINT_ANNOTATION = "Press A to add annotation";
 const HINT_AUDIO = "Click music icon to add audio";
 const HINT_CAMERA = "Double-click to add a camera segment";
