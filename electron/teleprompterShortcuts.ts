@@ -39,6 +39,33 @@ export function unregisterTeleprompterScrollShortcuts(): void {
 	}
 }
 
+const CAMERA_LAYOUT_SHORTCUT = "Alt+F10";
+
+/** Registered only while a recording is active. */
+export function registerCameraLayoutShortcut(onPressed: () => void): void {
+	try {
+		const registered = globalShortcut.register(CAMERA_LAYOUT_SHORTCUT, onPressed);
+		if (!registered) {
+			console.warn(
+				`[camera-layout] Could not register global shortcut ${CAMERA_LAYOUT_SHORTCUT}`,
+			);
+		}
+	} catch (error) {
+		console.warn(
+			`[camera-layout] Could not register global shortcut ${CAMERA_LAYOUT_SHORTCUT}:`,
+			error,
+		);
+	}
+}
+
+export function unregisterCameraLayoutShortcut(): void {
+	try {
+		globalShortcut.unregister(CAMERA_LAYOUT_SHORTCUT);
+	} catch {
+		// Best effort.
+	}
+}
+
 /** Registered for the app lifetime so Alt+T can summon the window. */
 export function registerTeleprompterToggleShortcut(toggle: () => void): void {
 	try {

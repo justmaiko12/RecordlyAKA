@@ -26,9 +26,14 @@ import {
 	killWindowsCaptureProcess,
 	registerIpcHandlers,
 } from "./ipc/handlers";
+import { beginWebcamLayoutSession } from "./ipc/recording/webcamLayoutEvents";
 import { ensureMediaServer } from "./mediaServer";
 import { ensurePackagedRendererServer } from "./rendererServer";
-import { registerTeleprompterToggleShortcut } from "./teleprompterShortcuts";
+import {
+	registerCameraLayoutShortcut,
+	registerTeleprompterToggleShortcut,
+	unregisterCameraLayoutShortcut,
+} from "./teleprompterShortcuts";
 import type { UpdateToastPayload } from "./updater";
 import {
 	checkForAppUpdates,
@@ -978,8 +983,13 @@ app.whenReady().then(async () => {
 			updateTrayMenu(recording);
 			if (recording) {
 				reassertHudOverlayMouseState();
+				beginWebcamLayoutSession();
+				registerCameraLayoutShortcut(() => {
+					getHudOverlayWindow()?.webContents.send("webcam-layout-hotkey");
+				});
 			}
 			if (!recording) {
+				unregisterCameraLayoutShortcut();
 				restoreWindowSafely(mainWindow);
 			}
 		},
