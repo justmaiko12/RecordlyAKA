@@ -44,7 +44,6 @@
 		"solidColor": "Solid Color (Censorship)",
 		"borderRadius": "Border Radius"
 	},
-
 	"fontStyles": {
 		"classic": "Classic",
 		"editor": "Editor",
@@ -132,7 +131,9 @@
 	},
 	"toolbar": {
 		"addLayer": "Add Layer",
-		"splitClip": "Split Clip (B)"
+		"splitClip": "Split Clip (B)",
+		"magnetOn": "Magnet on: deleting clips closes the gap",
+		"magnetOff": "Magnet off: gaps stay as black space"
 	},
 	"timeline": {
 		"expand": "Expand Timeline",

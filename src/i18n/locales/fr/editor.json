@@ -44,7 +44,6 @@
 		"solidColor": "Couleur unie (censure)",
 		"borderRadius": "Rayon de bordure"
 	},
-
 	"fontStyles": {
 		"classic": "Classique",
 		"editor": "Éditeur",
@@ -132,7 +131,9 @@
 	},
 	"toolbar": {
 		"addLayer": "Ajouter une couche",
-		"splitClip": "Diviser le clip (B)"
+		"splitClip": "Diviser le clip (B)",
+		"magnetOn": "Aimant activé : supprimer des clips ferme le vide",
+		"magnetOff": "Aimant désactivé : les espaces restent en noir"
 	},
 	"timeline": {
 		"expand": "Développer la timeline",

@@ -8,6 +8,7 @@ import {
 	DownloadSimple as Download,
 	FolderOpen,
 	Gear,
+	Magnet,
 	Pause,
 	Camera as PhCameraRegular,
 	Play,
@@ -511,6 +512,7 @@ export default function VideoEditor() {
 	const [resolvedWebcamVideoUrl, setResolvedWebcamVideoUrl] = useState<string | null>(null);
 	const [webcamLayoutRegions, setWebcamLayoutRegions] = useState<WebcamLayoutRegion[]>([]);
 	const [webcamLayoutRegionsEnabled, setWebcamLayoutRegionsEnabled] = useState(true);
+	const [magnetEnabled, setMagnetEnabled] = useState(true);
 	const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
 	const [webcamLayoutStyle, setWebcamLayoutStyle] = useState<WebcamLayoutStyle>("fit");
 	const [zoomRegions, setZoomRegions] = useState<ZoomRegion[]>([]);
@@ -1690,6 +1692,7 @@ export default function VideoEditor() {
 				webcamLayoutRegions: WebcamLayoutRegion[];
 				webcamLayoutRegionsEnabled: boolean;
 				webcamLayoutStyle: WebcamLayoutStyle;
+				magnetEnabled: boolean;
 				zoomRegions: ZoomRegion[];
 				trimRegions: TrimRegion[];
 				clipRegions: ClipRegion[];
@@ -1801,6 +1804,7 @@ export default function VideoEditor() {
 				webcamLayoutRegions,
 				webcamLayoutRegionsEnabled,
 				webcamLayoutStyle,
+				magnetEnabled,
 				zoomRegions,
 				trimRegions,
 				clipRegions,
@@ -1870,6 +1874,7 @@ export default function VideoEditor() {
 			webcamLayoutRegions,
 			webcamLayoutRegionsEnabled,
 			webcamLayoutStyle,
+			magnetEnabled,
 			zoomRegions,
 			trimRegions,
 			clipRegions,
@@ -2063,6 +2068,7 @@ export default function VideoEditor() {
 			setWebcamLayoutRegions(normalizedEditor.webcamLayoutRegions);
 			setWebcamLayoutRegionsEnabled(normalizedEditor.webcamLayoutRegionsEnabled);
 			setWebcamLayoutStyle(normalizedEditor.webcamLayoutStyle);
+			setMagnetEnabled(normalizedEditor.magnetEnabled);
 			setZoomRegions(normalizedEditor.zoomRegions);
 			setTrimRegions(normalizedEditor.trimRegions);
 			setClipRegions(normalizedEditor.clipRegions);
@@ -6364,6 +6370,19 @@ export default function VideoEditor() {
 									title={t("editor.toolbar.splitClip")}
 								>
 									<Scissors className="w-4 h-4" />
+								</Button>
+								<Button
+									onClick={() => setMagnetEnabled((prev) => !prev)}
+									variant="ghost"
+									size="icon"
+									className={`h-7 w-7 rounded-full transition-all hover:bg-foreground/10 hover:text-foreground ${magnetEnabled ? "text-blue-400" : "text-muted-foreground"}`}
+									title={
+										magnetEnabled
+											? t("editor.toolbar.magnetOn")
+											: t("editor.toolbar.magnetOff")
+									}
+								>
+									<Magnet className="w-4 h-4" />
 								</Button>
 							</div>
 							{/* Playback controls - centered */}

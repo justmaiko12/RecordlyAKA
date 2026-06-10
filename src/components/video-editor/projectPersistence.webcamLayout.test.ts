@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { normalizeProjectEditor } from "./projectPersistence";
 
+describe("normalizeProjectEditor magnetEnabled", () => {
+	it("defaults to true when absent", () => {
+		expect(normalizeProjectEditor({}).magnetEnabled).toBe(true);
+	});
+
+	it("round-trips false", () => {
+		expect(normalizeProjectEditor({ magnetEnabled: false }).magnetEnabled).toBe(false);
+	});
+
+	it("round-trips true", () => {
+		expect(normalizeProjectEditor({ magnetEnabled: true }).magnetEnabled).toBe(true);
+	});
+
+	it("coerces non-boolean to true", () => {
+		expect(normalizeProjectEditor({ magnetEnabled: "yes" as never }).magnetEnabled).toBe(true);
+	});
+});
+
 describe("normalizeProjectEditor webcam layout regions", () => {
 	it("normalizes webcam layout regions with defaults", () => {
 		const normalized = normalizeProjectEditor({});

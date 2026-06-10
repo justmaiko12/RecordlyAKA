@@ -44,7 +44,6 @@
 		"solidColor": "純色 (審查)",
 		"borderRadius": "邊框半徑"
 	},
-
 	"fontStyles": {
 		"classic": "經典",
 		"editor": "編輯器",
@@ -132,7 +131,9 @@
 	},
 	"toolbar": {
 		"addLayer": "新增圖層",
-		"splitClip": "拆分片段 (B)"
+		"splitClip": "拆分片段 (B)",
+		"magnetOn": "磁吸開啟：刪除片段時間隙自動閉合",
+		"magnetOff": "磁吸關閉：間隙顯示為黑色"
 	},
 	"timeline": {
 		"expand": "展開時間軸",

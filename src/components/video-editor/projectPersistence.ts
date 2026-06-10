@@ -148,6 +148,7 @@ export interface ProjectEditorState {
 	webcamLayoutRegions: WebcamLayoutRegion[];
 	webcamLayoutRegionsEnabled: boolean;
 	webcamLayoutStyle: WebcamLayoutStyle;
+	magnetEnabled: boolean;
 	aspectRatio: AspectRatio;
 	sourceAudioTrackSettingsByClip?: Record<string, SourceAudioTrackSettings>;
 	defaultSourceAudioTrackSettings?: SourceAudioTrackSettings;
@@ -1082,6 +1083,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 				? editor.webcamLayoutRegionsEnabled
 				: true,
 		webcamLayoutStyle: normalizeWebcamLayoutStyle(editor.webcamLayoutStyle),
+		magnetEnabled: typeof editor.magnetEnabled === "boolean" ? editor.magnetEnabled : true,
 		sourceAudioTrackSettingsByClip:
 			editor.sourceAudioTrackSettingsByClip &&
 			typeof editor.sourceAudioTrackSettingsByClip === "object"

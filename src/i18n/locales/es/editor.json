@@ -44,7 +44,6 @@
 		"solidColor": "Color Sólido (Censura)",
 		"borderRadius": "Radio del Borde"
 	},
-
 	"fontStyles": {
 		"classic": "Clásico",
 		"editor": "Editor",
@@ -132,7 +131,9 @@
 	},
 	"toolbar": {
 		"addLayer": "Agregar capa",
-		"splitClip": "Dividir clip (B)"
+		"splitClip": "Dividir clip (B)",
+		"magnetOn": "Magneto activo: borrar clips cierra el espacio",
+		"magnetOff": "Magneto inactivo: los espacios se muestran en negro"
 	},
 	"timeline": {
 		"expand": "Expandir línea de tiempo",

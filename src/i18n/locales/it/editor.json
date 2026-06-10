@@ -44,7 +44,6 @@
 		"solidColor": "Colore pieno (Censura)",
 		"borderRadius": "Raggio bordo"
 	},
-
 	"fontStyles": {
 		"classic": "Classico",
 		"editor": "Editor",
@@ -132,7 +131,9 @@
 	},
 	"toolbar": {
 		"addLayer": "Aggiungi livello",
-		"splitClip": "Dividi clip (B)"
+		"splitClip": "Dividi clip (B)",
+		"magnetOn": "Calamita attiva: eliminare clip chiude lo spazio",
+		"magnetOff": "Calamita disattiva: gli spazi rimangono neri"
 	},
 	"timeline": {
 		"expand": "Espandi timeline",
