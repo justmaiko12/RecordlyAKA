@@ -66,6 +66,20 @@
 		"cancel": "Annuleren",
 		"share": "Delen"
 	},
+	"teleprompter": {
+		"menuLabel": "Teleprompter",
+		"scriptPlaceholder": "Plak of typ hier je script…",
+		"startReading": "Beginnen met lezen",
+		"edit": "Bewerken",
+		"play": "Afspelen",
+		"pause": "Pauzeren",
+		"slower": "Langzamer",
+		"faster": "Sneller",
+		"smallerText": "Kleinere tekst",
+		"biggerText": "Grotere tekst",
+		"close": "Sluiten",
+		"hotkeyHint": "⌥F8 afspelen/pauzeren · ⌥F7/⌥F9 snelheid · ⌥T tonen/verbergen"
+	},
 	"permissions": {
 		"screenRecordingNeeded": "Recordly heeft toestemming voor schermopname nodig voordat je begint. Systeeminstellingen zijn geopend. Schakel het in, sluit Recordly en open het opnieuw.",
 		"screenRecordingMissing": "Toestemming voor schermopname ontbreekt nog. Systeeminstellingen zijn opnieuw geopend. Schakel het in, sluit Recordly en open het opnieuw voordat je opneemt.",

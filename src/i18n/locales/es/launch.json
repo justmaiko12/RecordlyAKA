@@ -66,6 +66,20 @@
 		"cancel": "Cancelar",
 		"share": "Compartir"
 	},
+	"teleprompter": {
+		"menuLabel": "Teleprompter",
+		"scriptPlaceholder": "Pega o escribe tu guion aquí…",
+		"startReading": "Empezar a leer",
+		"edit": "Editar",
+		"play": "Reproducir",
+		"pause": "Pausar",
+		"slower": "Más lento",
+		"faster": "Más rápido",
+		"smallerText": "Texto más pequeño",
+		"biggerText": "Texto más grande",
+		"close": "Cerrar",
+		"hotkeyHint": "⌥F8 reproducir/pausar · ⌥F7/⌥F9 velocidad · ⌥T mostrar/ocultar"
+	},
 	"permissions": {
 		"screenRecordingNeeded": "Recordly necesita permiso de grabación de pantalla antes de comenzar. Se ha abierto Configuración del sistema. Después de habilitarlo, cierra y vuelve a abrir Recordly.",
 		"screenRecordingMissing": "El permiso de grabación de pantalla aún falta. Se ha abierto Configuración del sistema nuevamente. Habilítalo, luego cierra y vuelve a abrir Recordly antes de grabar.",

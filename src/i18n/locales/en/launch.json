@@ -66,6 +66,20 @@
 		"cancel": "Cancel",
 		"share": "Share"
 	},
+	"teleprompter": {
+		"menuLabel": "Teleprompter",
+		"scriptPlaceholder": "Paste or type your script here…",
+		"startReading": "Start reading",
+		"edit": "Edit",
+		"play": "Play",
+		"pause": "Pause",
+		"slower": "Slower",
+		"faster": "Faster",
+		"smallerText": "Smaller text",
+		"biggerText": "Bigger text",
+		"close": "Close",
+		"hotkeyHint": "⌥F8 play/pause · ⌥F7/⌥F9 speed · ⌥T show/hide"
+	},
 	"permissions": {
 		"screenRecordingNeeded": "Recordly needs Screen Recording permission before you start. System Settings has been opened. After enabling it, quit and reopen Recordly.",
 		"screenRecordingMissing": "Screen Recording permission is still missing. System Settings has been opened again. Enable it, then quit and reopen Recordly before recording.",

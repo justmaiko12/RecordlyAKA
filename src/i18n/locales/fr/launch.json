@@ -66,6 +66,20 @@
 		"cancel": "Annuler",
 		"share": "Partager"
 	},
+	"teleprompter": {
+		"menuLabel": "Téléprompteur",
+		"scriptPlaceholder": "Collez ou tapez votre script ici…",
+		"startReading": "Commencer la lecture",
+		"edit": "Modifier",
+		"play": "Lecture",
+		"pause": "Pause",
+		"slower": "Plus lent",
+		"faster": "Plus rapide",
+		"smallerText": "Texte plus petit",
+		"biggerText": "Texte plus grand",
+		"close": "Fermer",
+		"hotkeyHint": "⌥F8 lecture/pause · ⌥F7/⌥F9 vitesse · ⌥T afficher/masquer"
+	},
 	"permissions": {
 		"screenRecordingNeeded": "Recordly nécessite l’autorisation d’enregistrement d’écran avant de commencer. Les paramètres système ont été ouverts. Après l’avoir activée, quittez et relancez Recordly.",
 		"screenRecordingMissing": "L’autorisation d’enregistrement d’écran est toujours manquante. Les paramètres système ont été ouverts à nouveau. Activez-la, puis quittez et relancez Recordly avant d’enregistrer.",

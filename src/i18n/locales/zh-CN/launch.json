@@ -66,6 +66,20 @@
 		"cancel": "取消",
 		"share": "共享"
 	},
+	"teleprompter": {
+		"menuLabel": "提词器",
+		"scriptPlaceholder": "在此粘贴或输入您的文稿…",
+		"startReading": "开始阅读",
+		"edit": "编辑",
+		"play": "播放",
+		"pause": "暂停",
+		"slower": "减速",
+		"faster": "加速",
+		"smallerText": "缩小文字",
+		"biggerText": "放大文字",
+		"close": "关闭",
+		"hotkeyHint": "⌥F8 播放/暂停 · ⌥F7/⌥F9 速度 · ⌥T 显示/隐藏"
+	},
 	"permissions": {
 		"screenRecordingNeeded": "Recordly 需要屏幕录制权限才能开始。系统设置已打开。启用后请退出并重新打开 Recordly。",
 		"screenRecordingMissing": "屏幕录制权限仍然缺失。系统设置已再次打开。请启用权限，然后退出并重新打开 Recordly。",

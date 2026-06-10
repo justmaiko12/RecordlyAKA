@@ -66,6 +66,20 @@
 		"cancel": "取消",
 		"share": "分享"
 	},
+	"teleprompter": {
+		"menuLabel": "提詞器",
+		"scriptPlaceholder": "在此貼上或輸入您的文稿…",
+		"startReading": "開始閱讀",
+		"edit": "編輯",
+		"play": "播放",
+		"pause": "暫停",
+		"slower": "減速",
+		"faster": "加速",
+		"smallerText": "縮小文字",
+		"biggerText": "放大文字",
+		"close": "關閉",
+		"hotkeyHint": "⌥F8 播放/暫停 · ⌥F7/⌥F9 速度 · ⌥T 顯示/隱藏"
+	},
 	"permissions": {
 		"screenRecordingNeeded": "Recordly 需要「螢幕錄製」權限才能開始。已開啟系統設定。啟用後，請結束並重新開啟 Recordly。",
 		"screenRecordingMissing": "仍未取得「螢幕錄製」權限。已再次開啟系統設定。請先啟用，再結束並重新開啟 Recordly 後再錄製。",
