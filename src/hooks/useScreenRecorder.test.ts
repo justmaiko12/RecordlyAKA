@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	createBrowserRecordingOptions,
 	createProcessedMicrophoneConstraints,
+	createWebcamRecordingOptions,
+	createWebcamVideoConstraints,
 	normalizeBrowserMicrophoneProfile,
 	resolveBrowserCaptureCursorPolicy,
 	shouldUseNativeWindowsCaptureForSource,
@@ -135,6 +137,36 @@ describe("createBrowserRecordingOptions", () => {
 		).toEqual({
 			bitsPerSecond: 30_600_000,
 			videoBitsPerSecond: 30_600_000,
+		});
+	});
+});
+
+describe("webcam recording quality", () => {
+	it("requests high-resolution camera input for phone cameras when available", () => {
+		expect(createWebcamVideoConstraints()).toEqual({
+			aspectRatio: { ideal: 16 / 9 },
+			resizeMode: "none",
+			width: { ideal: 3840, min: 1920 },
+			height: { ideal: 2160, min: 1080 },
+			frameRate: { ideal: 60, max: 60 },
+		});
+		expect(createWebcamVideoConstraints("phone-camera")).toEqual({
+			aspectRatio: { ideal: 16 / 9 },
+			deviceId: { exact: "phone-camera" },
+			resizeMode: "none",
+			width: { ideal: 3840, min: 1920 },
+			height: { ideal: 2160, min: 1080 },
+			frameRate: { ideal: 60, max: 60 },
+		});
+	});
+
+	it("records the webcam sidecar at a 4K-friendly bitrate", () => {
+		expect(createWebcamRecordingOptions()).toEqual({
+			videoBitsPerSecond: 45_000_000,
+		});
+		expect(createWebcamRecordingOptions("video/mp4")).toEqual({
+			videoBitsPerSecond: 45_000_000,
+			mimeType: "video/mp4",
 		});
 	});
 });

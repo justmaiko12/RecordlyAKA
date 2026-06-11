@@ -32,10 +32,10 @@ const RECORDING_FILE_PREFIX = "recording-";
 const AUDIO_BITRATE_VOICE = 128_000;
 const AUDIO_BITRATE_SYSTEM = 192_000;
 const MIC_GAIN_BOOST = 1.4;
-const WEBCAM_BITRATE = 8_000_000;
-const WEBCAM_WIDTH = 1280;
-const WEBCAM_HEIGHT = 720;
-const WEBCAM_FRAME_RATE = 30;
+const WEBCAM_BITRATE = 45_000_000;
+const WEBCAM_WIDTH = 3840;
+const WEBCAM_HEIGHT = 2160;
+const WEBCAM_FRAME_RATE = 60;
 const WEBCAM_SUFFIX = "-webcam";
 const MICROPHONE_FALLBACK_ERROR_TOAST_ID = "recording-microphone-fallback-error";
 const MICROPHONE_SIDECAR_ERROR_TOAST_ID = "recording-microphone-sidecar-error";
@@ -213,10 +213,7 @@ export function resolveBrowserCaptureCursorPolicy({
 export function shouldUseNativeWindowsCaptureForSource(
 	source: Pick<ProcessedDesktopSource, "id"> | null | undefined,
 ): boolean {
-	return (
-		source?.id?.startsWith("screen:") === true ||
-		source?.id?.startsWith("window:") === true
-	);
+	return source?.id?.startsWith("screen:") === true || source?.id?.startsWith("window:") === true;
 }
 
 export function createProcessedMicrophoneConstraints(
@@ -263,6 +260,24 @@ export function createBrowserRecordingOptions({
 	}
 
 	return options;
+}
+
+export function createWebcamVideoConstraints(webcamDeviceId?: string): MediaTrackConstraints {
+	return {
+		...(webcamDeviceId ? { deviceId: { exact: webcamDeviceId } } : {}),
+		aspectRatio: { ideal: 16 / 9 },
+		resizeMode: "none",
+		width: { ideal: WEBCAM_WIDTH, min: 1920 },
+		height: { ideal: WEBCAM_HEIGHT, min: 1080 },
+		frameRate: { ideal: WEBCAM_FRAME_RATE, max: WEBCAM_FRAME_RATE },
+	} as MediaTrackConstraints;
+}
+
+export function createWebcamRecordingOptions(mimeType?: string): MediaRecorderOptions {
+	return {
+		videoBitsPerSecond: WEBCAM_BITRATE,
+		...(mimeType ? { mimeType } : {}),
+	};
 }
 
 function createMicrophoneTrackSettingsSnapshot(
@@ -959,18 +974,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 		try {
 			webcamStream.current = await navigator.mediaDevices.getUserMedia({
-				video: webcamDeviceId
-					? {
-							deviceId: { exact: webcamDeviceId },
-							width: { ideal: WEBCAM_WIDTH },
-							height: { ideal: WEBCAM_HEIGHT },
-							frameRate: { ideal: WEBCAM_FRAME_RATE, max: WEBCAM_FRAME_RATE },
-						}
-					: {
-							width: { ideal: WEBCAM_WIDTH },
-							height: { ideal: WEBCAM_HEIGHT },
-							frameRate: { ideal: WEBCAM_FRAME_RATE, max: WEBCAM_FRAME_RATE },
-						},
+				video: createWebcamVideoConstraints(webcamDeviceId),
 				audio: false,
 			});
 
@@ -982,10 +986,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			});
 			pendingWebcamPathPromise.current = webcamStopPromise.current;
 
-			const recorder = new MediaRecorder(webcamStream.current, {
-				videoBitsPerSecond: WEBCAM_BITRATE,
-				...(mimeType ? { mimeType } : {}),
-			});
+			const recorder = new MediaRecorder(
+				webcamStream.current,
+				createWebcamRecordingOptions(mimeType),
+			);
 
 			webcamRecorder.current = recorder;
 			recorder.ondataavailable = (event) => {

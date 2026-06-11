@@ -15,6 +15,32 @@ Language: EN | [简中](README.zh-CN.md)
 
 <img width="1280" height="720" alt="MP4 to GIF export (4)" src="https://github.com/user-attachments/assets/e6d68606-5fc0-4f70-99cd-7521982dc13b" />
 
+---
+
+## Why Use This AKA Build?
+
+This fork is tuned for creator recordings where the camera feed matters as much
+as the screen. The upstream app is already strong for demos, but my version
+raises the quality floor for phone-camera and webcam workflows so exports do not
+fall apart when the face-cam is large or full-screen.
+
+- **Higher-quality phone camera capture:** webcam sidecar recording now requests
+  a 4K 16:9 stream when available, with 1080p as the minimum target instead of
+  silently accepting low-resolution camera input.
+- **Higher webcam recording bitrate:** camera footage is recorded at a
+  4K-friendly bitrate, so detailed face-cam footage has more room before
+  compression artifacts show up.
+- **No low-res preview trap:** the floating webcam preview no longer opens the
+  camera as a tiny square stream that can cause some camera sources to negotiate
+  low-quality output.
+- **Cleaner original-quality exports:** the highest MP4 quality path now keeps
+  the full source bitrate instead of reducing it below the source-quality
+  budget.
+
+Use this build if you record creator education, product walkthroughs, Loom-style
+videos, or social clips where you want your phone camera to stay sharp in the
+final export.
+
 
 ---
 ### Backed by the community
