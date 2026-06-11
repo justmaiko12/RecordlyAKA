@@ -19,13 +19,23 @@ Language: EN | [简中](README.zh-CN.md)
 
 ## Why Use This AKA Build?
 
-This fork is tuned for creator recordings where the camera feed matters as much
-as the screen. The upstream app is already strong for demos, but my version
-raises the quality floor for phone-camera and webcam workflows so exports do not
-fall apart when the face-cam is large or full-screen.
+This fork is tuned for creator-led screen recordings, not just raw screen
+capture. The goal is to make Recordly feel more like a lightweight creator
+studio: readable scripts, fast cuts, camera-first moments, tight timelines, and
+exports that still look sharp.
 
-- **Higher-quality phone camera capture:** webcam sidecar recording now requests
-  a 4K 16:9 stream when available, with 1080p as the minimum target instead of
+- **Hidden teleprompter:** read from a separate teleprompter window while
+  recording without burning the script into the final export.
+- **Full-screen face-cam switch:** jump between screen-first mode and
+  camera-full mode while recording, then keep those camera-full moments editable
+  in the timeline and preserved in export.
+- **Magnet timeline editing:** keep the magnet on when deleted clips should
+  close the gap automatically, or turn it off when you want the gap to remain as
+  intentional black time.
+- **Fast `B` cuts:** split clips from the keyboard with `B`, matching common
+  editor muscle memory for quick cleanup.
+- **Higher-quality phone camera capture:** webcam sidecar recording requests a
+  4K 16:9 stream when available, with 1080p as the minimum target instead of
   silently accepting low-resolution camera input.
 - **Higher webcam recording bitrate:** camera footage is recorded at a
   4K-friendly bitrate, so detailed face-cam footage has more room before
@@ -33,13 +43,12 @@ fall apart when the face-cam is large or full-screen.
 - **No low-res preview trap:** the floating webcam preview no longer opens the
   camera as a tiny square stream that can cause some camera sources to negotiate
   low-quality output.
-- **Cleaner original-quality exports:** the highest MP4 quality path now keeps
-  the full source bitrate instead of reducing it below the source-quality
-  budget.
+- **Cleaner original-quality exports:** the highest MP4 quality path keeps the
+  full source bitrate instead of reducing it below the source-quality budget.
 
-Use this build if you record creator education, product walkthroughs, Loom-style
-videos, or social clips where you want your phone camera to stay sharp in the
-final export.
+Use this build if you record creator education, product walkthroughs,
+Loom-style videos, sales demos, or social clips where you need your face-cam,
+script, cuts, and final export to work together.
 
 
 ---

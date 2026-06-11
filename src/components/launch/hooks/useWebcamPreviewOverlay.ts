@@ -23,7 +23,7 @@ export function useWebcamPreviewOverlay({
 	/**
 	 * While recording/finalizing the HUD window shrinks to a compact strip
 	 * (getHudOverlayBounds passes !hudOverlayRecordingActive), so the 288px
-	 * floating preview would be clipped to a sliver — hide it instead.
+	 * floating preview would be clipped to a sliver, so hide it instead.
 	 */
 	hudCompact?: boolean;
 }) {

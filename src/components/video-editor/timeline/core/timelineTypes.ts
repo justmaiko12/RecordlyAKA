@@ -1,5 +1,5 @@
-import type { ShortcutBinding } from "@/lib/shortcuts";
 import type { Span } from "dnd-timeline";
+import type { ShortcutBinding } from "@/lib/shortcuts";
 import type { ZoomMode } from "../../types";
 
 export interface TimelineRegionSpan {

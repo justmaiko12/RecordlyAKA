@@ -6148,7 +6148,9 @@ export default function VideoEditor() {
 									onGifLoopChange={setGifLoop}
 									gifSizePreset={gifSizePreset}
 									onGifSizePresetChange={setGifSizePreset}
-									showCaptionSidecarOption={hasCaptionsForSidecar && exportFormat === "mp4"}
+									showCaptionSidecarOption={
+										hasCaptionsForSidecar && exportFormat === "mp4"
+									}
 									includeCaptionSidecar={includeCaptionSidecar}
 									onIncludeCaptionSidecarChange={setIncludeCaptionSidecar}
 									mp4OutputDimensions={mp4OutputDimensions}
