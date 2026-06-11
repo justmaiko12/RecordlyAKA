@@ -875,6 +875,114 @@ describe("ModernFrameRenderer webcam export fallback", () => {
 		}
 	});
 
+	it("covers the full frame for camera-full fill with a decoded export webcam source after a bubble segment", () => {
+		// Export-realistic path: the webcam source is a decoded VideoFrame from
+		// the streaming decoder (not a media element), the stored crop is the
+		// pixel-square bubble viewport, and a screen/bubble segment renders
+		// BEFORE the camera-full fill segment so the frame cache transitions
+		// from the square crop to the aspect-expanded crop mid-export.
+		const renderer = createRenderer() as any;
+		renderer.config.webcam = {
+			...DEFAULT_WEBCAM_OVERLAY,
+			enabled: true,
+			// Max centered pixel-square crop of a 1280x720 webcam.
+			cropRegion: { x: 0.21875, y: 0, width: 0.5625, height: 1 },
+		};
+		renderer.config.webcamLayoutRegions = [{ id: "layout-1", startMs: 5_000, endMs: 9_000 }];
+		renderer.config.webcamLayoutStyle = "fill";
+		renderer.webcamDecodedFrame = {
+			displayWidth: 1280,
+			displayHeight: 720,
+			timestamp: 0,
+		};
+		renderer.cameraContainer = { visible: true };
+		renderer.webcamRootContainer = {
+			visible: false,
+			position: { set: vi.fn() },
+		};
+		renderer.webcamContainer = {
+			addChildAt: vi.fn(),
+		};
+		renderer.webcamMaskGraphics = {
+			clear: vi.fn(),
+			moveTo: vi.fn(),
+			lineTo: vi.fn(),
+			closePath: vi.fn(),
+			fill: vi.fn(),
+		};
+		renderer.webcamShadowLayers = [];
+		renderer.animationState = {
+			appliedScale: 1,
+		};
+
+		// Screen segment first: the bubble renders from the square crop cache.
+		renderer.currentVideoTime = 2;
+		renderer.lastSyncedWebcamTime = 2;
+		renderer.updateWebcamOverlay();
+
+		expect(renderer.cameraContainer.visible).toBe(true);
+		const bubbleLayout = renderer.webcamLayoutCache;
+		expect(bubbleLayout.sourceWidth).toBe(720);
+		expect(bubbleLayout.sourceHeight).toBe(720);
+		expect(renderer.webcamFrameCacheCtx.drawImage).toHaveBeenLastCalledWith(
+			renderer.webcamDecodedFrame,
+			280,
+			0,
+			720,
+			720,
+			0,
+			0,
+			720,
+			720,
+		);
+
+		const bubbleTexture = renderer.webcamSprite.texture;
+
+		// Camera-full fill segment: the cache expands to the frame aspect and
+		// the layout covers the whole output frame edge to edge.
+		renderer.currentVideoTime = 6;
+		renderer.lastSyncedWebcamTime = 6;
+		renderer.updateWebcamOverlay();
+
+		// The frame cache canvas was recreated at the expanded size. Pixi
+		// sprites only forward texture "update" events for dynamic textures, so
+		// an in-place resource swap would leave the sprite's batched quad at
+		// the stale square size (rendering the fill as a shrunken pillarboxed
+		// rect). The texture must be replaced so the sprite re-reads its size.
+		expect(renderer.webcamSprite.texture).not.toBe(bubbleTexture);
+		expect(bubbleTexture.destroy).toHaveBeenCalled();
+
+		expect(renderer.cameraContainer.visible).toBe(false);
+		expect(renderer.webcamRootContainer.visible).toBe(true);
+		expect(renderer.webcamFrameCacheCtx.drawImage).toHaveBeenLastCalledWith(
+			renderer.webcamDecodedFrame,
+			0,
+			0,
+			1280,
+			720,
+			0,
+			0,
+			1280,
+			720,
+		);
+		const fillLayout = renderer.webcamLayoutCache;
+		expect(fillLayout.sourceWidth).toBe(1280);
+		expect(fillLayout.sourceHeight).toBe(720);
+		expect(fillLayout.width).toBeCloseTo(1920);
+		expect(fillLayout.height).toBeCloseTo(1080);
+		expect(fillLayout.positionX).toBeCloseTo(0);
+		expect(fillLayout.positionY).toBeCloseTo(0);
+		expect(fillLayout.radius).toBe(0);
+		// The sprite cover-fit must match the layout rect: 1920/1280 = 1.5
+		// (negative X when the webcam is mirrored).
+		const [scaleX, scaleY] = renderer.webcamSprite.scale.set.mock.calls.at(-1);
+		expect(Math.abs(scaleX)).toBeCloseTo(1.5);
+		expect(scaleY).toBeCloseTo(1.5);
+		const [fillX, fillY] = renderer.webcamRootContainer.position.set.mock.calls.at(-1);
+		expect(fillX).toBeCloseTo(0);
+		expect(fillY).toBeCloseTo(0);
+	});
+
 	it("snapshots media-element webcam frames into the cache before rendering", () => {
 		const renderer = createRenderer() as any;
 		renderer.config.webcam = {

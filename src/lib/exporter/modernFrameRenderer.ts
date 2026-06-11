@@ -499,6 +499,8 @@ export class FrameRenderer {
 	private webcamLayoutCache: WebcamLayoutCache | null = null;
 	private videoTextureUsesStartupStaging = false;
 	private webcamTextureUsesStartupStaging = false;
+	private webcamTextureSourceWidth = 0;
+	private webcamTextureSourceHeight = 0;
 	private retainedSceneSourceFrame: VideoFrame | null = null;
 	private retainedSceneTextureFrame: VideoFrame | null = null;
 	private retainedBackgroundSourceFrame: VideoFrame | null = null;
@@ -2450,9 +2452,29 @@ export class FrameRenderer {
 			this.webcamTextureSource = texture.source as unknown as MutableVideoTextureSource;
 			this.webcamContainer.addChildAt(this.webcamSprite, 0);
 			this.webcamTextureUsesStartupStaging = usesStartupStaging;
+			this.webcamTextureSourceWidth = sourceWidth;
+			this.webcamTextureSourceHeight = sourceHeight;
 		} else if (this.webcamTextureUsesStartupStaging !== usesStartupStaging) {
 			this.webcamTextureSource = this.replaceSpriteTexture(this.webcamSprite, resolvedSource);
 			this.webcamTextureUsesStartupStaging = usesStartupStaging;
+			this.webcamTextureSourceWidth = sourceWidth;
+			this.webcamTextureSourceHeight = sourceHeight;
+		} else if (
+			this.webcamTextureSource &&
+			(this.webcamTextureSourceWidth !== sourceWidth ||
+				this.webcamTextureSourceHeight !== sourceHeight)
+		) {
+			// The source changed size (the camera-full fill style expands the
+			// square bubble crop cache to the frame aspect mid-export). Pixi
+			// sprites only forward texture "update" events for dynamic textures,
+			// so resizing the existing texture in place via a resource swap
+			// leaves the sprite's batched quad at the stale dimensions while the
+			// cover-fit scale is computed for the new ones — rendering the
+			// camera as a shrunken pillarboxed rect. Replace the texture so the
+			// sprite re-reads its dimensions.
+			this.webcamTextureSource = this.replaceSpriteTexture(this.webcamSprite, resolvedSource);
+			this.webcamTextureSourceWidth = sourceWidth;
+			this.webcamTextureSourceHeight = sourceHeight;
 		} else if (this.webcamTextureSource) {
 			this.webcamTextureSource.resource = resolvedSource;
 			this.webcamTextureSource.update();
@@ -4140,6 +4162,8 @@ export class FrameRenderer {
 		this.webcamVideoFrameStagingCtx = null;
 		this.videoTextureUsesStartupStaging = false;
 		this.webcamTextureUsesStartupStaging = false;
+		this.webcamTextureSourceWidth = 0;
+		this.webcamTextureSourceHeight = 0;
 		this.closeRetainedVideoFrame("scene");
 		this.closeRetainedVideoFrame("background");
 		this.closeRetainedVideoFrame("webcam");
