@@ -4340,6 +4340,8 @@ export function SettingsPanel({
 										[
 											["brightness", "Brightness"],
 											["contrast", "Contrast"],
+											["temperature", "Temperature"],
+											["saturation", "Saturation"],
 											["highlights", "Highlights"],
 											["shadows", "Shadows"],
 										] as const
