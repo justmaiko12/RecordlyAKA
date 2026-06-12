@@ -25,6 +25,7 @@ import {
 	KEY_TOLERANCE_MAX,
 	KEY_TOLERANCE_MIN,
 	SPILL_FACTOR,
+	TEMPERATURE_SHIFT,
 } from "./chromaKeyMath";
 import { isMaskRenderable, maskSettingsKey, renderMaskToCanvas } from "./maskTexture";
 
@@ -49,7 +50,9 @@ function isColorNeutral(color: WebcamColorSettings): boolean {
 		color.brightness === 0 &&
 		color.contrast === 0 &&
 		color.highlights === 0 &&
-		color.shadows === 0
+		color.shadows === 0 &&
+		color.temperature === 0 &&
+		color.saturation === 0
 	);
 }
 
@@ -88,6 +91,7 @@ uniform vec3 u_keyColor;
 uniform float u_keyStrength;
 uniform float u_edgeSoftness;
 uniform vec4 u_colorAdjust;     // brightness, contrast, highlights, shadows
+uniform vec2 u_colorAdjust2;    // temperature, saturation
 uniform float u_frameAspect;    // source width / height
 uniform float u_backgroundAspect;
 uniform bool u_flipBackground;  // compensate for the caller's mirror transform
@@ -97,6 +101,7 @@ const float KEY_TOLERANCE_MAX = ${KEY_TOLERANCE_MAX};
 const float KEY_SOFTNESS_MIN = ${KEY_SOFTNESS_MIN};
 const float KEY_SOFTNESS_MAX = ${KEY_SOFTNESS_MAX};
 const float SPILL_FACTOR = ${SPILL_FACTOR};
+const float TEMPERATURE_SHIFT = ${TEMPERATURE_SHIFT};
 
 vec2 rgbToCbCr(vec3 c) {
   return vec2(
@@ -129,9 +134,16 @@ vec3 applyColorAdjustments(vec3 c) {
   float contrast = u_colorAdjust.y;
   float highlights = u_colorAdjust.z;
   float shadows = u_colorAdjust.w;
+  float temperature = u_colorAdjust2.x;
+  float saturation = u_colorAdjust2.y;
 
   c += brightness * 0.5;
   c = (c - 0.5) * (1.0 + contrast) + 0.5;
+
+  c.r += temperature * TEMPERATURE_SHIFT;
+  c.b -= temperature * TEMPERATURE_SHIFT;
+
+  c = mix(vec3(lumaOf(c)), c, 1.0 + saturation);
 
   float l = lumaOf(c);
   float highlightWeight = smoothstep(0.5, 1.0, l);
@@ -305,6 +317,7 @@ export class WebcamProcessor {
 			color.highlights,
 			color.shadows,
 		);
+		gl.uniform2f(this.uniforms.u_colorAdjust2, color.temperature, color.saturation);
 		gl.uniform1f(this.uniforms.u_frameAspect, width / height);
 		gl.uniform1f(this.uniforms.u_backgroundAspect, this.backgroundAspect);
 		gl.uniform1i(this.uniforms.u_flipBackground, options?.mirrored ? 1 : 0);
@@ -426,6 +439,7 @@ export class WebcamProcessor {
 				"u_keyStrength",
 				"u_edgeSoftness",
 				"u_colorAdjust",
+				"u_colorAdjust2",
 				"u_frameAspect",
 				"u_backgroundAspect",
 				"u_flipBackground",

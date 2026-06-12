@@ -173,6 +173,9 @@ export interface WebcamColorSettings {
 	contrast: number;
 	highlights: number;
 	shadows: number;
+	/** warm (+) / cool (-) white-balance shift */
+	temperature: number;
+	saturation: number;
 }
 
 export interface WebcamOverlaySettings {
@@ -264,6 +267,8 @@ export const DEFAULT_WEBCAM_COLOR: WebcamColorSettings = {
 	contrast: 0,
 	highlights: 0,
 	shadows: 0,
+	temperature: 0,
+	saturation: 0,
 };
 
 export const DEFAULT_WEBCAM_OVERLAY: WebcamOverlaySettings = {

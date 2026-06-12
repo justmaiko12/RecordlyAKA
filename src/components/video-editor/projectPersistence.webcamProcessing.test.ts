@@ -31,7 +31,14 @@ describe("normalizeProjectEditor webcam processing settings", () => {
 					{ x: 0.5, y: 0.95 },
 				],
 			},
-			color: { brightness: 0.2, contrast: -0.3, highlights: 0.1, shadows: 0.6 },
+			color: {
+				brightness: 0.2,
+				contrast: -0.3,
+				highlights: 0.1,
+				shadows: 0.6,
+				temperature: 0.4,
+				saturation: -0.2,
+			},
 		};
 		const normalized = normalizeProjectEditor({ webcam });
 		expect(normalized.webcam.greenscreen).toEqual(webcam.greenscreen);
@@ -89,6 +96,8 @@ describe("normalizeProjectEditor webcam processing settings", () => {
 			contrast: DEFAULT_WEBCAM_COLOR.contrast,
 			highlights: -1,
 			shadows: DEFAULT_WEBCAM_COLOR.shadows,
+			temperature: DEFAULT_WEBCAM_COLOR.temperature,
+			saturation: DEFAULT_WEBCAM_COLOR.saturation,
 		});
 	});
 });

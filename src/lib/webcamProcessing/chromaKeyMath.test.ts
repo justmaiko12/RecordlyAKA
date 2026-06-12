@@ -114,7 +114,14 @@ describe("maskAlpha", () => {
 });
 
 describe("applyColorAdjustments", () => {
-	const neutral = { brightness: 0, contrast: 0, highlights: 0, shadows: 0 };
+	const neutral = {
+		brightness: 0,
+		contrast: 0,
+		highlights: 0,
+		shadows: 0,
+		temperature: 0,
+		saturation: 0,
+	};
 
 	it("is identity at neutral settings", () => {
 		expect(applyColorAdjustments(SKIN, neutral)).toEqual(SKIN);
@@ -171,6 +178,25 @@ describe("applyColorAdjustments", () => {
 		);
 		expect(dark.r).toBeGreaterThan(0.2);
 		expect(bright.r).toBeCloseTo(0.8, 6);
+	});
+
+	it("temperature warms by raising red and lowering blue, cools in reverse", () => {
+		const base = { r: 0.5, g: 0.5, b: 0.5 };
+		const warm = applyColorAdjustments(base, { ...neutral, temperature: 0.5 });
+		expect(warm.r).toBeGreaterThan(0.5);
+		expect(warm.b).toBeLessThan(0.5);
+		expect(warm.g).toBeCloseTo(0.5, 6);
+		const cool = applyColorAdjustments(base, { ...neutral, temperature: -0.5 });
+		expect(cool.r).toBeLessThan(0.5);
+		expect(cool.b).toBeGreaterThan(0.5);
+	});
+
+	it("saturation -1 fully desaturates to luma; +0.5 pushes channels apart", () => {
+		const gray = applyColorAdjustments(SKIN, { ...neutral, saturation: -1 });
+		expect(gray.r).toBeCloseTo(gray.g, 6);
+		expect(gray.g).toBeCloseTo(gray.b, 6);
+		const vivid = applyColorAdjustments(SKIN, { ...neutral, saturation: 0.5 });
+		expect(vivid.r - vivid.b).toBeGreaterThan(SKIN.r - SKIN.b);
 	});
 
 	it("clamps output to 0..1", () => {

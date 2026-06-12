@@ -19,6 +19,9 @@ export interface ColorAdjustments {
 	contrast: number;
 	highlights: number;
 	shadows: number;
+	/** warm (+) / cool (-) white-balance shift */
+	temperature: number;
+	saturation: number;
 }
 
 export interface MaskRect {
@@ -147,13 +150,16 @@ function clamp01(v: number): number {
 	return Math.min(1, Math.max(0, v));
 }
 
+/** temperature 1.0 shifts red up / blue down by this much (and vice versa). */
+export const TEMPERATURE_SHIFT = 0.15;
+
 /**
- * Brightness/contrast/highlights/shadows, applied per channel in that order.
- * Highlights only affect pixels with luma above mid gray; shadows below.
- * Exact identity when all settings are 0.
+ * Brightness/contrast/temperature/saturation/highlights/shadows, applied in
+ * that order. Highlights only affect pixels with luma above mid gray; shadows
+ * below. Exact identity when all settings are 0.
  */
 export function applyColorAdjustments(pixel: Rgb, adjustments: ColorAdjustments): Rgb {
-	const { brightness, contrast, highlights, shadows } = adjustments;
+	const { brightness, contrast, highlights, shadows, temperature, saturation } = adjustments;
 	let { r, g, b } = pixel;
 
 	if (brightness !== 0) {
@@ -168,6 +174,22 @@ export function applyColorAdjustments(pixel: Rgb, adjustments: ColorAdjustments)
 		r = (r - 0.5) * gain + 0.5;
 		g = (g - 0.5) * gain + 0.5;
 		b = (b - 0.5) * gain + 0.5;
+	}
+
+	if (temperature !== 0) {
+		// Warm pushes red up and blue down; cool is the mirror image.
+		r += temperature * TEMPERATURE_SHIFT;
+		b -= temperature * TEMPERATURE_SHIFT;
+	}
+
+	if (saturation !== 0) {
+		// Lerp away from (saturation < 0) or beyond (saturation > 0) the
+		// grayscale point: -1 is fully desaturated, +1 doubles chroma.
+		const l = luma({ r, g, b });
+		const amount = 1 + saturation;
+		r = l + (r - l) * amount;
+		g = l + (g - l) * amount;
+		b = l + (b - l) * amount;
 	}
 
 	if (highlights !== 0 || shadows !== 0) {

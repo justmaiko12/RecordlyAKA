@@ -237,6 +237,8 @@ export function normalizeWebcamColor(
 		contrast: normalizeChannel(candidate.contrast, DEFAULT_WEBCAM_COLOR.contrast),
 		highlights: normalizeChannel(candidate.highlights, DEFAULT_WEBCAM_COLOR.highlights),
 		shadows: normalizeChannel(candidate.shadows, DEFAULT_WEBCAM_COLOR.shadows),
+		temperature: normalizeChannel(candidate.temperature, DEFAULT_WEBCAM_COLOR.temperature),
+		saturation: normalizeChannel(candidate.saturation, DEFAULT_WEBCAM_COLOR.saturation),
 	};
 }
 
