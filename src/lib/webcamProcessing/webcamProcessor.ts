@@ -90,6 +90,8 @@ uniform bool u_maskEnabled;
 uniform vec3 u_keyColor;
 uniform vec3 u_keyColor2;
 uniform bool u_keyColor2Enabled;
+uniform vec3 u_protectColor;
+uniform bool u_protectEnabled;
 uniform float u_keyStrength;
 uniform float u_edgeSoftness;
 uniform vec4 u_colorAdjust;     // brightness, contrast, highlights, shadows
@@ -131,6 +133,11 @@ float chromaKeyAlpha(vec3 pixel) {
   float alpha = chromaKeyAlphaFor(pixel, u_keyColor);
   if (u_keyColor2Enabled) {
     alpha = min(alpha, chromaKeyAlphaFor(pixel, u_keyColor2));
+  }
+  // Protect (holdout) color: pixels near it are forced opaque even when a
+  // key color would remove them (protection wins over the key).
+  if (u_protectEnabled) {
+    alpha = max(alpha, 1.0 - chromaKeyAlphaFor(pixel, u_protectColor));
   }
   return alpha;
 }
@@ -311,6 +318,7 @@ export class WebcamProcessor {
 
 		const keyColor = hexToRgb01(greenscreen.keyColor);
 		const keyColor2 = greenscreen.keyColor2 ? hexToRgb01(greenscreen.keyColor2) : null;
+		const protectColor = greenscreen.protectColor ? hexToRgb01(greenscreen.protectColor) : null;
 		gl.uniform1i(this.uniforms.u_frame, 0);
 		gl.uniform1i(this.uniforms.u_background, 1);
 		gl.uniform1i(this.uniforms.u_maskTex, 2);
@@ -328,6 +336,13 @@ export class WebcamProcessor {
 			keyColor2?.b ?? 0,
 		);
 		gl.uniform1i(this.uniforms.u_keyColor2Enabled, keyColor2 ? 1 : 0);
+		gl.uniform3f(
+			this.uniforms.u_protectColor,
+			protectColor?.r ?? 0,
+			protectColor?.g ?? 0,
+			protectColor?.b ?? 0,
+		);
+		gl.uniform1i(this.uniforms.u_protectEnabled, protectColor ? 1 : 0);
 		gl.uniform1f(this.uniforms.u_keyStrength, greenscreen.keyStrength);
 		gl.uniform1f(this.uniforms.u_edgeSoftness, greenscreen.edgeSoftness);
 		gl.uniform4f(
@@ -458,6 +473,8 @@ export class WebcamProcessor {
 				"u_keyColor",
 				"u_keyColor2",
 				"u_keyColor2Enabled",
+				"u_protectColor",
+				"u_protectEnabled",
 				"u_keyStrength",
 				"u_edgeSoftness",
 				"u_colorAdjust",

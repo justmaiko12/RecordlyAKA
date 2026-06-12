@@ -121,6 +121,21 @@ export function chromaKeyAlphaMulti(
 }
 
 /**
+ * Protection (holdout) weight: 1 near the protect color, 0 far from it.
+ * Final alpha = max(keyAlpha, protection), so pixels matching the protect
+ * color are forced opaque even when a key color would remove them — for skin
+ * tones or clothing the keyer wrongly captures.
+ */
+export function protectWeight(
+	pixel: Rgb,
+	protectColor: Rgb,
+	keyStrength: number,
+	edgeSoftness: number,
+): number {
+	return 1 - chromaKeyAlpha(pixel, protectColor, keyStrength, edgeSoftness);
+}
+
+/**
  * Green-spill suppression on semi-transparent edge pixels: pulls the green
  * channel down toward max(r, b), proportional to how keyed the pixel is.
  * Never raises green.

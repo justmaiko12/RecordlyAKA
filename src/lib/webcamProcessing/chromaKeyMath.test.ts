@@ -6,6 +6,7 @@ import {
 	DEFAULT_KEY_COLOR,
 	hexToRgb01,
 	maskAlpha,
+	protectWeight,
 	suppressSpill,
 } from "./chromaKeyMath";
 
@@ -90,6 +91,33 @@ describe("chromaKeyAlphaMulti", () => {
 		expect(chromaKeyAlphaMulti(pixel, [color], 0.5, 0.35)).toBe(
 			chromaKeyAlpha(pixel, color, 0.5, 0.35),
 		);
+	});
+});
+
+describe("protectWeight", () => {
+	it("forces pixels near the protect color opaque even when keyed", () => {
+		// A greenish skin reflection the key would remove.
+		const spillSkin = { r: 0.55, g: 0.72, b: 0.35 };
+		const key = hexToRgb01("#8cc73f");
+		const keyAlpha = chromaKeyAlpha(spillSkin, key, 0.9, 0.35);
+		expect(keyAlpha).toBeLessThan(0.5); // key wants it gone
+		const protection = protectWeight(spillSkin, spillSkin, 0.9, 0.35);
+		expect(protection).toBe(1); // exact protect match
+		expect(Math.max(keyAlpha, protection)).toBe(1); // final: kept
+	});
+
+	it("is zero far from the protect color (no effect on the screen)", () => {
+		const screenGreen = hexToRgb01("#8cc73f");
+		const protect = SKIN;
+		expect(protectWeight(screenGreen, protect, 0.5, 0.35)).toBe(0);
+	});
+
+	it("blends smoothly at the protection boundary", () => {
+		const protect = { r: 0.8, g: 0.6, b: 0.5 };
+		const nearProtect = { r: 0.72, g: 0.62, b: 0.52 };
+		const w = protectWeight(nearProtect, protect, 0.5, 0.9);
+		expect(w).toBeGreaterThan(0);
+		expect(w).toBeLessThanOrEqual(1);
 	});
 });
 

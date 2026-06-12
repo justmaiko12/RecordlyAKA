@@ -137,6 +137,8 @@ export interface WebcamGreenscreenSettings {
 	keyColor: string;
 	/** Optional second key color for unevenly lit screens; null = unused. */
 	keyColor2: string | null;
+	/** Protect (holdout) color: pixels near it are never keyed; null = unused. */
+	protectColor: string | null;
 }
 
 /**
@@ -254,6 +256,7 @@ export const DEFAULT_WEBCAM_GREENSCREEN: WebcamGreenscreenSettings = {
 	edgeSoftness: 0.35,
 	keyColor: DEFAULT_WEBCAM_KEY_COLOR,
 	keyColor2: null,
+	protectColor: null,
 };
 
 export const DEFAULT_WEBCAM_MASK: WebcamMaskSettings = {

@@ -1947,7 +1947,7 @@ export function SettingsPanel({
 	const webcamGreenscreen = webcam?.greenscreen ?? DEFAULT_WEBCAM_GREENSCREEN;
 	// Which key-color swatch the eyedropper writes to (1 = primary, 2 = optional
 	// second sample for unevenly lit screens).
-	const [activeKeySlot, setActiveKeySlot] = useState<1 | 2>(1);
+	const [activeKeySlot, setActiveKeySlot] = useState<1 | 2 | "protect">(1);
 	const webcamMask = webcam?.mask ?? DEFAULT_WEBCAM_MASK;
 	const webcamColor = webcam?.color ?? DEFAULT_WEBCAM_COLOR;
 	const [maskEditorDialogOpen, setMaskEditorDialogOpen] = useState(false);
@@ -4116,6 +4116,45 @@ export function SettingsPanel({
 															×2
 														</button>
 													) : null}
+													<button
+														type="button"
+														title={
+															webcamGreenscreen.protectColor
+																? "Protect color — clicks set what must never be keyed"
+																: "Add a protect color: click something of yours the key is wrongly removing"
+														}
+														onClick={() => setActiveKeySlot("protect")}
+														className={cn(
+															"inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm text-[9px] leading-none text-muted-foreground transition-shadow",
+															activeKeySlot === "protect"
+																? "ring-2 ring-[#16a34a]"
+																: "ring-1 ring-foreground/20",
+														)}
+														style={
+															webcamGreenscreen.protectColor
+																? {
+																		backgroundColor:
+																			webcamGreenscreen.protectColor,
+																	}
+																: undefined
+														}
+													>
+														{webcamGreenscreen.protectColor ? "" : "−"}
+													</button>
+													{webcamGreenscreen.protectColor ? (
+														<button
+															type="button"
+															onClick={() => {
+																updateWebcamGreenscreen({
+																	protectColor: null,
+																});
+																setActiveKeySlot(1);
+															}}
+															className="text-[10px] text-muted-foreground transition-opacity hover:opacity-80"
+														>
+															×−
+														</button>
+													) : null}
 													{tSettings(
 														"effects.webcamGreenscreenKeyColors",
 														"Key colors — click your green screen below",
@@ -4128,6 +4167,7 @@ export function SettingsPanel({
 															keyColor:
 																DEFAULT_WEBCAM_GREENSCREEN.keyColor,
 															keyColor2: null,
+															protectColor: null,
 														});
 														setActiveKeySlot(1);
 													}}
@@ -4142,15 +4182,21 @@ export function SettingsPanel({
 												previewCurrentTime={webcamPreviewCurrentTime}
 												previewPlaying={webcamPreviewPlaying}
 												previewTimeOffsetMs={webcam?.timeOffsetMs}
-												onPickColor={(picked) =>
-													activeKeySlot === 2
-														? updateWebcamGreenscreen({
-																keyColor2: picked,
-															})
-														: updateWebcamGreenscreen({
-																keyColor: picked,
-															})
-												}
+												onPickColor={(picked) => {
+													if (activeKeySlot === "protect") {
+														updateWebcamGreenscreen({
+															protectColor: picked,
+														});
+													} else if (activeKeySlot === 2) {
+														updateWebcamGreenscreen({
+															keyColor2: picked,
+														});
+													} else {
+														updateWebcamGreenscreen({
+															keyColor: picked,
+														});
+													}
+												}}
 											/>
 										</div>
 										<SliderControl

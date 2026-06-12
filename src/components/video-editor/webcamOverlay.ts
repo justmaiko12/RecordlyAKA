@@ -161,6 +161,11 @@ export function normalizeWebcamGreenscreen(
 			typeof candidate.keyColor2 === "string" && HEX_COLOR_PATTERN.test(candidate.keyColor2)
 				? candidate.keyColor2.toLowerCase()
 				: null,
+		protectColor:
+			typeof candidate.protectColor === "string" &&
+			HEX_COLOR_PATTERN.test(candidate.protectColor)
+				? candidate.protectColor.toLowerCase()
+				: null,
 		backgroundImagePath:
 			typeof candidate.backgroundImagePath === "string" && candidate.backgroundImagePath
 				? candidate.backgroundImagePath
