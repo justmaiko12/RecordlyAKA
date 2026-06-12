@@ -18,6 +18,7 @@ describe("normalizeProjectEditor webcam processing settings", () => {
 				keyStrength: 0.7,
 				edgeSoftness: 0.2,
 				keyColor: "#73b94a",
+				keyColor2: "#3f7a2a",
 			},
 			mask: {
 				enabled: true,
@@ -78,6 +79,7 @@ describe("normalizeProjectEditor webcam processing settings", () => {
 			keyStrength: 1,
 			edgeSoftness: 0,
 			keyColor: "#00cc00",
+			keyColor2: null,
 		});
 		expect(normalized.webcam.mask?.enabled).toBe(true);
 		expect(normalized.webcam.mask?.shape).toBe(DEFAULT_WEBCAM_MASK.shape);

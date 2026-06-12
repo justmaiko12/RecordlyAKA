@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	applyColorAdjustments,
 	chromaKeyAlpha,
+	chromaKeyAlphaMulti,
 	DEFAULT_KEY_COLOR,
 	hexToRgb01,
 	maskAlpha,
@@ -62,6 +63,33 @@ describe("hexToRgb01", () => {
 		const pickedAlpha = chromaKeyAlpha(screenPixel, picked, 0.5, 0.35);
 		expect(defaultAlpha).toBe(1); // the bug Michael hit: nothing keyed
 		expect(pickedAlpha).toBeLessThan(0.2); // eyedropper fixes it
+	});
+});
+
+describe("chromaKeyAlphaMulti", () => {
+	it("keys a pixel that matches either color", () => {
+		const brightLime = hexToRgb01("#8cc73f");
+		const shadowGreen = hexToRgb01("#3f7a2a");
+		const colors = [brightLime, shadowGreen];
+		// A pixel near the SHADOW green: missed by the bright key alone.
+		const shadowPixel = { r: 0.26, g: 0.49, b: 0.18 };
+		const brightOnly = chromaKeyAlpha(shadowPixel, brightLime, 0.5, 0.35);
+		const combined = chromaKeyAlphaMulti(shadowPixel, colors, 0.5, 0.35);
+		expect(combined).toBeLessThanOrEqual(brightOnly);
+		expect(combined).toBeLessThan(0.5);
+	});
+
+	it("keeps foreground pixels opaque under both keys", () => {
+		const colors = [hexToRgb01("#8cc73f"), hexToRgb01("#3f7a2a")];
+		expect(chromaKeyAlphaMulti(SKIN, colors, 0.5, 0.35)).toBe(1);
+	});
+
+	it("single color behaves identically to chromaKeyAlpha", () => {
+		const color = hexToRgb01("#8cc73f");
+		const pixel = { r: 0.5, g: 0.7, b: 0.3 };
+		expect(chromaKeyAlphaMulti(pixel, [color], 0.5, 0.35)).toBe(
+			chromaKeyAlpha(pixel, color, 0.5, 0.35),
+		);
 	});
 });
 

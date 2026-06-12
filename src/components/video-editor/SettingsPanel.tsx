@@ -1945,6 +1945,9 @@ export function SettingsPanel({
 	};
 
 	const webcamGreenscreen = webcam?.greenscreen ?? DEFAULT_WEBCAM_GREENSCREEN;
+	// Which key-color swatch the eyedropper writes to (1 = primary, 2 = optional
+	// second sample for unevenly lit screens).
+	const [activeKeySlot, setActiveKeySlot] = useState<1 | 2>(1);
 	const webcamMask = webcam?.mask ?? DEFAULT_WEBCAM_MASK;
 	const webcamColor = webcam?.color ?? DEFAULT_WEBCAM_COLOR;
 	const [maskEditorDialogOpen, setMaskEditorDialogOpen] = useState(false);
@@ -4059,26 +4062,75 @@ export function SettingsPanel({
 										<div className="rounded-md bg-black/10 px-2.5 py-2">
 											<div className="mb-1.5 flex items-center justify-between gap-2">
 												<span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-													<span
-														className="inline-block h-3 w-3 rounded-sm ring-1 ring-foreground/20"
+													<button
+														type="button"
+														title="Key color 1 — clicks set this color"
+														onClick={() => setActiveKeySlot(1)}
+														className={cn(
+															"inline-block h-3.5 w-3.5 rounded-sm transition-shadow",
+															activeKeySlot === 1
+																? "ring-2 ring-[#2563EB]"
+																: "ring-1 ring-foreground/20",
+														)}
 														style={{
 															backgroundColor:
 																webcamGreenscreen.keyColor,
 														}}
 													/>
+													<button
+														type="button"
+														title={
+															webcamGreenscreen.keyColor2
+																? "Key color 2 — clicks set this color"
+																: "Add a second key color for unevenly lit screens"
+														}
+														onClick={() => setActiveKeySlot(2)}
+														className={cn(
+															"inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm text-[9px] leading-none text-muted-foreground transition-shadow",
+															activeKeySlot === 2
+																? "ring-2 ring-[#2563EB]"
+																: "ring-1 ring-foreground/20",
+														)}
+														style={
+															webcamGreenscreen.keyColor2
+																? {
+																		backgroundColor:
+																			webcamGreenscreen.keyColor2,
+																	}
+																: undefined
+														}
+													>
+														{webcamGreenscreen.keyColor2 ? "" : "+"}
+													</button>
+													{webcamGreenscreen.keyColor2 ? (
+														<button
+															type="button"
+															onClick={() => {
+																updateWebcamGreenscreen({
+																	keyColor2: null,
+																});
+																setActiveKeySlot(1);
+															}}
+															className="text-[10px] text-muted-foreground transition-opacity hover:opacity-80"
+														>
+															×2
+														</button>
+													) : null}
 													{tSettings(
-														"effects.webcamGreenscreenKeyColor",
-														"Key color — click your green screen below",
+														"effects.webcamGreenscreenKeyColors",
+														"Key colors — click your green screen below",
 													)}
 												</span>
 												<button
 													type="button"
-													onClick={() =>
+													onClick={() => {
 														updateWebcamGreenscreen({
 															keyColor:
 																DEFAULT_WEBCAM_GREENSCREEN.keyColor,
-														})
-													}
+															keyColor2: null,
+														});
+														setActiveKeySlot(1);
+													}}
 													className="text-[10px] text-[#2563EB] transition-opacity hover:opacity-80"
 												>
 													{t("common.actions.reset", "Reset")}
@@ -4090,8 +4142,14 @@ export function SettingsPanel({
 												previewCurrentTime={webcamPreviewCurrentTime}
 												previewPlaying={webcamPreviewPlaying}
 												previewTimeOffsetMs={webcam?.timeOffsetMs}
-												onPickColor={(keyColor) =>
-													updateWebcamGreenscreen({ keyColor })
+												onPickColor={(picked) =>
+													activeKeySlot === 2
+														? updateWebcamGreenscreen({
+																keyColor2: picked,
+															})
+														: updateWebcamGreenscreen({
+																keyColor: picked,
+															})
 												}
 											/>
 										</div>

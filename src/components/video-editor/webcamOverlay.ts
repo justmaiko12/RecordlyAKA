@@ -157,6 +157,10 @@ export function normalizeWebcamGreenscreen(
 			typeof candidate.keyColor === "string" && HEX_COLOR_PATTERN.test(candidate.keyColor)
 				? candidate.keyColor.toLowerCase()
 				: DEFAULT_WEBCAM_GREENSCREEN.keyColor,
+		keyColor2:
+			typeof candidate.keyColor2 === "string" && HEX_COLOR_PATTERN.test(candidate.keyColor2)
+				? candidate.keyColor2.toLowerCase()
+				: null,
 		backgroundImagePath:
 			typeof candidate.backgroundImagePath === "string" && candidate.backgroundImagePath
 				? candidate.backgroundImagePath

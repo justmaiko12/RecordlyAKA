@@ -135,6 +135,8 @@ export interface WebcamGreenscreenSettings {
 	edgeSoftness: number;
 	/** Hex key color, eyedropper-pickable; lighting shifts real screens far from pure green. */
 	keyColor: string;
+	/** Optional second key color for unevenly lit screens; null = unused. */
+	keyColor2: string | null;
 }
 
 /**
@@ -251,6 +253,7 @@ export const DEFAULT_WEBCAM_GREENSCREEN: WebcamGreenscreenSettings = {
 	keyStrength: 0.5,
 	edgeSoftness: 0.35,
 	keyColor: DEFAULT_WEBCAM_KEY_COLOR,
+	keyColor2: null,
 };
 
 export const DEFAULT_WEBCAM_MASK: WebcamMaskSettings = {

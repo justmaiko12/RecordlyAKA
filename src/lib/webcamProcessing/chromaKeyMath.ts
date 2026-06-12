@@ -103,6 +103,24 @@ export function chromaKeyAlpha(
 }
 
 /**
+ * Combined alpha across multiple key colors: a pixel matching ANY key color
+ * is removed (minimum alpha wins). Used for unevenly lit screens where one
+ * sample can't cover both the bright and shadowed regions.
+ */
+export function chromaKeyAlphaMulti(
+	pixel: Rgb,
+	keyColors: Rgb[],
+	keyStrength: number,
+	edgeSoftness: number,
+): number {
+	let alpha = 1;
+	for (const keyColor of keyColors) {
+		alpha = Math.min(alpha, chromaKeyAlpha(pixel, keyColor, keyStrength, edgeSoftness));
+	}
+	return alpha;
+}
+
+/**
  * Green-spill suppression on semi-transparent edge pixels: pulls the green
  * channel down toward max(r, b), proportional to how keyed the pixel is.
  * Never raises green.

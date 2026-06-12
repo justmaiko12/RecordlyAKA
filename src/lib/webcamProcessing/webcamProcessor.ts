@@ -88,6 +88,8 @@ uniform bool u_hasBackground;
 uniform bool u_keyEnabled;
 uniform bool u_maskEnabled;
 uniform vec3 u_keyColor;
+uniform vec3 u_keyColor2;
+uniform bool u_keyColor2Enabled;
 uniform float u_keyStrength;
 uniform float u_edgeSoftness;
 uniform vec4 u_colorAdjust;     // brightness, contrast, highlights, shadows
@@ -114,13 +116,23 @@ float lumaOf(vec3 c) {
   return dot(c, vec3(0.299, 0.587, 0.114));
 }
 
-float chromaKeyAlpha(vec3 pixel) {
+float chromaKeyAlphaFor(vec3 pixel, vec3 keyColor) {
   vec2 p = rgbToCbCr(pixel);
-  vec2 k = rgbToCbCr(u_keyColor);
+  vec2 k = rgbToCbCr(keyColor);
   float dist = length(p - k);
   float tolerance = mix(KEY_TOLERANCE_MIN, KEY_TOLERANCE_MAX, u_keyStrength);
   float softness = mix(KEY_SOFTNESS_MIN, KEY_SOFTNESS_MAX, u_edgeSoftness);
   return smoothstep(tolerance, tolerance + softness, dist);
+}
+
+float chromaKeyAlpha(vec3 pixel) {
+  // A pixel matching ANY key color is removed (minimum alpha wins) — two
+  // samples cover the bright and shadowed regions of unevenly lit screens.
+  float alpha = chromaKeyAlphaFor(pixel, u_keyColor);
+  if (u_keyColor2Enabled) {
+    alpha = min(alpha, chromaKeyAlphaFor(pixel, u_keyColor2));
+  }
+  return alpha;
 }
 
 vec3 suppressSpill(vec3 pixel, float alpha) {
@@ -298,6 +310,7 @@ export class WebcamProcessor {
 		}
 
 		const keyColor = hexToRgb01(greenscreen.keyColor);
+		const keyColor2 = greenscreen.keyColor2 ? hexToRgb01(greenscreen.keyColor2) : null;
 		gl.uniform1i(this.uniforms.u_frame, 0);
 		gl.uniform1i(this.uniforms.u_background, 1);
 		gl.uniform1i(this.uniforms.u_maskTex, 2);
@@ -308,6 +321,13 @@ export class WebcamProcessor {
 		gl.uniform1i(this.uniforms.u_keyEnabled, greenscreen.enabled ? 1 : 0);
 		gl.uniform1i(this.uniforms.u_maskEnabled, maskEnabled ? 1 : 0);
 		gl.uniform3f(this.uniforms.u_keyColor, keyColor.r, keyColor.g, keyColor.b);
+		gl.uniform3f(
+			this.uniforms.u_keyColor2,
+			keyColor2?.r ?? 0,
+			keyColor2?.g ?? 0,
+			keyColor2?.b ?? 0,
+		);
+		gl.uniform1i(this.uniforms.u_keyColor2Enabled, keyColor2 ? 1 : 0);
 		gl.uniform1f(this.uniforms.u_keyStrength, greenscreen.keyStrength);
 		gl.uniform1f(this.uniforms.u_edgeSoftness, greenscreen.edgeSoftness);
 		gl.uniform4f(
@@ -436,6 +456,8 @@ export class WebcamProcessor {
 				"u_keyEnabled",
 				"u_maskEnabled",
 				"u_keyColor",
+				"u_keyColor2",
+				"u_keyColor2Enabled",
 				"u_keyStrength",
 				"u_edgeSoftness",
 				"u_colorAdjust",
