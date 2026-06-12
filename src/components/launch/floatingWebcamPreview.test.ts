@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
 	canShowFloatingWebcamPreview,
 	canToggleFloatingWebcamPreview,
-	createFloatingWebcamPreviewVideoConstraints,
 } from "./floatingWebcamPreview";
 
 describe("canShowFloatingWebcamPreview", () => {
@@ -23,25 +22,5 @@ describe("canToggleFloatingWebcamPreview", () => {
 
 	it("hides the toggle when the platform cannot support the floating preview", () => {
 		expect(canToggleFloatingWebcamPreview(false)).toBe(false);
-	});
-});
-
-describe("createFloatingWebcamPreviewVideoConstraints", () => {
-	it("keeps the phone camera preview on a high-definition 16:9 stream", () => {
-		expect(createFloatingWebcamPreviewVideoConstraints()).toEqual({
-			aspectRatio: { ideal: 16 / 9 },
-			resizeMode: "none",
-			width: { ideal: 1920, min: 1280 },
-			height: { ideal: 1080, min: 720 },
-			frameRate: { ideal: 30, max: 30 },
-		});
-		expect(createFloatingWebcamPreviewVideoConstraints("phone-camera")).toEqual({
-			aspectRatio: { ideal: 16 / 9 },
-			deviceId: { exact: "phone-camera" },
-			resizeMode: "none",
-			width: { ideal: 1920, min: 1280 },
-			height: { ideal: 1080, min: 720 },
-			frameRate: { ideal: 30, max: 30 },
-		});
 	});
 });

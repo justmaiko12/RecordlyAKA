@@ -464,6 +464,14 @@ export function createHudOverlayWindow(): BrowserWindow {
 		},
 	});
 
+	// Follow the user into fullscreen Spaces (e.g. a fullscreen presentation)
+	// instead of staying behind on the original desktop. The screen-saver level
+	// keeps the HUD above fullscreen app content on macOS.
+	if (process.platform === "darwin") {
+		win.setAlwaysOnTop(true, "screen-saver");
+	}
+	win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
 	const showHudWindow = () => {
 		if (hasShownHudWindow || win.isDestroyed()) {
 			return;

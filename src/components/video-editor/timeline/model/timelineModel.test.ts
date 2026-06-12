@@ -82,6 +82,29 @@ describe("timeline model", () => {
 		expect(items[1]).toMatchObject({ id: "cam2", variant: "camera" });
 	});
 
+	it("maps fill-frame regions to fullscreen items on the fill-frame row", () => {
+		const items = buildTimelineItems({
+			zoomRegions: [],
+			clipRegions: [],
+			annotationRegions: [],
+			audioRegions: [],
+			fillFrameRegions: [
+				{ id: "ff1", startMs: 1000, endMs: 4000 },
+				{ id: "ff2", startMs: 6000, endMs: 9000 },
+			],
+		});
+
+		expect(items).toHaveLength(2);
+		expect(items[0]).toMatchObject({
+			id: "ff1",
+			rowId: "row-fill-frame",
+			span: { start: 1000, end: 4000 },
+			label: "Fullscreen",
+			variant: "fillFrame",
+		});
+		expect(items[1]).toMatchObject({ id: "ff2", variant: "fillFrame" });
+	});
+
 	it("exposes clip speed for non-default speed labels", () => {
 		const items = buildTimelineItems({
 			zoomRegions: [],
@@ -146,10 +169,12 @@ describe("timeline model", () => {
 				},
 			],
 			cameraRegions: [{ id: "cam1", startMs: 100, endMs: 600 }],
+			fillFrameRegions: [{ id: "ff1", startMs: 700, endMs: 900 }],
 		});
 		expect(spans.map((s) => s.rowId)).toEqual([
 			"row-zoom",
 			"row-camera",
+			"row-fill-frame",
 			"row-clip",
 			"row-audio-2",
 		]);

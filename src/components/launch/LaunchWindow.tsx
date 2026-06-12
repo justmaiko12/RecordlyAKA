@@ -77,8 +77,12 @@ function LaunchWindowContent() {
 		setWebcamEnabled,
 		webcamDeviceId,
 		setWebcamDeviceId,
+		webcamFrameRate,
+		setWebcamFrameRate,
 		cameraFullActive,
 		toggleCameraLayout,
+		sceneStyleMode,
+		applySceneStyleHotkey,
 		countdownDelay,
 		setCountdownDelay,
 		preparePermissions,
@@ -164,6 +168,7 @@ function LaunchWindowContent() {
 	} = useWebcamPreviewOverlay({
 		webcamEnabled,
 		webcamDeviceId,
+		webcamFrameRate,
 		showWebcamControls,
 		webcamPopoverOpen: openId === "webcam",
 		hudOverlayMousePassthroughSupported,
@@ -216,6 +221,13 @@ function LaunchWindowContent() {
 		return unsubscribe;
 	}, [toggleCameraLayout]);
 
+	useEffect(() => {
+		const unsubscribe = window.electronAPI?.onSceneStyleHotkey?.((mode) => {
+			applySceneStyleHotkey(mode);
+		});
+		return unsubscribe;
+	}, [applySceneStyleHotkey]);
+
 	const hudStateTransition = {
 		duration: 0.24,
 		ease: [0.22, 1, 0.36, 1] as const,
@@ -230,6 +242,7 @@ function LaunchWindowContent() {
 			webcamEnabled={webcamEnabled}
 			cameraFullActive={cameraFullActive}
 			onToggleCameraLayout={toggleCameraLayout}
+			sceneStyleMode={sceneStyleMode}
 			onPauseResume={paused ? resumeRecording : pauseRecording}
 			onStopRecording={toggleRecording}
 			onHideHud={() => window.electronAPI?.hudOverlayHide?.()}
@@ -327,6 +340,8 @@ function LaunchWindowContent() {
 					setSelectedVideoDeviceId(deviceId);
 					setWebcamDeviceId(deviceId);
 				}}
+				webcamFrameRate={webcamFrameRate}
+				onWebcamFrameRateChange={setWebcamFrameRate}
 				trigger={
 					<Button
 						variant="ghost"

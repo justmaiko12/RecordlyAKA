@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type { TimelineRegion } from "../core/timelineTypes";
+import type { MarqueeSelectedItem } from "./utils/timelineMarqueeUtils";
 
 interface UseTimelineSelectionParams {
 	totalMs: number;
@@ -14,16 +15,19 @@ interface UseTimelineSelectionParams {
 	selectedAnnotationId?: string | null;
 	selectedAudioId?: string | null;
 	selectedCameraId?: string | null;
+	selectedFillFrameId?: string | null;
 	onZoomDelete: (id: string) => void;
 	onClipDelete?: (id: string) => void;
 	onAnnotationDelete?: (id: string) => void;
 	onAudioDelete?: (id: string) => void;
 	onCameraDelete?: (id: string) => void;
+	onFillFrameDelete?: (id: string) => void;
 	onSelectZoom: (id: string | null) => void;
 	onSelectClip?: (id: string | null) => void;
 	onSelectAnnotation?: (id: string | null) => void;
 	onSelectAudio?: (id: string | null) => void;
 	onSelectCamera?: (id: string | null) => void;
+	onSelectFillFrame?: (id: string | null) => void;
 }
 
 export function useTimelineSelection({
@@ -36,21 +40,29 @@ export function useTimelineSelection({
 	selectedAnnotationId,
 	selectedAudioId,
 	selectedCameraId,
+	selectedFillFrameId,
 	onZoomDelete,
 	onClipDelete,
 	onAnnotationDelete,
 	onAudioDelete,
 	onCameraDelete,
+	onFillFrameDelete,
 	onSelectZoom,
 	onSelectClip,
 	onSelectAnnotation,
 	onSelectAudio,
 	onSelectCamera,
+	onSelectFillFrame,
 }: UseTimelineSelectionParams) {
 	const [keyframes, setKeyframes] = useState<{ id: string; time: number }[]>([]);
 	const [selectedKeyframeId, setSelectedKeyframeId] = useState<string | null>(null);
 	const [selectAllBlocksActive, setSelectAllBlocksActive] = useState(false);
+	const [multiSelectedItems, setMultiSelectedItems] = useState<MarqueeSelectedItem[]>([]);
 	const hasAnyZoomBlocks = useMemo(() => zoomRegions.length > 0, [zoomRegions.length]);
+	const multiSelectedIds = useMemo(
+		() => new Set(multiSelectedItems.map((item) => item.id)),
+		[multiSelectedItems],
+	);
 
 	const addKeyframe = useCallback(() => {
 		if (totalMs === 0) return;
@@ -90,6 +102,7 @@ export function useTimelineSelection({
 		onSelectAnnotation?.(null);
 		onSelectAudio?.(null);
 		onSelectCamera?.(null);
+		onSelectFillFrame?.(null);
 		setSelectAllBlocksActive(false);
 	}, [
 		selectAllBlocksActive,
@@ -101,6 +114,7 @@ export function useTimelineSelection({
 		onSelectAnnotation,
 		onSelectAudio,
 		onSelectCamera,
+		onSelectFillFrame,
 	]);
 
 	const deleteSelectedClip = useCallback(() => {
@@ -127,14 +141,71 @@ export function useTimelineSelection({
 		onSelectCamera(null);
 	}, [selectedCameraId, onCameraDelete, onSelectCamera]);
 
+	const deleteSelectedFillFrame = useCallback(() => {
+		if (!selectedFillFrameId || !onFillFrameDelete || !onSelectFillFrame) return;
+		onFillFrameDelete(selectedFillFrameId);
+		onSelectFillFrame(null);
+	}, [selectedFillFrameId, onFillFrameDelete, onSelectFillFrame]);
+
+	// Marquee release: replace every selection (single + select-all) with the
+	// box-selected items.
+	const applyMarqueeSelection = useCallback(
+		(items: MarqueeSelectedItem[]) => {
+			onSelectZoom(null);
+			onSelectClip?.(null);
+			onSelectAnnotation?.(null);
+			onSelectAudio?.(null);
+			onSelectCamera?.(null);
+			onSelectFillFrame?.(null);
+			setSelectedKeyframeId(null);
+			setSelectAllBlocksActive(false);
+			setMultiSelectedItems(items);
+		},
+		[
+			onSelectZoom,
+			onSelectClip,
+			onSelectAnnotation,
+			onSelectAudio,
+			onSelectCamera,
+			onSelectFillFrame,
+		],
+	);
+
+	// Routes every multi-selected item to its kind's existing delete handler.
+	// "speed" chips have no delete handler today and are skipped.
+	const deleteMultiSelectedItems = useCallback(() => {
+		if (multiSelectedItems.length === 0) return;
+		for (const item of multiSelectedItems) {
+			if (item.kind === "zoom") {
+				onZoomDelete(item.id);
+			} else if (item.kind === "camera") {
+				onCameraDelete?.(item.id);
+			} else if (item.kind === "fillFrame") {
+				onFillFrameDelete?.(item.id);
+			} else if (item.kind === "annotation") {
+				onAnnotationDelete?.(item.id);
+			}
+		}
+		setMultiSelectedItems([]);
+	}, [multiSelectedItems, onZoomDelete, onCameraDelete, onFillFrameDelete, onAnnotationDelete]);
+
 	const clearSelectedBlocks = useCallback(() => {
 		onSelectZoom(null);
 		onSelectClip?.(null);
 		onSelectAnnotation?.(null);
 		onSelectAudio?.(null);
 		onSelectCamera?.(null);
+		onSelectFillFrame?.(null);
 		setSelectAllBlocksActive(false);
-	}, [onSelectZoom, onSelectClip, onSelectAnnotation, onSelectAudio, onSelectCamera]);
+		setMultiSelectedItems([]);
+	}, [
+		onSelectZoom,
+		onSelectClip,
+		onSelectAnnotation,
+		onSelectAudio,
+		onSelectCamera,
+		onSelectFillFrame,
+	]);
 
 	const activateSelectAllZooms = useCallback(() => {
 		onSelectZoom(null);
@@ -142,13 +213,23 @@ export function useTimelineSelection({
 		onSelectAnnotation?.(null);
 		onSelectAudio?.(null);
 		onSelectCamera?.(null);
+		onSelectFillFrame?.(null);
 		setSelectedKeyframeId(null);
+		setMultiSelectedItems([]);
 		setSelectAllBlocksActive(true);
-	}, [onSelectZoom, onSelectClip, onSelectAnnotation, onSelectAudio, onSelectCamera]);
+	}, [
+		onSelectZoom,
+		onSelectClip,
+		onSelectAnnotation,
+		onSelectAudio,
+		onSelectCamera,
+		onSelectFillFrame,
+	]);
 
 	const handleSelectZoom = useCallback(
 		(id: string | null) => {
 			setSelectAllBlocksActive(false);
+			setMultiSelectedItems([]);
 			onSelectZoom(id);
 		},
 		[onSelectZoom],
@@ -157,6 +238,7 @@ export function useTimelineSelection({
 	const handleSelectClip = useCallback(
 		(id: string | null) => {
 			setSelectAllBlocksActive(false);
+			setMultiSelectedItems([]);
 			onSelectClip?.(id);
 		},
 		[onSelectClip],
@@ -165,6 +247,7 @@ export function useTimelineSelection({
 	const handleSelectAnnotation = useCallback(
 		(id: string | null) => {
 			setSelectAllBlocksActive(false);
+			setMultiSelectedItems([]);
 			onSelectAnnotation?.(id);
 		},
 		[onSelectAnnotation],
@@ -173,6 +256,7 @@ export function useTimelineSelection({
 	const handleSelectAudio = useCallback(
 		(id: string | null) => {
 			setSelectAllBlocksActive(false);
+			setMultiSelectedItems([]);
 			onSelectAudio?.(id);
 		},
 		[onSelectAudio],
@@ -181,9 +265,19 @@ export function useTimelineSelection({
 	const handleSelectCamera = useCallback(
 		(id: string | null) => {
 			setSelectAllBlocksActive(false);
+			setMultiSelectedItems([]);
 			onSelectCamera?.(id);
 		},
 		[onSelectCamera],
+	);
+
+	const handleSelectFillFrame = useCallback(
+		(id: string | null) => {
+			setSelectAllBlocksActive(false);
+			setMultiSelectedItems([]);
+			onSelectFillFrame?.(id);
+		},
+		[onSelectFillFrame],
 	);
 
 	const cycleAnnotationsAtCurrentTime = useCallback(
@@ -226,12 +320,18 @@ export function useTimelineSelection({
 		deleteSelectedAnnotation,
 		deleteSelectedAudio,
 		deleteSelectedCamera,
+		deleteSelectedFillFrame,
+		multiSelectedItems,
+		multiSelectedIds,
+		applyMarqueeSelection,
+		deleteMultiSelectedItems,
 		clearSelectedBlocks,
 		handleSelectZoom,
 		handleSelectClip,
 		handleSelectAnnotation,
 		handleSelectAudio,
 		handleSelectCamera,
+		handleSelectFillFrame,
 		cycleAnnotationsAtCurrentTime,
 	};
 }

@@ -26,6 +26,7 @@ import {
 	killWindowsCaptureProcess,
 	registerIpcHandlers,
 } from "./ipc/handlers";
+import { beginSceneStyleSession } from "./ipc/recording/sceneStyleEvents";
 import {
 	beginWebcamLayoutSession,
 	setWebcamLayoutSessionStyle,
@@ -34,8 +35,10 @@ import { ensureMediaServer } from "./mediaServer";
 import { ensurePackagedRendererServer } from "./rendererServer";
 import {
 	registerCameraLayoutShortcut,
+	registerSceneStyleShortcuts,
 	registerTeleprompterToggleShortcut,
 	unregisterCameraLayoutShortcut,
+	unregisterSceneStyleShortcuts,
 } from "./teleprompterShortcuts";
 import type { UpdateToastPayload } from "./updater";
 import {
@@ -990,14 +993,20 @@ app.whenReady().then(async () => {
 				reassertHudOverlayMouseState();
 				beginWebcamLayoutSession();
 				setWebcamLayoutSessionStyle(getSelectedWebcamLayoutStyle());
+				beginSceneStyleSession();
 				registerCameraLayoutShortcut(() => {
 					getHudOverlayWindow()?.webContents.send("webcam-layout-hotkey");
+				});
+				registerSceneStyleShortcuts((mode) => {
+					getHudOverlayWindow()?.webContents.send("scene-style-hotkey", { mode });
 				});
 			}
 			if (!recording) {
 				unregisterCameraLayoutShortcut();
-				// Recording ended: clear the teleprompter's camera-full highlight.
-				getTeleprompterWindow()?.webContents.send("teleprompter-camera-mode", "screen");
+				unregisterSceneStyleShortcuts();
+				// Recording ended: the teleprompter has served its purpose — close
+				// it so the user lands straight in the editor.
+				getTeleprompterWindow()?.close();
 				restoreWindowSafely(mainWindow);
 			}
 		},

@@ -4,7 +4,6 @@ import {
 	createBrowserRecordingOptions,
 	createProcessedMicrophoneConstraints,
 	createWebcamRecordingOptions,
-	createWebcamVideoConstraints,
 	normalizeBrowserMicrophoneProfile,
 	resolveBrowserCaptureCursorPolicy,
 	shouldUseNativeWindowsCaptureForSource,
@@ -142,24 +141,8 @@ describe("createBrowserRecordingOptions", () => {
 });
 
 describe("webcam recording quality", () => {
-	it("requests high-resolution camera input for phone cameras when available", () => {
-		expect(createWebcamVideoConstraints()).toEqual({
-			aspectRatio: { ideal: 16 / 9 },
-			resizeMode: "none",
-			width: { ideal: 3840, min: 1920 },
-			height: { ideal: 2160, min: 1080 },
-			frameRate: { ideal: 60, max: 60 },
-		});
-		expect(createWebcamVideoConstraints("phone-camera")).toEqual({
-			aspectRatio: { ideal: 16 / 9 },
-			deviceId: { exact: "phone-camera" },
-			resizeMode: "none",
-			width: { ideal: 3840, min: 1920 },
-			height: { ideal: 2160, min: 1080 },
-			frameRate: { ideal: 60, max: 60 },
-		});
-	});
-
+	// Camera constraints are covered by webcamSession.test.ts; the recorder
+	// now acquires its stream through the shared webcam session.
 	it("records the webcam sidecar at a 4K-friendly bitrate", () => {
 		expect(createWebcamRecordingOptions()).toEqual({
 			videoBitsPerSecond: 45_000_000,

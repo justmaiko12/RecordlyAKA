@@ -3,8 +3,9 @@ import { isAnnotationTrackRowId, isAudioTrackRowId } from "./core/rows";
 export const TIMELINE_AXIS_HEIGHT_PX = 32;
 export const TIMELINE_ROW_MIN_HEIGHT_PX = 28;
 // Per-row height the timeline panel asks for so every visible track renders
-// comfortably. Matches the historical two-row default panel (32 + 2 * 64 = 160).
-export const TIMELINE_COMFORTABLE_ROW_HEIGHT_PX = 64;
+// comfortably. Condensed from the historical 64px rows so empty tracks no
+// longer reserve tall bands now that the row hint texts are gone.
+export const TIMELINE_COMFORTABLE_ROW_HEIGHT_PX = 48;
 
 function normalizeRowCount(rowCount: number) {
 	if (!Number.isFinite(rowCount)) {
@@ -30,15 +31,22 @@ export function getTimelinePreferredHeightPx(rowCount: number) {
 
 export interface CountTimelineRowsOptions {
 	showCameraTrack: boolean;
+	showFillFrameTrack: boolean;
 	showSourceAudioTrack: boolean;
 	sourceAudioTrackCount: number;
 }
 
 // Counts the rows the timeline canvas renders: clip + zoom (always), plus the
-// camera row, source-audio rows, and one row per distinct annotation/audio track.
+// camera row, fill-frame row, source-audio rows, and one row per distinct
+// annotation/audio track.
 export function countTimelineRows(
 	items: readonly { rowId: string }[],
-	{ showCameraTrack, showSourceAudioTrack, sourceAudioTrackCount }: CountTimelineRowsOptions,
+	{
+		showCameraTrack,
+		showFillFrameTrack,
+		showSourceAudioTrack,
+		sourceAudioTrackCount,
+	}: CountTimelineRowsOptions,
 ) {
 	const annotationRowIds = new Set<string>();
 	const audioRowIds = new Set<string>();
@@ -48,5 +56,8 @@ export function countTimelineRows(
 	}
 	const sourceAudioRows = showSourceAudioTrack ? Math.max(0, sourceAudioTrackCount) : 0;
 	const cameraRows = showCameraTrack ? 1 : 0;
-	return 2 + cameraRows + sourceAudioRows + annotationRowIds.size + audioRowIds.size;
+	const fillFrameRows = showFillFrameTrack ? 1 : 0;
+	return (
+		2 + cameraRows + fillFrameRows + sourceAudioRows + annotationRowIds.size + audioRowIds.size
+	);
 }

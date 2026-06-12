@@ -52,6 +52,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Toaster } from "@/components/ui/sonner";
 import { useI18n } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
+import { detectVideoBlackBars } from "@/lib/blackBarDetection";
 import {
 	calculateOutputDimensions,
 	DEFAULT_MP4_CODEC,
@@ -139,6 +140,13 @@ import {
 	saveEditorPresets,
 	serializeEditorPresetSnapshot,
 } from "./editorPreferences";
+import {
+	endFillFrameRegionAtMs,
+	eventsToFillFrameRegions,
+	type FillFrameRegion,
+	isFillFrameAtMs,
+	startFillFrameRegionAtMs,
+} from "./fillFrameRegions";
 import ProjectBrowserDialog, { type ProjectLibraryEntry } from "./ProjectBrowserDialog";
 import { hasUnsavedProjectChanges } from "./projectDirtyState";
 import {
@@ -251,14 +259,6 @@ type PendingExportSave = {
 	fileName: string;
 	arrayBuffer?: ArrayBuffer;
 	tempFilePath?: string;
-	captionSidecar?: {
-		format: "srt" | "vtt" | "both";
-		cues: Array<{
-			startMs: number;
-			endMs: number;
-			text: string;
-		}>;
-	};
 };
 
 type CancelableExporter = {
@@ -528,6 +528,9 @@ export default function VideoEditor() {
 	const [resolvedWebcamVideoUrl, setResolvedWebcamVideoUrl] = useState<string | null>(null);
 	const [webcamLayoutRegions, setWebcamLayoutRegions] = useState<WebcamLayoutRegion[]>([]);
 	const [webcamLayoutRegionsEnabled, setWebcamLayoutRegionsEnabled] = useState(true);
+	const [fillFrameRegions, setFillFrameRegions] = useState<FillFrameRegion[]>([]);
+	const [fillFrameDefault, setFillFrameDefault] = useState(false);
+	const [selectedFillFrameId, setSelectedFillFrameId] = useState<string | null>(null);
 	const [magnetEnabled, setMagnetEnabled] = useState(true);
 	const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
 	const [webcamLayoutStyle, setWebcamLayoutStyle] = useState<WebcamLayoutStyle>("fit");
@@ -559,7 +562,6 @@ export default function VideoEditor() {
 	const [autoCaptionSettings, setAutoCaptionSettings] = useState<AutoCaptionSettings>(
 		DEFAULT_AUTO_CAPTION_SETTINGS,
 	);
-	const [includeCaptionSidecar, setIncludeCaptionSidecar] = useState(true);
 	const [whisperExecutablePath, setWhisperExecutablePath] = useState<string | null>(
 		initialEditorPreferences.whisperExecutablePath,
 	);
@@ -635,32 +637,6 @@ export default function VideoEditor() {
 	const [gifSizePreset, setGifSizePreset] = useState<GifSizePreset>(
 		initialEditorPreferences.gifSizePreset,
 	);
-	const hasCaptionsForSidecar = autoCaptionSettings.enabled && autoCaptions.length > 0;
-	const captionSidecarCues = useMemo(
-		() =>
-			autoCaptions
-				.filter(
-					(cue) =>
-						Number.isFinite(cue.startMs) &&
-						Number.isFinite(cue.endMs) &&
-						cue.endMs > cue.startMs &&
-						typeof cue.text === "string" &&
-						cue.text.trim().length > 0,
-				)
-				.map((cue) => ({
-					startMs: cue.startMs,
-					endMs: cue.endMs,
-					text: cue.text,
-				})),
-		[autoCaptions],
-	);
-	const captionSidecarPayload =
-		hasCaptionsForSidecar && captionSidecarCues.length > 0 && includeCaptionSidecar
-			? {
-					format: "both" as const,
-					cues: captionSidecarCues,
-				}
-			: undefined;
 	const [exportedFilePath, setExportedFilePath] = useState<string | undefined>(undefined);
 	const [hasPendingExportSave, setHasPendingExportSave] = useState(false);
 	const [lastSavedSnapshot, setLastSavedSnapshot] = useState<EditorProjectData | null>(null);
@@ -688,6 +664,7 @@ export default function VideoEditor() {
 	const exporterRef = useRef<CancelableExporter | null>(null);
 	const autoSuggestedVideoPathRef = useRef<string | null>(null);
 	const pendingFreshRecordingAutoZoomPathRef = useRef<string | null>(null);
+	const pendingAutoCropPathRef = useRef<string | null>(null);
 	const editorHistoryRef = useRef(createEditorHistoryStack());
 	const applyingHistoryRef = useRef(false);
 	const pendingExportSaveRef = useRef<PendingExportSave | null>(null);
@@ -1353,12 +1330,7 @@ export default function VideoEditor() {
 	}, []);
 
 	const saveBlobExport = useCallback(
-		async (
-			blob: Blob,
-			fileName: string,
-			outputPath: string | null = null,
-			captionSidecar?: PendingExportSave["captionSidecar"],
-		) => {
+		async (blob: Blob, fileName: string, outputPath: string | null = null) => {
 			const extension = fileName.split(".").pop()?.toLowerCase() || "bin";
 			const hasExportStreamApi =
 				typeof window !== "undefined" &&
@@ -1375,12 +1347,10 @@ export default function VideoEditor() {
 							tempPath: tempFilePath,
 							fileName,
 							outputPath,
-							captionSidecar,
 						}),
 						pendingSave: {
 							fileName,
 							tempFilePath,
-							captionSidecar,
 						} satisfies PendingExportSave,
 					};
 				}
@@ -1419,20 +1389,11 @@ export default function VideoEditor() {
 			const arrayBuffer = await blob.arrayBuffer();
 			return {
 				saveResult: outputPath
-					? await window.electronAPI.writeExportedVideoToPath(
-							arrayBuffer,
-							outputPath,
-							captionSidecar,
-						)
-					: await window.electronAPI.saveExportedVideo(
-							arrayBuffer,
-							fileName,
-							captionSidecar,
-						),
+					? await window.electronAPI.writeExportedVideoToPath(arrayBuffer, outputPath)
+					: await window.electronAPI.saveExportedVideo(arrayBuffer, fileName),
 				pendingSave: {
 					fileName,
 					arrayBuffer,
-					captionSidecar,
 				} satisfies PendingExportSave,
 			};
 		},
@@ -1711,6 +1672,8 @@ export default function VideoEditor() {
 				webcamLayoutRegions: WebcamLayoutRegion[];
 				webcamLayoutRegionsEnabled: boolean;
 				webcamLayoutStyle: WebcamLayoutStyle;
+				fillFrameRegions: FillFrameRegion[];
+				fillFrameDefault: boolean;
 				magnetEnabled: boolean;
 				zoomRegions: ZoomRegion[];
 				trimRegions: TrimRegion[];
@@ -1823,6 +1786,8 @@ export default function VideoEditor() {
 				webcamLayoutRegions,
 				webcamLayoutRegionsEnabled,
 				webcamLayoutStyle,
+				fillFrameRegions,
+				fillFrameDefault,
 				magnetEnabled,
 				zoomRegions,
 				trimRegions,
@@ -1893,6 +1858,8 @@ export default function VideoEditor() {
 			webcamLayoutRegions,
 			webcamLayoutRegionsEnabled,
 			webcamLayoutStyle,
+			fillFrameRegions,
+			fillFrameDefault,
 			magnetEnabled,
 			zoomRegions,
 			trimRegions,
@@ -2019,6 +1986,7 @@ export default function VideoEditor() {
 			setVideoSourcePath(sourcePath);
 			setVideoPath(await resolveVideoUrl(sourcePath));
 			setCurrentProjectPath(path ?? null);
+			pendingAutoCropPathRef.current = null;
 			pendingFreshRecordingAutoZoomPathRef.current = null;
 			if (normalizedEditor.webcam.sourcePath) {
 				await window.electronAPI.setCurrentRecordingSession?.(
@@ -2087,6 +2055,8 @@ export default function VideoEditor() {
 			setWebcamLayoutRegions(normalizedEditor.webcamLayoutRegions);
 			setWebcamLayoutRegionsEnabled(normalizedEditor.webcamLayoutRegionsEnabled);
 			setWebcamLayoutStyle(normalizedEditor.webcamLayoutStyle);
+			setFillFrameRegions(normalizedEditor.fillFrameRegions ?? []);
+			setFillFrameDefault(normalizedEditor.fillFrameDefault === true);
 			setMagnetEnabled(normalizedEditor.magnetEnabled);
 			setZoomRegions(normalizedEditor.zoomRegions);
 			setTrimRegions(normalizedEditor.trimRegions);
@@ -2120,6 +2090,7 @@ export default function VideoEditor() {
 			setSelectedClipId(null);
 			setSelectedAnnotationId(null);
 			setSelectedAudioId(null);
+			setSelectedFillFrameId(null);
 
 			nextZoomIdRef.current = deriveNextId(
 				"zoom",
@@ -2348,6 +2319,7 @@ export default function VideoEditor() {
 					setCurrentProjectPath(null);
 					setLastSavedSnapshot(null);
 					resetSourceScopedEditorState();
+					pendingAutoCropPathRef.current = sourceVideoUrl;
 					pendingFreshRecordingAutoZoomPathRef.current = autoApplyFreshRecordingAutoZooms
 						? sourceVideoUrl
 						: null;
@@ -2377,6 +2349,7 @@ export default function VideoEditor() {
 					setCurrentProjectPath(null);
 					setLastSavedSnapshot(null);
 					resetSourceScopedEditorState();
+					pendingAutoCropPathRef.current = null;
 					pendingFreshRecordingAutoZoomPathRef.current = null;
 					setWebcam((prev) => ({
 						...prev,
@@ -2435,6 +2408,7 @@ export default function VideoEditor() {
 					setCurrentProjectPath(null);
 					setLastSavedSnapshot(null);
 					resetSourceScopedEditorState();
+					pendingAutoCropPathRef.current = sourceVideoUrl;
 					pendingFreshRecordingAutoZoomPathRef.current = autoApplyFreshRecordingAutoZooms
 						? sourceVideoUrl
 						: null;
@@ -2458,6 +2432,7 @@ export default function VideoEditor() {
 					setCurrentProjectPath(null);
 					setLastSavedSnapshot(null);
 					resetSourceScopedEditorState();
+					pendingAutoCropPathRef.current = null;
 					pendingFreshRecordingAutoZoomPathRef.current = null;
 					applySessionPresentation(null);
 					setWebcam((prev) => ({
@@ -3258,6 +3233,62 @@ export default function VideoEditor() {
 		};
 	}, [videoSourcePath]);
 
+	useEffect(() => {
+		let cancelled = false;
+		if (!videoSourcePath) {
+			return;
+		}
+		void (async () => {
+			try {
+				const result = await window.electronAPI.getSceneStyleEvents?.(videoSourcePath);
+				if (cancelled || !result?.success || result.events.length === 0) {
+					return;
+				}
+				// Open-ended regions (endMs: MAX_SAFE_INTEGER) are bounded to the
+				// video duration by the timeline for display, like camera regions.
+				setFillFrameRegions((current) =>
+					current.length > 0 ? current : eventsToFillFrameRegions(result.events),
+				);
+			} catch (error) {
+				console.warn("Failed to load scene style events:", error);
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [videoSourcePath]);
+
+	// Fresh recordings from notched MacBooks carry a pure-black menu-bar band
+	// when a fullscreen app was captured; letterboxed sources carry black bars
+	// too. Detect them once per fresh recording and crop them away so
+	// fill-frame mode truly fills the screen without manual cropping.
+	useEffect(() => {
+		if (!videoPath || pendingAutoCropPathRef.current !== videoPath) {
+			return;
+		}
+		pendingAutoCropPathRef.current = null;
+		let cancelled = false;
+		void (async () => {
+			const insets = await detectVideoBlackBars(videoPath);
+			if (cancelled || !insets) {
+				return;
+			}
+			setCropRegion((prev) =>
+				prev.x === 0 && prev.y === 0 && prev.width === 1 && prev.height === 1
+					? {
+							x: insets.left,
+							y: insets.top,
+							width: Math.max(0.5, 1 - insets.left - insets.right),
+							height: Math.max(0.5, 1 - insets.top - insets.bottom),
+						}
+					: prev,
+			);
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [videoPath]);
+
 	const normalizedCursorTelemetry = useMemo(() => {
 		if (cursorTelemetry.length === 0) {
 			return [] as CursorTelemetryPoint[];
@@ -3451,6 +3482,14 @@ export default function VideoEditor() {
 				: webcamLayoutRegions,
 		[magnetCollapse, webcamLayoutRegions, clipRegions],
 	);
+	// Fill-frame regions live in SOURCE space, like camera regions.
+	const displayFillFrameRegions = useMemo(
+		() =>
+			magnetCollapse
+				? fillFrameRegions.map((region) => regionToDisplay(region, clipRegions))
+				: fillFrameRegions,
+		[magnetCollapse, fillFrameRegions, clipRegions],
+	);
 	// Cursor telemetry is SOURCE space; map it so zoom suggestions are computed
 	// in the same space as the displayed zoom regions and total duration.
 	const displayCursorTelemetry = useMemo(
@@ -3633,6 +3672,7 @@ export default function VideoEditor() {
 			setSelectedAnnotationId(null);
 			setSelectedAudioId(null);
 			setSelectedCameraId(null);
+			setSelectedFillFrameId(null);
 		} else {
 			setActiveEffectSection((s) => (s === "zoom" ? "scene" : s));
 		}
@@ -3644,6 +3684,7 @@ export default function VideoEditor() {
 			setSelectedZoomId(null);
 			setSelectedAudioId(null);
 			setSelectedCameraId(null);
+			setSelectedFillFrameId(null);
 			// Clear any stale clip selection: clip outranks this type in the
 			// delete-target priority, so a leftover selection would make Delete
 			// remove the wrong element.
@@ -3671,6 +3712,7 @@ export default function VideoEditor() {
 			setSelectedZoomId(id);
 			setSelectedAnnotationId(null);
 			setSelectedCameraId(null);
+			setSelectedFillFrameId(null);
 			extensionHost.emitEvent({
 				type: "timeline:region-added",
 				data: { id, startMs: newRegion.startMs, endMs: newRegion.endMs },
@@ -3875,6 +3917,7 @@ export default function VideoEditor() {
 			setSelectedAnnotationId(null);
 			setSelectedAudioId(null);
 			setSelectedCameraId(null);
+			setSelectedFillFrameId(null);
 		} else {
 			setActiveEffectSection((s) => (s === "clip" ? "scene" : s));
 		}
@@ -3886,6 +3929,7 @@ export default function VideoEditor() {
 			setSelectedZoomId(null);
 			setSelectedAnnotationId(null);
 			setSelectedAudioId(null);
+			setSelectedFillFrameId(null);
 			// See handleSelectAnnotation: stale clip selection outranks camera.
 			setSelectedClipId(null);
 		}
@@ -3917,9 +3961,50 @@ export default function VideoEditor() {
 		setWebcamLayoutRegions((prev) => prev.filter((region) => region.id !== id));
 	}, []);
 
-	const handleCameraAddAtMs = useCallback(
+	const handleSelectFillFrame = useCallback((id: string | null) => {
+		setSelectedFillFrameId(id);
+		if (id) {
+			setSelectedZoomId(null);
+			setSelectedAnnotationId(null);
+			setSelectedAudioId(null);
+			setSelectedCameraId(null);
+			// See handleSelectAnnotation: stale clip selection outranks fill-frame.
+			setSelectedClipId(null);
+		}
+	}, []);
+
+	const handleFillFrameSpanChange = useCallback(
+		(id: string, span: { start: number; end: number }) => {
+			setFillFrameRegions((prev) => {
+				// clampWebcamLayoutSpan is shape-compatible: both region types are
+				// plain { id, startMs, endMs } spans with the same
+				// one-row-no-overlap rules.
+				const clamped = clampWebcamLayoutSpan(
+					{ startMs: span.start, endMs: span.end },
+					prev,
+					id,
+					Math.round(duration * 1000),
+				);
+				if (!clamped) return prev;
+				return prev
+					.map((region) =>
+						region.id === id
+							? { ...region, startMs: clamped.startMs, endMs: clamped.endMs }
+							: region,
+					)
+					.sort((a, b) => a.startMs - b.startMs);
+			});
+		},
+		[duration],
+	);
+
+	const handleFillFrameDelete = useCallback((id: string) => {
+		setFillFrameRegions((prev) => prev.filter((region) => region.id !== id));
+	}, []);
+
+	const handleFillFrameAddAtMs = useCallback(
 		(timeMs: number) => {
-			setWebcamLayoutRegions((prev) => {
+			setFillFrameRegions((prev) => {
 				const span = clampWebcamLayoutSpan(
 					{ startMs: timeMs, endMs: timeMs + 3000 },
 					prev,
@@ -3929,7 +4014,7 @@ export default function VideoEditor() {
 				if (!span) return prev;
 				return [
 					...prev,
-					{ id: `webcam-layout-${Date.now()}-${Math.round(span.startMs)}`, ...span },
+					{ id: `fill-frame-${Date.now()}-${Math.round(span.startMs)}`, ...span },
 				].sort((a, b) => a.startMs - b.startMs);
 			});
 		},
@@ -4122,6 +4207,7 @@ export default function VideoEditor() {
 			setSelectedZoomId(null);
 			setSelectedAnnotationId(null);
 			setSelectedCameraId(null);
+			setSelectedFillFrameId(null);
 			// See handleSelectAnnotation: stale clip selection outranks audio.
 			setSelectedClipId(null);
 			setActiveEffectSection("audio");
@@ -4144,6 +4230,7 @@ export default function VideoEditor() {
 		setSelectedZoomId(null);
 		setSelectedAnnotationId(null);
 		setSelectedCameraId(null);
+		setSelectedFillFrameId(null);
 		setActiveEffectSection("audio");
 	}, []);
 
@@ -4375,11 +4462,18 @@ export default function VideoEditor() {
 		[handleCameraSpanChange, magnetCollapse, clipRegions],
 	);
 
-	const handleCameraAddAtMsFromTimeline = useCallback(
-		(timeMs: number) => {
-			handleCameraAddAtMs(magnetCollapse ? msToSource(timeMs, clipRegions) : timeMs);
+	const handleFillFrameSpanChangeFromTimeline = useCallback(
+		(id: string, span: { start: number; end: number }) => {
+			handleFillFrameSpanChange(id, magnetCollapse ? spanToSource(span, clipRegions) : span);
 		},
-		[handleCameraAddAtMs, magnetCollapse, clipRegions],
+		[handleFillFrameSpanChange, magnetCollapse, clipRegions],
+	);
+
+	const handleFillFrameAddAtMsFromTimeline = useCallback(
+		(timeMs: number) => {
+			handleFillFrameAddAtMs(magnetCollapse ? msToSource(timeMs, clipRegions) : timeMs);
+		},
+		[handleFillFrameAddAtMs, magnetCollapse, clipRegions],
 	);
 
 	const handleAnnotationContentChange = useCallback((id: string, content: string) => {
@@ -4477,6 +4571,27 @@ export default function VideoEditor() {
 		[],
 	);
 
+	// Alt+. starts a fill-frame region at the playhead (running to the next
+	// region or the end of the video); Alt+, ends the active region there.
+	// Both no-op when the playhead is already in the requested state.
+	const handleFillFrameOn = useCallback(() => {
+		const durationMs = Math.round(duration * 1000);
+		if (durationMs <= 0) return;
+		const playheadMs = Math.round(currentTime * 1000);
+		setFillFrameRegions((prev) => startFillFrameRegionAtMs(prev, playheadMs, durationMs));
+	}, [currentTime, duration]);
+
+	const handleFillFrameOff = useCallback(() => {
+		// Leaving fullscreen also clears the global "Remove background"
+		// override, otherwise the button press would have no visible effect.
+		setFillFrameDefault(false);
+		const playheadMs = Math.round(currentTime * 1000);
+		setFillFrameRegions((prev) => endFillFrameRegionAtMs(prev, playheadMs));
+	}, [currentTime]);
+
+	const playheadInFillFrame =
+		fillFrameDefault || isFillFrameAtMs(fillFrameRegions, Math.round(currentTime * 1000));
+
 	// Global Tab prevention
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
@@ -4533,11 +4648,35 @@ export default function VideoEditor() {
 					}
 				}
 			}
+
+			if (matchesShortcut(e, shortcuts.fillFrameOn, isMac)) {
+				if (isEditableTarget) {
+					return;
+				}
+				e.preventDefault();
+				handleFillFrameOn();
+			}
+
+			if (matchesShortcut(e, shortcuts.fillFrameOff, isMac)) {
+				if (isEditableTarget) {
+					return;
+				}
+				e.preventDefault();
+				handleFillFrameOff();
+			}
 		};
 
 		window.addEventListener("keydown", handleKeyDown, { capture: true });
 		return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
-	}, [shortcuts, isMac, handleUndo, handleRedo, startPlayback]);
+	}, [
+		shortcuts,
+		isMac,
+		handleUndo,
+		handleRedo,
+		startPlayback,
+		handleFillFrameOn,
+		handleFillFrameOff,
+	]);
 
 	useEffect(() => {
 		if (selectedZoomId && !zoomRegions.some((region) => region.id === selectedZoomId)) {
@@ -4568,6 +4707,15 @@ export default function VideoEditor() {
 			setSelectedCameraId(null);
 		}
 	}, [selectedCameraId, webcamLayoutRegions]);
+
+	useEffect(() => {
+		if (
+			selectedFillFrameId &&
+			!fillFrameRegions.some((region) => region.id === selectedFillFrameId)
+		) {
+			setSelectedFillFrameId(null);
+		}
+	}, [selectedFillFrameId, fillFrameRegions]);
 
 	const showExportSuccessToast = useCallback((filePath: string) => {
 		toast.success(`Exported successfully to ${filePath}`, {
@@ -4859,6 +5007,8 @@ export default function VideoEditor() {
 							(webcam.sourcePath ? toFileUrl(webcam.sourcePath) : null),
 						webcamLayoutRegions: effectiveWebcamLayoutRegions,
 						webcamLayoutStyle,
+						fillFrameRegions,
+						fillFrameDefault,
 						annotationRegions,
 						autoCaptions,
 						autoCaptionSettings,
@@ -4918,10 +5068,6 @@ export default function VideoEditor() {
 					if (result.success && (result.blob || result.tempFilePath)) {
 						const timestamp = Date.now();
 						const fileName = `export-${timestamp}.mp4`;
-						const sidecarForThisExport =
-							settings.includeCaptionSidecar && captionSidecarPayload
-								? captionSidecarPayload
-								: undefined;
 						markExportAsSaving();
 
 						let saveResult: {
@@ -4943,13 +5089,8 @@ export default function VideoEditor() {
 									smokeExportConfig.enabled && smokeExportConfig.outputPath
 										? smokeExportConfig.outputPath
 										: null,
-								captionSidecar: sidecarForThisExport,
 							});
-							pendingOnCancel = {
-								fileName,
-								tempFilePath: result.tempFilePath,
-								captionSidecar: sidecarForThisExport,
-							};
+							pendingOnCancel = { fileName, tempFilePath: result.tempFilePath };
 						} else if (result.blob) {
 							// Legacy fallback: some export paths still surface a Blob, but in
 							// Electron we stream it into a temp file first so save/finalize
@@ -4958,7 +5099,6 @@ export default function VideoEditor() {
 								result.blob,
 								fileName,
 								smokeExportConfig.enabled ? smokeExportConfig.outputPath : null,
-								sidecarForThisExport,
 							);
 							saveResult = blobSave.saveResult;
 							pendingOnCancel = blobSave.pendingSave;
@@ -5171,12 +5311,13 @@ export default function VideoEditor() {
 			annotationRegions,
 			autoCaptions,
 			autoCaptionSettings,
-			captionSidecarPayload,
 			isPlaying,
 			exportQuality,
 			effectiveZoomRegions,
 			effectiveWebcamLayoutRegions,
 			webcamLayoutStyle,
+			fillFrameRegions,
+			fillFrameDefault,
 			ensureSupportedMp4SourceDimensions,
 			markExportAsSaving,
 			mp4FrameRate,
@@ -5332,7 +5473,6 @@ export default function VideoEditor() {
 			sourceWidth,
 			sourceHeight,
 			exportFormat,
-			includeCaptionSidecar: hasCaptionsForSidecar && includeCaptionSidecar,
 			exportEncodingMode,
 			exportQuality,
 			mp4FrameRate,
@@ -5356,8 +5496,6 @@ export default function VideoEditor() {
 		gifFrameRate,
 		gifLoop,
 		gifSizePreset,
-		hasCaptionsForSidecar,
-		includeCaptionSidecar,
 		exportBackendPreference,
 		exportPipelineModel,
 		handleExport,
@@ -5402,13 +5540,11 @@ export default function VideoEditor() {
 				tempPath: pendingSave.tempFilePath,
 				fileName: pendingSave.fileName,
 				outputPath: null,
-				captionSidecar: pendingSave.captionSidecar,
 			});
 		} else if (pendingSave.arrayBuffer) {
 			saveResult = await window.electronAPI.saveExportedVideo(
 				pendingSave.arrayBuffer,
 				pendingSave.fileName,
-				pendingSave.captionSidecar,
 			);
 		} else {
 			saveResult = { success: false, message: "No pending export to save" };
@@ -5592,6 +5728,8 @@ export default function VideoEditor() {
 			webcam={webcam}
 			webcamLayoutRegions={effectiveWebcamLayoutRegions}
 			webcamLayoutStyle={webcamLayoutStyle}
+			fillFrameRegions={fillFrameRegions}
+			fillFrameDefault={fillFrameDefault}
 			webcamVideoPath={webcam.sourcePath ? resolvedWebcamVideoUrl : null}
 			trimRegions={trimRegions}
 			speedRegions={effectiveSpeedRegions}
@@ -6148,11 +6286,6 @@ export default function VideoEditor() {
 									onGifLoopChange={setGifLoop}
 									gifSizePreset={gifSizePreset}
 									onGifSizePresetChange={setGifSizePreset}
-									showCaptionSidecarOption={
-										hasCaptionsForSidecar && exportFormat === "mp4"
-									}
-									includeCaptionSidecar={includeCaptionSidecar}
-									onIncludeCaptionSidecarChange={setIncludeCaptionSidecar}
 									mp4OutputDimensions={mp4OutputDimensions}
 									gifOutputDimensions={gifOutputDimensions}
 									onExport={handleStartExportFromDropdown}
@@ -6436,6 +6569,8 @@ export default function VideoEditor() {
 								onCropChange={setCropRegion}
 								aspectRatio={aspectRatio}
 								onAspectRatioChange={setAspectRatio}
+								fillFrameDefault={fillFrameDefault}
+								onFillFrameDefaultChange={setFillFrameDefault}
 								selectedAnnotationId={selectedAnnotationId}
 								annotationRegions={annotationRegions}
 								autoCaptions={autoCaptions}
@@ -6521,6 +6656,83 @@ export default function VideoEditor() {
 											<span className="h-1.5 w-1.5 rounded-full bg-[#2563EB]" />
 										) : null}
 									</Button>
+									<div className="w-[1px] h-4 bg-foreground/20" />
+									<div className="flex items-center gap-0.5">
+										<Button
+											variant="ghost"
+											size="sm"
+											onClick={handleFillFrameOff}
+											title="Framed video (⌥,)"
+											className={cn(
+												"h-7 w-7 px-0 transition-all",
+												playheadInFillFrame
+													? "text-muted-foreground hover:text-foreground hover:bg-foreground/10"
+													: "bg-foreground/10 text-foreground",
+											)}
+										>
+											<svg
+												viewBox="0 0 16 16"
+												className="h-3.5 w-3.5"
+												aria-hidden="true"
+											>
+												<rect
+													x="1"
+													y="1"
+													width="14"
+													height="14"
+													rx="2"
+													fill="none"
+													stroke="currentColor"
+													strokeWidth="1.2"
+												/>
+												<rect
+													x="4.5"
+													y="4.5"
+													width="7"
+													height="7"
+													rx="1"
+													fill="currentColor"
+												/>
+											</svg>
+										</Button>
+										<Button
+											variant="ghost"
+											size="sm"
+											onClick={handleFillFrameOn}
+											title="Fullscreen video (⌥.)"
+											className={cn(
+												"h-7 w-7 px-0 transition-all",
+												playheadInFillFrame
+													? "bg-foreground/10 text-foreground"
+													: "text-muted-foreground hover:text-foreground hover:bg-foreground/10",
+											)}
+										>
+											<svg
+												viewBox="0 0 16 16"
+												className="h-3.5 w-3.5"
+												aria-hidden="true"
+											>
+												<rect
+													x="1"
+													y="1"
+													width="14"
+													height="14"
+													rx="2"
+													fill="none"
+													stroke="currentColor"
+													strokeWidth="1.2"
+												/>
+												<rect
+													x="2.5"
+													y="2.5"
+													width="11"
+													height="11"
+													rx="1"
+													fill="currentColor"
+												/>
+											</svg>
+										</Button>
+									</div>
 								</div>
 								{/* Video preview */}
 								<div
@@ -6788,13 +7000,19 @@ export default function VideoEditor() {
 						cameraRegions={displayCameraRegions}
 						onCameraSpanChange={handleCameraSpanChangeFromTimeline}
 						onCameraDelete={handleCameraDelete}
-						onCameraAddAtMs={handleCameraAddAtMsFromTimeline}
 						selectedCameraId={selectedCameraId}
 						onSelectCamera={handleSelectCamera}
 						cameraTrackVisible={Boolean(webcam.enabled && webcam.sourcePath)}
 						cameraRegionsDimmed={
 							!webcamLayoutRegionsEnabled || !(webcam.enabled && webcam.sourcePath)
 						}
+						fillFrameRegions={displayFillFrameRegions}
+						onFillFrameSpanChange={handleFillFrameSpanChangeFromTimeline}
+						onFillFrameDelete={handleFillFrameDelete}
+						onFillFrameAddAtMs={handleFillFrameAddAtMsFromTimeline}
+						selectedFillFrameId={selectedFillFrameId}
+						onSelectFillFrame={handleSelectFillFrame}
+						fillFrameTrackVisible
 						annotationRegions={displayAnnotationRegions}
 						onAnnotationAdded={handleAnnotationAddedFromTimeline}
 						onAnnotationSpanChange={handleAnnotationSpanChangeFromTimeline}

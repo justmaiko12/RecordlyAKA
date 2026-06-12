@@ -8,6 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import type { ReactElement } from "react";
 import { useScopedT } from "@/contexts/I18nContext";
+import { WEBCAM_FRAME_RATE_OPTIONS, type WebcamFrameRate } from "@/lib/webcamSession";
 import { useLaunchPopoverCoordinator } from "./LaunchPopoverCoordinator";
 import type { DeviceOption } from "./launchPopoverTypes";
 import { DropdownItem, HudPopover } from "./PopoverScaffold";
@@ -30,6 +31,8 @@ export function WebcamPopover({
 	webcamDeviceId,
 	selectedVideoDeviceId,
 	onSelectVideoDevice,
+	webcamFrameRate,
+	onWebcamFrameRateChange,
 }: {
 	trigger: ReactElement;
 	disabled?: boolean;
@@ -46,6 +49,8 @@ export function WebcamPopover({
 	webcamDeviceId?: string;
 	selectedVideoDeviceId?: string;
 	onSelectVideoDevice: (deviceId: string) => void;
+	webcamFrameRate: WebcamFrameRate;
+	onWebcamFrameRateChange: (frameRate: WebcamFrameRate) => void;
 }) {
 	const t = useScopedT("launch");
 	const { isOpen, requestOpen, requestClose } = useLaunchPopoverCoordinator();
@@ -154,6 +159,29 @@ export function WebcamPopover({
 				<div className="text-center text-xs text-[var(--launch-text-muted)] py-4">
 					{t("recording.noWebcamsFound")}
 				</div>
+			)}
+			{webcamEnabled && (
+				<>
+					<div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--launch-label)]">
+						{t("recording.webcamFrameRate", "Frame rate")}
+					</div>
+					<div className="flex gap-1 px-3 pb-2">
+						{WEBCAM_FRAME_RATE_OPTIONS.map((rate) => (
+							<button
+								key={rate}
+								type="button"
+								onClick={() => onWebcamFrameRateChange(rate)}
+								className={`flex-1 rounded-lg px-2 py-1 text-xs ring-1 transition-colors ${
+									webcamFrameRate === rate
+										? "bg-[var(--launch-hover)] font-semibold ring-[var(--launch-border-strong)]"
+										: "ring-[var(--launch-border)] text-[var(--launch-text-muted)] hover:bg-[var(--launch-hover)]"
+								}`}
+							>
+								{rate} fps
+							</button>
+						))}
+					</div>
+				</>
 			)}
 		</HudPopover>
 	);

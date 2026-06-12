@@ -64,6 +64,11 @@ interface UseTimelineEditorRuntimeParams {
 	onCameraDelete?: (id: string) => void;
 	selectedCameraId?: string | null;
 	onSelectCamera?: (id: string | null) => void;
+	fillFrameRegions: TimelineRegion[];
+	onFillFrameSpanChange?: (id: string, span: Span) => void;
+	onFillFrameDelete?: (id: string) => void;
+	selectedFillFrameId?: string | null;
+	onSelectFillFrame?: (id: string | null) => void;
 	isMac: boolean;
 	keyShortcuts: TimelineShortcutBindings;
 	isTimelineFocusedRef: RefObject<boolean>;
@@ -113,6 +118,11 @@ export function useTimelineEditorRuntime({
 	onCameraDelete,
 	selectedCameraId,
 	onSelectCamera,
+	fillFrameRegions,
+	onFillFrameSpanChange,
+	onFillFrameDelete,
+	selectedFillFrameId,
+	onSelectFillFrame,
 	isMac,
 	keyShortcuts,
 	isTimelineFocusedRef,
@@ -133,12 +143,18 @@ export function useTimelineEditorRuntime({
 		deleteSelectedAnnotation,
 		deleteSelectedAudio,
 		deleteSelectedCamera,
+		deleteSelectedFillFrame,
+		multiSelectedItems,
+		multiSelectedIds,
+		applyMarqueeSelection,
+		deleteMultiSelectedItems,
 		clearSelectedBlocks,
 		handleSelectZoom,
 		handleSelectClip,
 		handleSelectAnnotation,
 		handleSelectAudio,
 		handleSelectCamera,
+		handleSelectFillFrame,
 		cycleAnnotationsAtCurrentTime,
 	} = useTimelineSelection({
 		totalMs,
@@ -152,16 +168,19 @@ export function useTimelineEditorRuntime({
 		selectedAnnotationId,
 		selectedAudioId,
 		selectedCameraId,
+		selectedFillFrameId,
 		onZoomDelete,
 		onClipDelete,
 		onAnnotationDelete,
 		onAudioDelete,
 		onCameraDelete,
+		onFillFrameDelete,
 		onSelectZoom,
 		onSelectClip,
 		onSelectAnnotation,
 		onSelectAudio,
 		onSelectCamera,
+		onSelectFillFrame,
 	});
 
 	useTimelineNormalization({
@@ -191,6 +210,7 @@ export function useTimelineEditorRuntime({
 		speedRegions,
 		audioRegions,
 		cameraRegions,
+		fillFrameRegions,
 		onZoomSpanChange,
 		onTrimSpanChange,
 		onClipSpanChange,
@@ -198,6 +218,7 @@ export function useTimelineEditorRuntime({
 		onSpeedSpanChange,
 		onAudioSpanChange,
 		onCameraSpanChange,
+		onFillFrameSpanChange,
 	});
 
 	const {
@@ -262,7 +283,9 @@ export function useTimelineEditorRuntime({
 		selectedAnnotationId,
 		selectedAudioId,
 		selectedCameraId,
+		selectedFillFrameId,
 		selectAllBlocksActive,
+		multiSelectedCount: multiSelectedItems.length,
 		addKeyframe,
 		handleAddZoom,
 		handleSplitClip,
@@ -273,6 +296,8 @@ export function useTimelineEditorRuntime({
 		deleteSelectedAnnotation,
 		deleteSelectedAudio,
 		deleteSelectedCamera,
+		deleteSelectedFillFrame,
+		deleteMultiSelectedItems,
 		cycleAnnotationsAtCurrentTime,
 	});
 
@@ -302,6 +327,8 @@ export function useTimelineEditorRuntime({
 		setSelectedKeyframeId,
 		selectAllBlocksActive,
 		setSelectAllBlocksActive,
+		multiSelectedIds,
+		applyMarqueeSelection,
 		handleKeyframeMove,
 		clearSelectedBlocks,
 		handleSelectZoom,
@@ -309,6 +336,7 @@ export function useTimelineEditorRuntime({
 		handleSelectAnnotation,
 		handleSelectAudio,
 		handleSelectCamera,
+		handleSelectFillFrame,
 		hasOverlap,
 		timelineItems,
 		allRegionSpans,

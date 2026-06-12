@@ -47,6 +47,7 @@ describe("timelineLayout", () => {
 	describe("countTimelineRows", () => {
 		const baseOptions = {
 			showCameraTrack: false,
+			showFillFrameTrack: false,
 			showSourceAudioTrack: false,
 			sourceAudioTrackCount: 0,
 		};
@@ -57,6 +58,17 @@ describe("timelineLayout", () => {
 
 		it("adds the camera row when visible", () => {
 			expect(countTimelineRows([], { ...baseOptions, showCameraTrack: true })).toBe(3);
+		});
+
+		it("adds the fill-frame row when visible", () => {
+			expect(countTimelineRows([], { ...baseOptions, showFillFrameTrack: true })).toBe(3);
+			expect(
+				countTimelineRows([], {
+					...baseOptions,
+					showCameraTrack: true,
+					showFillFrameTrack: true,
+				}),
+			).toBe(4);
 		});
 
 		it("adds one row per visible source-audio track", () => {

@@ -69,6 +69,11 @@ import {
 	waitForNativeCaptureStop,
 } from "../recording/mac";
 import {
+	readSceneStyleEvents,
+	recordSceneStyleEvent,
+	type SceneStyleMode,
+} from "../recording/sceneStyleEvents";
+import {
 	readWebcamLayoutSidecar,
 	recordWebcamLayoutEvent,
 	type WebcamLayoutMode,
@@ -1430,6 +1435,21 @@ export function registerRecordingHandlers(
 		}
 		const sidecar = await readWebcamLayoutSidecar(videoPath);
 		return { success: true, style: sidecar.style, events: sidecar.events };
+	});
+
+	ipcMain.on("scene-style-toggle", (_event, payload: { timeMs: number; mode: string }) => {
+		recordSceneStyleEvent({
+			timeMs: payload?.timeMs,
+			mode: payload?.mode as SceneStyleMode,
+		});
+	});
+
+	ipcMain.handle("get-scene-style-events", async (_event, videoPath: string) => {
+		if (!videoPath) {
+			return { success: true, events: [] };
+		}
+		const events = await readSceneStyleEvents(videoPath);
+		return { success: true, events };
 	});
 
 	ipcMain.handle("mux-native-windows-recording", async (_event, expectedDurationMs?: number) => {

@@ -54,6 +54,7 @@ export default function TimelineAxis({ videoDurationMs, currentTimeMs }: Timelin
 
 	return (
 		<div
+			data-timeline-axis="true"
 			className="h-8 bg-editor-bg border-b border-foreground/10 relative overflow-hidden select-none"
 			style={{
 				[sideProperty === "right" ? "marginRight" : "marginLeft"]: `${sidebarWidth}px`,

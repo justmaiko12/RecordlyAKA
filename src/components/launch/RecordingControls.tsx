@@ -23,6 +23,7 @@ interface RecordingControlsProps {
 	webcamEnabled: boolean;
 	cameraFullActive: boolean;
 	onToggleCameraLayout: () => void;
+	sceneStyleMode: "fill" | "framed";
 	onPauseResume: () => void;
 	onStopRecording: () => void;
 	onHideHud: () => void;
@@ -38,6 +39,7 @@ export const RecordingControls = ({
 	webcamEnabled,
 	cameraFullActive,
 	onToggleCameraLayout,
+	sceneStyleMode,
 	onPauseResume,
 	onStopRecording,
 	onHideHud,
@@ -71,6 +73,12 @@ export const RecordingControls = ({
 				>
 					{formatTime(elapsed)}
 				</span>
+
+				{sceneStyleMode === "fill" && (
+					<span className="text-[10px] font-bold tracking-[0.06em] text-[var(--launch-text-muted)]">
+						{t("recording.sceneFillBadge", "Fullscreen")}
+					</span>
+				)}
 
 				<Separator orientation="vertical" className="mx-[5px] h-6" />
 
@@ -179,6 +187,7 @@ export const RecordingControls = ({
 		webcamEnabled,
 		cameraFullActive,
 		onToggleCameraLayout,
+		sceneStyleMode,
 		onPauseResume,
 		onStopRecording,
 		onHideHud,

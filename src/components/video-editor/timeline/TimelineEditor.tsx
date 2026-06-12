@@ -73,11 +73,17 @@ export interface TimelineEditorProps {
 	cameraRegions?: TimelineRegion[];
 	onCameraSpanChange?: (id: string, span: Span) => void;
 	onCameraDelete?: (id: string) => void;
-	onCameraAddAtMs?: (timeMs: number) => void;
 	selectedCameraId?: string | null;
 	onSelectCamera?: (id: string | null) => void;
 	cameraTrackVisible?: boolean;
 	cameraRegionsDimmed?: boolean;
+	fillFrameRegions?: TimelineRegion[];
+	onFillFrameSpanChange?: (id: string, span: Span) => void;
+	onFillFrameDelete?: (id: string) => void;
+	onFillFrameAddAtMs?: (timeMs: number) => void;
+	selectedFillFrameId?: string | null;
+	onSelectFillFrame?: (id: string | null) => void;
+	fillFrameTrackVisible?: boolean;
 	videoPath?: string | null;
 	videoSourcePath?: string | null;
 	cursorTelemetrySourcePath?: string | null;
@@ -156,11 +162,17 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 			cameraRegions = [],
 			onCameraSpanChange,
 			onCameraDelete,
-			onCameraAddAtMs,
 			selectedCameraId,
 			onSelectCamera,
 			cameraTrackVisible = false,
 			cameraRegionsDimmed = false,
+			fillFrameRegions = [],
+			onFillFrameSpanChange,
+			onFillFrameDelete,
+			onFillFrameAddAtMs,
+			selectedFillFrameId,
+			onSelectFillFrame,
+			fillFrameTrackVisible = false,
 			videoPath,
 			videoSourcePath,
 			cursorTelemetrySourcePath,
@@ -205,6 +217,22 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 			[cameraRegions, totalMs],
 		);
 		const showCameraTrack = cameraTrackVisible || boundedCameraRegions.length > 0;
+
+		// Fill-frame regions imported from an unterminated recording toggle can
+		// carry an open-ended endMs (MAX_SAFE_INTEGER); bound them like camera
+		// regions for display.
+		const boundedFillFrameRegions = useMemo(
+			() =>
+				totalMs > 0
+					? fillFrameRegions
+							.filter((region) => region.startMs < totalMs)
+							.map((region) =>
+								region.endMs > totalMs ? { ...region, endMs: totalMs } : region,
+							)
+					: fillFrameRegions,
+			[fillFrameRegions, totalMs],
+		);
+		const showFillFrameTrack = fillFrameTrackVisible || boundedFillFrameRegions.length > 0;
 
 		const timelineContainerRef = useRef<HTMLDivElement>(null);
 		const isTimelineFocusedRef = useRef(false);
@@ -344,6 +372,8 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 			setSelectedKeyframeId,
 			selectAllBlocksActive,
 			setSelectAllBlocksActive,
+			multiSelectedIds,
+			applyMarqueeSelection,
 			handleKeyframeMove,
 			clearSelectedBlocks,
 			handleSelectZoom,
@@ -351,6 +381,7 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 			handleSelectAnnotation,
 			handleSelectAudio,
 			handleSelectCamera,
+			handleSelectFillFrame,
 			hasOverlap,
 			timelineItems,
 			allRegionSpans,
@@ -402,6 +433,11 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 			onCameraDelete,
 			selectedCameraId,
 			onSelectCamera,
+			fillFrameRegions: boundedFillFrameRegions,
+			onFillFrameSpanChange,
+			onFillFrameDelete,
+			selectedFillFrameId,
+			onSelectFillFrame,
 			isMac,
 			keyShortcuts,
 			isTimelineFocusedRef,
@@ -413,10 +449,17 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 			() =>
 				countTimelineRows(timelineItems, {
 					showCameraTrack,
+					showFillFrameTrack,
 					showSourceAudioTrack,
 					sourceAudioTrackCount: sourceAudioTracks.length,
 				}),
-			[timelineItems, showCameraTrack, showSourceAudioTrack, sourceAudioTracks.length],
+			[
+				timelineItems,
+				showCameraTrack,
+				showFillFrameTrack,
+				showSourceAudioTrack,
+				sourceAudioTracks.length,
+			],
 		);
 		useEffect(() => {
 			onTimelineRowCountChange?.(timelineRowCount);
@@ -504,19 +547,24 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 							currentTimeMs={currentTimeMs}
 							onSeek={onSeek}
 							onAddZoomAtMs={addZoomAtMs}
-							onCameraAddAtMs={onCameraAddAtMs}
+							onFillFrameAddAtMs={onFillFrameAddAtMs}
+							onMarqueeSelect={applyMarqueeSelection}
+							multiSelectedIds={multiSelectedIds}
 							canPlaceZoomAtMs={canPlaceZoomAtMs}
 							onSelectZoom={handleSelectZoom}
 							onSelectClip={handleSelectClip}
 							onSelectAnnotation={handleSelectAnnotation}
 							onSelectAudio={handleSelectAudio}
 							onSelectCamera={handleSelectCamera}
+							onSelectFillFrame={handleSelectFillFrame}
 							selectedZoomId={selectedZoomId}
 							selectedClipId={selectedClipId}
 							selectedAnnotationId={selectedAnnotationId}
 							selectedAudioId={selectedAudioId}
 							selectedCameraId={selectedCameraId}
+							selectedFillFrameId={selectedFillFrameId}
 							showCameraTrack={showCameraTrack}
+							showFillFrameTrack={showFillFrameTrack}
 							cameraRegionsDimmed={cameraRegionsDimmed}
 							selectAllBlocksActive={selectAllBlocksActive}
 							onClearBlockSelection={clearSelectedBlocks}

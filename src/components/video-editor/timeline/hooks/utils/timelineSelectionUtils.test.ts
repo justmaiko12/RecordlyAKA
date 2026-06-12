@@ -62,6 +62,25 @@ describe("timelineSelectionUtils", () => {
 		).toBe("audio");
 	});
 
+	it("targets the marquee multi-selection over single selections", () => {
+		expect(
+			resolveDeleteSelectionTarget({
+				selectAllBlocksActive: false,
+				multiSelectedCount: 3,
+				selectedKeyframeId: "kf-1",
+				selectedZoomId: "z-1",
+			}),
+		).toBe("multi");
+		expect(
+			resolveDeleteSelectionTarget({
+				selectAllBlocksActive: false,
+				multiSelectedCount: 0,
+				selectedKeyframeId: null,
+				selectedZoomId: "z-1",
+			}),
+		).toBe("zoom");
+	});
+
 	it("returns none when nothing is selected", () => {
 		expect(
 			resolveDeleteSelectionTarget({

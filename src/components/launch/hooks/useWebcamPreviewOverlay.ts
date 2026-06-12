@@ -1,8 +1,11 @@
 import { type PointerEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
-	canShowFloatingWebcamPreview,
-	createFloatingWebcamPreviewVideoConstraints,
-} from "../floatingWebcamPreview";
+	acquireWebcamSession,
+	DEFAULT_WEBCAM_FRAME_RATE,
+	type WebcamFrameRate,
+	type WebcamSessionHandle,
+} from "@/lib/webcamSession";
+import { canShowFloatingWebcamPreview } from "../floatingWebcamPreview";
 
 const WEBCAM_PREVIEW_DRAG_THRESHOLD = 6;
 const DEFAULT_WEBCAM_PREVIEW_OFFSET = { x: 0, y: 0 };
@@ -10,6 +13,7 @@ const DEFAULT_WEBCAM_PREVIEW_OFFSET = { x: 0, y: 0 };
 export function useWebcamPreviewOverlay({
 	webcamEnabled,
 	webcamDeviceId,
+	webcamFrameRate = DEFAULT_WEBCAM_FRAME_RATE,
 	showWebcamControls,
 	webcamPopoverOpen,
 	hudOverlayMousePassthroughSupported,
@@ -17,13 +21,14 @@ export function useWebcamPreviewOverlay({
 }: {
 	webcamEnabled: boolean;
 	webcamDeviceId?: string;
+	webcamFrameRate?: WebcamFrameRate;
 	showWebcamControls: boolean;
 	webcamPopoverOpen: boolean;
 	hudOverlayMousePassthroughSupported: boolean | null;
 	/**
 	 * While recording/finalizing the HUD window shrinks to a compact strip
 	 * (getHudOverlayBounds passes !hudOverlayRecordingActive), so the 288px
-	 * floating preview would be clipped to a sliver, so hide it instead.
+	 * floating preview would be clipped to a sliver — hide it instead.
 	 */
 	hudCompact?: boolean;
 }) {
@@ -219,6 +224,7 @@ export function useWebcamPreviewOverlay({
 
 	useEffect(() => {
 		let mounted = true;
+		let sessionHandle: WebcamSessionHandle | null = null;
 
 		const startPreview = async () => {
 			if (!shouldStreamWebcamPreview) {
@@ -226,17 +232,19 @@ export function useWebcamPreviewOverlay({
 			}
 
 			try {
-				const previewStream = await navigator.mediaDevices.getUserMedia({
-					video: createFloatingWebcamPreviewVideoConstraints(webcamDeviceId),
-					audio: false,
-				});
+				// Shared session: the recorder may hold the same camera. Acquiring
+				// through the session manager (instead of a second getUserMedia)
+				// avoids restarting the device, which stalls frame delivery for
+				// seconds on cameras like iPhone Continuity Camera.
+				const handle = await acquireWebcamSession(webcamDeviceId, webcamFrameRate);
 
 				if (!mounted) {
-					previewStream.getTracks().forEach((track) => track.stop());
+					handle.release();
 					return;
 				}
 
-				previewStreamRef.current = previewStream;
+				sessionHandle = handle;
+				previewStreamRef.current = handle.stream;
 				attachPreviewStreamToNode(webcamPreviewRef.current);
 				attachPreviewStreamToNode(recordingWebcamPreviewRef.current);
 			} catch (error) {
@@ -258,12 +266,15 @@ export function useWebcamPreviewOverlay({
 					videoElement.pause();
 					videoElement.srcObject = null;
 				});
-			previewStream?.getTracks().forEach((track) => track.stop());
+			// Release the shared session instead of stopping tracks; the device
+			// only powers down once no other consumer (e.g. recorder) holds it.
+			sessionHandle?.release();
+			sessionHandle = null;
 			if (previewStreamRef.current === previewStream) {
 				previewStreamRef.current = null;
 			}
 		};
-	}, [attachPreviewStreamToNode, shouldStreamWebcamPreview, webcamDeviceId]);
+	}, [attachPreviewStreamToNode, shouldStreamWebcamPreview, webcamDeviceId, webcamFrameRate]);
 
 	return {
 		showFloatingWebcamPreview,

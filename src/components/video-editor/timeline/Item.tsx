@@ -1,4 +1,5 @@
 import {
+	CornersOut,
 	FilmSlate as Film,
 	Gauge,
 	ChatCircle as MessageSquare,
@@ -36,7 +37,7 @@ interface ItemProps {
 	waveformGain?: number;
 	waveformNormalize?: boolean;
 	muted?: boolean;
-	variant?: "zoom" | "trim" | "clip" | "annotation" | "speed" | "audio" | "camera";
+	variant?: "zoom" | "trim" | "clip" | "annotation" | "speed" | "audio" | "camera" | "fillFrame";
 	dimmed?: boolean;
 	isLoading?: boolean;
 	loadingLabel?: string;
@@ -129,6 +130,7 @@ export default function Item({
 	const isSpeed = variant === "speed";
 	const isAudio = variant === "audio";
 	const isCamera = variant === "camera";
+	const isFillFrame = variant === "fillFrame";
 	const showAudioWaveform = isAudio && Boolean(waveformPeaks);
 	const clipSpeedLabel = isClip ? formatClipSpeedLabel(speedValue ?? 1) : null;
 
@@ -144,7 +146,9 @@ export default function Item({
 						? glassStyles.glassDarkGreen
 						: isCamera
 							? glassStyles.glassBlue
-							: glassStyles.glassYellow;
+							: isFillFrame
+								? glassStyles.glassGreen
+								: glassStyles.glassYellow;
 
 	const MIN_ITEM_PX = 6;
 	const handleSelect = () => {
@@ -165,6 +169,8 @@ export default function Item({
 			{...listeners}
 			{...attributes}
 			data-timeline-item="true"
+			data-timeline-item-id={id}
+			data-timeline-item-kind={variant}
 			onPointerDownCapture={handleSelect}
 			className={cn("group h-full", dimmed && "opacity-50")}
 		>
@@ -265,6 +271,13 @@ export default function Item({
 							) : isCamera ? (
 								<>
 									<VideoCamera className="w-3.5 h-3.5 shrink-0" />
+									<span className="text-[11px] font-semibold tracking-tight whitespace-nowrap">
+										{children}
+									</span>
+								</>
+							) : isFillFrame ? (
+								<>
+									<CornersOut className="w-3.5 h-3.5 shrink-0" />
 									<span className="text-[11px] font-semibold tracking-tight whitespace-nowrap">
 										{children}
 									</span>

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import type { AudioRegion, SpeedRegion, TrimRegion, ZoomRegion } from "../../types";
 import { normalizeRegionSpan } from "../core/spans";
+import type { AudioRegion, SpeedRegion, TrimRegion, ZoomRegion } from "../../types";
 
 interface UseTimelineNormalizationParams {
 	totalMs: number;

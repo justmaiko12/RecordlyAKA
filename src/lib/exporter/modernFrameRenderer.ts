@@ -11,6 +11,10 @@ import {
 	getCaptionTextMaxWidth,
 	getCaptionWordVisualState,
 } from "@/components/video-editor/captionStyle";
+import {
+	type FillFrameRegion,
+	fillFrameProgressAtMs,
+} from "@/components/video-editor/fillFrameRegions";
 import type {
 	AnnotationRegion,
 	AutoCaptionSettings,
@@ -87,6 +91,11 @@ import {
 	getEffectiveVideoStreamDurationSeconds,
 } from "@/lib/mediaTiming";
 import { isVideoWallpaperSource } from "@/lib/wallpapers";
+import {
+	isProcessingActive,
+	resolveProcessingSettings,
+	WebcamProcessor,
+} from "@/lib/webcamProcessing/webcamProcessor";
 import {
 	type AnnotationRenderAssets,
 	preloadAnnotationAssets,
@@ -169,6 +178,10 @@ interface FrameRenderConfig {
 	zoomClassicMode?: boolean;
 	frame?: string | null;
 	nativeReadbackMode?: "pixels" | "canvas";
+	/** Time ranges where the video covers the full canvas (no framed chrome). */
+	fillFrameRegions?: FillFrameRegion[];
+	/** "Remove background": whole video renders fill-frame regardless of regions. */
+	fillFrameDefault?: boolean;
 }
 
 interface AnimationState {
@@ -452,6 +465,8 @@ export class FrameRenderer {
 	private webcamVideoElement: HTMLVideoElement | null = null;
 	private webcamSeekPromise: Promise<void> | null = null;
 	private webcamFrameCacheCanvas: HTMLCanvasElement | null = null;
+	private webcamProcessor: WebcamProcessor | null = null;
+	private webcamProcessorBgPath: string | null = null;
 	private webcamFrameCacheCtx: CanvasRenderingContext2D | null = null;
 	private sceneVideoFrameStagingCanvas: HTMLCanvasElement | null = null;
 	private sceneVideoFrameStagingCtx: CanvasRenderingContext2D | null = null;
@@ -493,6 +508,7 @@ export class FrameRenderer {
 	private lastContentTimeMs: number | null = null;
 	private layoutCache: LayoutCache | null = null;
 	private currentVideoTime = 0;
+	private lastFillFrameProgress = 0;
 	private cursorOverlay: PixiCursorOverlay | null = null;
 	private lastSyncedWebcamTime: number | null = null;
 	private webcamRenderMode: "hidden" | "live" | "cached" = "hidden";
@@ -2386,7 +2402,33 @@ export class FrameRenderer {
 		return false;
 	}
 
+	private async setupWebcamProcessing(): Promise<void> {
+		if (!isProcessingActive(this.config.webcam)) {
+			return;
+		}
+		this.webcamProcessor ??= new WebcamProcessor();
+		const bgPath = this.config.webcam?.greenscreen?.backgroundImagePath ?? null;
+		if (bgPath === this.webcamProcessorBgPath) {
+			return;
+		}
+		this.webcamProcessorBgPath = bgPath;
+		if (!bgPath) {
+			this.webcamProcessor.setBackgroundImage(null);
+			return;
+		}
+		try {
+			const image = new Image();
+			image.src = bgPath;
+			await image.decode();
+			this.webcamProcessor.setBackgroundImage(image);
+		} catch (error) {
+			console.warn("[export] failed to load greenscreen background image:", error);
+			this.webcamProcessor.setBackgroundImage(null);
+		}
+	}
+
 	private async setupWebcamSource(): Promise<void> {
+		await this.setupWebcamProcessing();
 		const webcamUrl = this.config.webcamUrl;
 		if (!this.config.webcam?.enabled || !webcamUrl) {
 			this.webcamForwardFrameSource?.cancel();
@@ -2528,6 +2570,21 @@ export class FrameRenderer {
 		height: number,
 		expandCropToFrameAspect: boolean,
 	): boolean {
+		// Greenscreen/mask/color pipeline: swap in the processed frame (same
+		// dimensions) before cropping so downstream layout code is unchanged.
+		if (isProcessingActive(this.config.webcam)) {
+			this.webcamProcessor ??= new WebcamProcessor();
+			const processed = this.webcamProcessor.processFrame(
+				source as TexImageSource,
+				width,
+				height,
+				resolveProcessingSettings(this.config.webcam),
+				{ mirrored: this.config.webcam?.mirror ?? false },
+			);
+			if (processed) {
+				source = processed;
+			}
+		}
 		let sourceRect = getWebcamCropSourceRect(this.config.webcam?.cropRegion, width, height);
 		if (expandCropToFrameAspect) {
 			// Camera-full fill: the stored crop is a pixel-square bubble viewport.
@@ -3271,7 +3328,8 @@ export class FrameRenderer {
 			this.videoTextureSource.update();
 		}
 
-		if (!this.layoutCache) {
+		// Relayout when the fill-frame transition moves (layout is otherwise static).
+		if (!this.layoutCache || this.getFillFrameProgress() !== this.lastFillFrameProgress) {
 			this.updateLayout();
 		}
 		const layoutCache = this.layoutCache;
@@ -3670,6 +3728,17 @@ export class FrameRenderer {
 		}
 	}
 
+	/** Eased fill-frame progress at the current frame time (0 = framed, 1 = cover). */
+	private getFillFrameProgress(): number {
+		if (this.config.fillFrameDefault) {
+			return 1;
+		}
+		return fillFrameProgressAtMs(
+			this.config.fillFrameRegions ?? [],
+			this.currentVideoTime * 1000,
+		);
+	}
+
 	private updateLayout(): void {
 		if (!this.app || !this.videoSprite || !this.videoMaskGraphics) return;
 
@@ -3683,6 +3752,10 @@ export class FrameRenderer {
 			videoHeight,
 		} = this.config;
 
+		const fillFrameProgress = this.getFillFrameProgress();
+		const fillFrameFade = 1 - fillFrameProgress;
+		this.lastFillFrameProgress = fillFrameProgress;
+
 		const layout = computePaddedLayout({
 			width,
 			height,
@@ -3691,6 +3764,7 @@ export class FrameRenderer {
 			cropRegion,
 			videoWidth,
 			videoHeight,
+			fillFrameProgress,
 		});
 
 		this.videoSprite.scale.set(layout.scale);
@@ -3699,7 +3773,12 @@ export class FrameRenderer {
 		const previewWidth = this.config.previewWidth || 1920;
 		const previewHeight = this.config.previewHeight || 1080;
 		const canvasScaleFactor = Math.min(width / previewWidth, height / previewHeight);
-		const scaledBorderRadius = borderRadius * canvasScaleFactor;
+		const scaledBorderRadius = borderRadius * canvasScaleFactor * fillFrameFade;
+
+		// Background wallpaper fades out as the video covers the canvas.
+		if (this.backgroundContainer) {
+			this.backgroundContainer.alpha = fillFrameFade;
+		}
 
 		this.videoMaskGraphics.clear();
 		drawSquircleOnGraphics(this.videoMaskGraphics, {
@@ -3717,6 +3796,7 @@ export class FrameRenderer {
 			maskWidth: layout.croppedDisplayWidth,
 			maskHeight: layout.croppedDisplayHeight,
 			maskRadius: scaledBorderRadius,
+			strengthScale: fillFrameFade,
 		});
 
 		this.layoutCache = {
@@ -3822,8 +3902,11 @@ export class FrameRenderer {
 		maskWidth: number;
 		maskHeight: number;
 		maskRadius: number;
+		/** Fill-frame fade: shadows vanish as the video covers the canvas. */
+		strengthScale?: number;
 	}): void {
-		const shadowStrength = clampUnitInterval(this.config.shadowIntensity);
+		const shadowStrength =
+			clampUnitInterval(this.config.shadowIntensity) * (layout.strengthScale ?? 1);
 		for (const layer of this.videoShadowLayers) {
 			if (!this.config.showShadow || shadowStrength <= 0) {
 				layer.container.visible = false;
@@ -3849,15 +3932,18 @@ export class FrameRenderer {
 			return 0;
 		}
 
-		const { region, strength, blendedScale, transition } = findDominantRegion(
-			this.config.zoomRegions,
-			timeMs,
-			{
-				connectZooms: this.config.connectZooms,
-				zoomInDurationMs: this.config.zoomInDurationMs,
-				zoomOutDurationMs: this.config.zoomOutDurationMs,
-			},
-		);
+		const {
+			region,
+			strength: rawZoomStrength,
+			blendedScale,
+			transition,
+		} = findDominantRegion(this.config.zoomRegions, timeMs, {
+			connectZooms: this.config.connectZooms,
+			zoomInDurationMs: this.config.zoomInDurationMs,
+			zoomOutDurationMs: this.config.zoomOutDurationMs,
+		});
+		// Fullscreen (fill-frame) segments are presentations — never zoom them.
+		const strength = rawZoomStrength * (1 - this.getFillFrameProgress());
 
 		let targetScaleFactor = 1;
 		let targetFocus = { ...DEFAULT_FOCUS };
@@ -4156,6 +4242,9 @@ export class FrameRenderer {
 		this.cleanupWebcamSource = null;
 		this.webcamFrameCacheCanvas = null;
 		this.webcamFrameCacheCtx = null;
+		this.webcamProcessor?.destroy();
+		this.webcamProcessor = null;
+		this.webcamProcessorBgPath = null;
 		this.sceneVideoFrameStagingCanvas = null;
 		this.sceneVideoFrameStagingCtx = null;
 		this.webcamVideoFrameStagingCanvas = null;

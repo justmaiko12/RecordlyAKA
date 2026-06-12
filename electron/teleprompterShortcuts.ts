@@ -66,6 +66,37 @@ export function unregisterCameraLayoutShortcut(): void {
 	}
 }
 
+export type SceneStyleMode = "fill" | "framed";
+
+const SCENE_STYLE_SHORTCUTS: Array<[string, SceneStyleMode]> = [
+	["Alt+.", "fill"],
+	["Alt+,", "framed"],
+];
+
+/** Registered only while a recording is active. */
+export function registerSceneStyleShortcuts(send: (mode: SceneStyleMode) => void): void {
+	for (const [accelerator, mode] of SCENE_STYLE_SHORTCUTS) {
+		try {
+			const registered = globalShortcut.register(accelerator, () => send(mode));
+			if (!registered) {
+				console.warn(`[scene-style] Could not register global shortcut ${accelerator}`);
+			}
+		} catch (error) {
+			console.warn(`[scene-style] Could not register global shortcut ${accelerator}:`, error);
+		}
+	}
+}
+
+export function unregisterSceneStyleShortcuts(): void {
+	for (const [accelerator] of SCENE_STYLE_SHORTCUTS) {
+		try {
+			globalShortcut.unregister(accelerator);
+		} catch {
+			// Best effort - shortcut may not have been registered.
+		}
+	}
+}
+
 /** Registered for the app lifetime so Alt+T can summon the window. */
 export function registerTeleprompterToggleShortcut(toggle: () => void): void {
 	try {

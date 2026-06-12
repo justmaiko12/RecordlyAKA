@@ -215,6 +215,24 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			events: Array<{ timeMs: number; mode: "screen" | "camera-full" }>;
 		}>;
 	},
+	sceneStyleToggle: (payload: { timeMs: number; mode: "fill" | "framed" }) => {
+		ipcRenderer.send("scene-style-toggle", payload);
+	},
+	onSceneStyleHotkey: (callback: (mode: "fill" | "framed") => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, payload: { mode?: string }) => {
+			callback(payload?.mode === "fill" ? "fill" : "framed");
+		};
+		ipcRenderer.on("scene-style-hotkey", listener);
+		return () => {
+			ipcRenderer.removeListener("scene-style-hotkey", listener);
+		};
+	},
+	getSceneStyleEvents: (videoPath: string) => {
+		return ipcRenderer.invoke("get-scene-style-events", videoPath) as Promise<{
+			success: boolean;
+			events: Array<{ timeMs: number; mode: "fill" | "framed" }>;
+		}>;
+	},
 	onTeleprompterCameraMode: (callback: (mode: "screen" | "camera-full") => void) => {
 		const listener = (_event: Electron.IpcRendererEvent, mode: "screen" | "camera-full") => {
 			callback(mode);
@@ -507,14 +525,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		tempPath: string;
 		fileName: string;
 		outputPath?: string | null;
-		captionSidecar?: {
-			format: "srt" | "vtt" | "both";
-			cues: Array<{
-				startMs: number;
-				endMs: number;
-				text: string;
-			}>;
-		};
 	}) => {
 		return ipcRenderer.invoke("finalize-exported-video", payload);
 	},
@@ -689,38 +699,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	openAccessibilityPreferences: () => {
 		return ipcRenderer.invoke("open-accessibility-preferences");
 	},
-	saveExportedVideo: (
-		videoData: ArrayBuffer,
-		fileName: string,
-		captionSidecar?: {
-			format: "srt" | "vtt" | "both";
-			cues: Array<{
-				startMs: number;
-				endMs: number;
-				text: string;
-			}>;
-		},
-	) => {
-		return ipcRenderer.invoke("save-exported-video", videoData, fileName, captionSidecar);
+	saveExportedVideo: (videoData: ArrayBuffer, fileName: string) => {
+		return ipcRenderer.invoke("save-exported-video", videoData, fileName);
 	},
-	writeExportedVideoToPath: (
-		videoData: ArrayBuffer,
-		outputPath: string,
-		captionSidecar?: {
-			format: "srt" | "vtt" | "both";
-			cues: Array<{
-				startMs: number;
-				endMs: number;
-				text: string;
-			}>;
-		},
-	) => {
-		return ipcRenderer.invoke(
-			"write-exported-video-to-path",
-			videoData,
-			outputPath,
-			captionSidecar,
-		);
+	writeExportedVideoToPath: (videoData: ArrayBuffer, outputPath: string) => {
+		return ipcRenderer.invoke("write-exported-video-to-path", videoData, outputPath);
 	},
 	openVideoFilePicker: () => {
 		return ipcRenderer.invoke("open-video-file-picker");
@@ -1018,6 +1001,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		microphoneEnabled?: boolean;
 		microphoneDeviceId?: string;
 		systemAudioEnabled?: boolean;
+		webcamFrameRate?: number;
 	}) => ipcRenderer.invoke("set-recording-preferences", prefs),
 	getCountdownDelay: () => ipcRenderer.invoke("get-countdown-delay"),
 	setCountdownDelay: (delay: number) => ipcRenderer.invoke("set-countdown-delay", delay),

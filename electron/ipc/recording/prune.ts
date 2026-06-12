@@ -17,6 +17,7 @@ import {
 	normalizeVideoSourcePath,
 	parseJsonWithByteOrderMark,
 } from "../utils";
+import { getSceneStyleEventsPath } from "./sceneStyleEvents";
 import { getWebcamLayoutEventsPath } from "./webcamLayoutEvents";
 
 export async function hasSiblingProjectFile(videoPath: string) {
@@ -173,6 +174,9 @@ export async function pruneAutoRecordings(exemptPaths: string[] = []) {
 			await fs.rm(getTelemetryPathForVideo(entry.filePath), { force: true });
 			await fs
 				.rm(getWebcamLayoutEventsPath(entry.filePath), { force: true })
+				.catch(() => undefined);
+			await fs
+				.rm(getSceneStyleEventsPath(entry.filePath), { force: true })
 				.catch(() => undefined);
 			// Clean up companion audio files left from recording (macOS .m4a, Windows .wav)
 			const base = entry.filePath.replace(/\.(mp4|mov|webm)$/i, "");
