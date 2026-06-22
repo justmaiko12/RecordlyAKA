@@ -6,13 +6,51 @@ export const PADDING_SCALE_FACTOR = 0.2;
 export const BASE_PREVIEW_WIDTH = 1920;
 export const BASE_PREVIEW_HEIGHT = 1080;
 
-export function scalePreviewBorderRadius(width: number, height: number, borderRadius = 0): number {
-	if (width <= 0 || height <= 0) {
+export function scalePreviewRadiusForCanvas({
+	width,
+	height,
+	radius = 0,
+	previewWidth = BASE_PREVIEW_WIDTH,
+	previewHeight = BASE_PREVIEW_HEIGHT,
+}: {
+	width: number;
+	height: number;
+	radius?: number;
+	previewWidth?: number;
+	previewHeight?: number;
+}): number {
+	if (width <= 0 || height <= 0 || previewWidth <= 0 || previewHeight <= 0) {
 		return 0;
 	}
 
-	const canvasScaleFactor = Math.min(width / BASE_PREVIEW_WIDTH, height / BASE_PREVIEW_HEIGHT);
-	return Math.max(0, borderRadius * canvasScaleFactor);
+	const canvasScaleFactor = Math.min(width / previewWidth, height / previewHeight);
+	return Math.max(0, radius * canvasScaleFactor);
+}
+
+export function scalePreviewBorderRadius(width: number, height: number, borderRadius = 0): number {
+	return scalePreviewRadiusForCanvas({ width, height, radius: borderRadius });
+}
+
+export function scalePreviewMarginForCanvas({
+	width,
+	height,
+	margin = 0,
+	previewWidth = BASE_PREVIEW_WIDTH,
+	previewHeight = BASE_PREVIEW_HEIGHT,
+}: {
+	width: number;
+	height: number;
+	margin?: number;
+	previewWidth?: number;
+	previewHeight?: number;
+}): number {
+	return scalePreviewRadiusForCanvas({
+		width,
+		height,
+		radius: margin,
+		previewWidth,
+		previewHeight,
+	});
 }
 
 export function isZeroPadding(padding: Padding | number): boolean {

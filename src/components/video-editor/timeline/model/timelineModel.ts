@@ -106,6 +106,7 @@ export function buildTimelineItems(params: {
 		span: { start: region.startMs, end: region.endMs },
 		label: getAudioLabel(region),
 		audioPath: region.audioPath,
+		audioSourceStartMs: region.sourceStartMs,
 		audioGain: region.volume,
 		audioNormalize: Boolean(region.normalize),
 		variant: "audio",

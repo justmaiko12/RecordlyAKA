@@ -24,6 +24,7 @@ const OFFLINE_ENCODE_CHUNK_FRAMES = 1024;
 const OFFLINE_CHUNK_DURATION_SEC = 30;
 const OFFLINE_MIX_SOFT_LIMITER_THRESHOLD = 0.9;
 const OFFLINE_MIX_SOFT_LIMITER_CEILING = 0.985;
+const OFFLINE_COMPANION_AUDIO_COVERAGE_TOLERANCE_SEC = 0.05;
 
 function softLimitSample(sample: number): number {
 	const magnitude = Math.abs(sample);
@@ -101,6 +102,52 @@ export function getSourceTrackIdFromPath(audioPath: string): SourceTrackId {
 		return "system";
 	}
 	return "mixed";
+}
+
+export function hasBakedBrowserMicWavDelay(audioPath: string) {
+	return audioPath.toLowerCase().endsWith(".mic.wav");
+}
+
+export function shouldTreatCompanionAudioStartDelayAsTimed({
+	audioPath,
+	recordedStartDelayMs,
+}: {
+	audioPath: string;
+	recordedStartDelayMs?: number | null;
+}) {
+	return (
+		Number.isFinite(recordedStartDelayMs) &&
+		(recordedStartDelayMs ?? 0) > 0 &&
+		!hasBakedBrowserMicWavDelay(audioPath)
+	);
+}
+
+function resolveCompanionAudioStartDelaySeconds({
+	audioPath,
+	sourceDurationSec,
+	audioDurationSec,
+	recordedStartDelayMs,
+}: {
+	audioPath: string;
+	sourceDurationSec?: number | null;
+	audioDurationSec?: number | null;
+	recordedStartDelayMs?: number | null;
+}) {
+	// Browser microphone WAV sidecars with timing metadata are written through
+	// FFmpeg with adelay, so their start delay is already baked into the samples.
+	if (
+		hasBakedBrowserMicWavDelay(audioPath) &&
+		Number.isFinite(recordedStartDelayMs) &&
+		(recordedStartDelayMs ?? 0) >= 0
+	) {
+		return 0;
+	}
+
+	return estimateCompanionAudioStartDelaySeconds(
+		sourceDurationSec,
+		audioDurationSec,
+		recordedStartDelayMs,
+	);
 }
 
 export function hasNonDefaultSourceTrackSettings(
@@ -272,8 +319,11 @@ export class AudioProcessor {
 			!routingPolicy.hasEmbeddedSourceAudio &&
 			routingPolicy.playbackPaths.length === 1 &&
 			routingPolicy.playbackPaths[0]?.toLowerCase().endsWith(".mic.m4a") === true;
-		const hasTimedCompanionAudio = routingPolicy.playbackPaths.some(
-			(audioPath) => (sourceAudioFallbackStartDelayMsByPath?.[audioPath] ?? 0) > 0,
+		const hasTimedCompanionAudio = routingPolicy.playbackPaths.some((audioPath) =>
+			shouldTreatCompanionAudioStartDelayAsTimed({
+				audioPath,
+				recordedStartDelayMs: sourceAudioFallbackStartDelayMsByPath?.[audioPath],
+			}),
 		);
 		const needsSourceAudioMixing =
 			routingPolicy.playbackPaths.length > 1 ||
@@ -308,9 +358,31 @@ export class AudioProcessor {
 
 		// Single sidecar audio with no speed/audio edits: demux directly (skips slow real-time rendering).
 		if (!routingPolicy.hasEmbeddedSourceAudio && routingPolicy.playbackPaths.length === 1) {
-			const sidecarDemuxer = await this.loadAudioFileDemuxer(routingPolicy.playbackPaths[0]);
+			const sidecarPath = routingPolicy.playbackPaths[0];
+			const sidecarDemuxer = await this.loadAudioFileDemuxer(sidecarPath);
 			if (sidecarDemuxer) {
 				try {
+					const canUseFastSidecar = await this.canUseFastSidecarDemux({
+						audioPath: sidecarPath,
+						demuxer: sidecarDemuxer,
+						videoUrl,
+						trimRegions: sortedTrims,
+					});
+					if (!canUseFastSidecar) {
+						await this.renderAndMuxOfflineAudio(
+							videoUrl,
+							sortedTrims,
+							[],
+							[],
+							routingPolicy.playbackPaths,
+							sourceAudioFallbackStartDelayMsByPath,
+							sourceAudioTrackSettings,
+							clipRegions,
+							muxer,
+							gapsAsBlack,
+						);
+						return;
+					}
 					await this.processTrimOnlyAudio(sidecarDemuxer, muxer, sortedTrims);
 				} finally {
 					try {
@@ -757,13 +829,42 @@ export class AudioProcessor {
 			startDelaySec: number;
 			gain: number;
 		}> = [];
-		const refDuration =
-			mainBuffer?.duration ??
-			(resolvedPlan.playbackPaths.length > 0 ? await this.getMediaDurationSec(videoUrl) : 0);
+
+		let sourceDurationSec: number;
+		if (mainBufferEntry?.buffer) {
+			sourceDurationSec = mainBufferEntry.buffer.duration;
+		} else if (resolvedPlan.playbackPaths.length > 0 || audioRegions.length > 0) {
+			sourceDurationSec = await this.getMediaDurationSec(videoUrl);
+		} else {
+			sourceDurationSec = 0;
+		}
+		const sourceDurationMs = sourceDurationSec * 1000;
+
+		// Build timeline slices (non-trimmed segments with speed info; black-gap
+		// exports additionally keep trimmed intervals as silent slices)
+		const slices = this.buildTimelineSlices(
+			sourceDurationMs,
+			trimRegions,
+			speedRegions,
+			gapsAsBlack,
+		);
+
 		for (const audioPath of resolvedPlan.playbackPaths) {
 			if (this.cancelled) throw new Error("Export cancelled");
 			const buffer = await this.decodeAudioFromUrl(audioPath);
 			if (!buffer) continue;
+			const startDelaySec = resolveCompanionAudioStartDelaySeconds({
+				audioPath,
+				sourceDurationSec,
+				audioDurationSec: buffer.duration,
+				recordedStartDelayMs: sourceAudioFallbackStartDelayMsByPath?.[audioPath],
+			});
+			this.assertCompanionAudioCoversTimeline({
+				audioPath,
+				buffer,
+				startDelaySec,
+				slices,
+			});
 
 			companionEntries.push({
 				buffer,
@@ -771,11 +872,7 @@ export class AudioProcessor {
 					sourceAudioTrackSettings,
 					getSourceTrackIdFromPath(audioPath),
 				),
-				startDelaySec: estimateCompanionAudioStartDelaySeconds(
-					refDuration,
-					buffer.duration,
-					sourceAudioFallbackStartDelayMsByPath?.[audioPath],
-				),
+				startDelaySec,
 			});
 		}
 		if (this.cancelled) throw new Error("Export cancelled");
@@ -795,25 +892,6 @@ export class AudioProcessor {
 		if (!primaryBuffer && regionEntries.length === 0) {
 			throw new Error("No decodable audio sources found");
 		}
-
-		let sourceDurationSec: number;
-		if (mainBufferEntry?.buffer) {
-			sourceDurationSec = mainBufferEntry.buffer.duration;
-		} else if (resolvedPlan.playbackPaths.length > 0 || regionEntries.length > 0) {
-			sourceDurationSec = await this.getMediaDurationSec(videoUrl);
-		} else {
-			sourceDurationSec = primaryBuffer?.duration ?? 0;
-		}
-		const sourceDurationMs = sourceDurationSec * 1000;
-
-		// Build timeline slices (non-trimmed segments with speed info; black-gap
-		// exports additionally keep trimmed intervals as silent slices)
-		const slices = this.buildTimelineSlices(
-			sourceDurationMs,
-			trimRegions,
-			speedRegions,
-			gapsAsBlack,
-		);
 
 		let outputDurationMs = 0;
 		for (const slice of slices) {
@@ -849,6 +927,102 @@ export class AudioProcessor {
 			outputDurationMs,
 			numChannels,
 		};
+	}
+
+	private async canUseFastSidecarDemux({
+		audioPath,
+		demuxer,
+		videoUrl,
+		trimRegions,
+	}: {
+		audioPath: string;
+		demuxer: WebDemuxer;
+		videoUrl: string;
+		trimRegions: TrimLikeRegion[];
+	}): Promise<boolean> {
+		const sourceDurationSec = await this.getMediaDurationSec(videoUrl);
+		if (!Number.isFinite(sourceDurationSec) || sourceDurationSec <= 0) {
+			return false;
+		}
+
+		const slices = this.buildTimelineSlices(sourceDurationSec * 1000, trimRegions, [], false);
+		const requiredSourceEndSec =
+			slices.reduce((maxEndSec, slice) => {
+				if (slice.silent) {
+					return maxEndSec;
+				}
+				return Math.max(maxEndSec, slice.sourceEndMs / 1000);
+			}, 0) || 0;
+		if (requiredSourceEndSec <= 0) {
+			return true;
+		}
+
+		const sidecarDurationSec = await this.getDemuxerAudioDurationSec(demuxer);
+		if (!Number.isFinite(sidecarDurationSec) || sidecarDurationSec <= 0) {
+			return false;
+		}
+
+		const inferredStartDelaySec = estimateCompanionAudioStartDelaySeconds(
+			sourceDurationSec,
+			sidecarDurationSec,
+		);
+		const availableEndSec = Math.max(0, inferredStartDelaySec) + sidecarDurationSec;
+		if (
+			availableEndSec + OFFLINE_COMPANION_AUDIO_COVERAGE_TOLERANCE_SEC <
+			requiredSourceEndSec
+		) {
+			const trackId = getSourceTrackIdFromPath(audioPath);
+			throw new Error(
+				`Companion ${trackId} audio is too short for fast sidecar export: required=${requiredSourceEndSec.toFixed(3)}s available=${availableEndSec.toFixed(3)}s`,
+			);
+		}
+
+		return inferredStartDelaySec <= OFFLINE_COMPANION_AUDIO_COVERAGE_TOLERANCE_SEC;
+	}
+
+	private async getDemuxerAudioDurationSec(demuxer: WebDemuxer): Promise<number> {
+		const mediaInfo = await demuxer.getMediaInfo();
+		const audioStream = mediaInfo.streams?.find(
+			(stream) => stream.codec_type_string === "audio" || stream.codec_type === 1,
+		);
+		const durationSec = audioStream?.duration ?? mediaInfo.duration;
+		return Number.isFinite(durationSec) ? Math.max(0, durationSec) : 0;
+	}
+
+	private assertCompanionAudioCoversTimeline({
+		audioPath,
+		buffer,
+		startDelaySec,
+		slices,
+	}: {
+		audioPath: string;
+		buffer: AudioBuffer;
+		startDelaySec: number;
+		slices: TimelineSlice[];
+	}) {
+		const requiredSourceEndSec =
+			slices.reduce((maxEndSec, slice) => {
+				if (slice.silent) {
+					return maxEndSec;
+				}
+				return Math.max(maxEndSec, slice.sourceEndMs / 1000);
+			}, 0) || 0;
+		if (requiredSourceEndSec <= 0) {
+			return;
+		}
+
+		const availableEndSec = Math.max(0, startDelaySec) + Math.max(0, buffer.duration);
+		if (
+			availableEndSec + OFFLINE_COMPANION_AUDIO_COVERAGE_TOLERANCE_SEC >=
+			requiredSourceEndSec
+		) {
+			return;
+		}
+
+		const trackId = getSourceTrackIdFromPath(audioPath);
+		throw new Error(
+			`Companion ${trackId} audio is too short for offline export: required=${requiredSourceEndSec.toFixed(3)}s available=${availableEndSec.toFixed(3)}s`,
+		);
 	}
 
 	// Render timeline in chunks and encode each chunk to the muxer immediately.
@@ -1038,9 +1212,9 @@ export class AudioProcessor {
 		if (localEndSec <= 0 || localStartSec >= chunkDurationSec) return;
 
 		// Clip to chunk bounds
-		let bufferOffsetSec = 0;
+		let bufferOffsetSec = Math.max(0, (region.sourceStartMs ?? 0) / 1000);
 		if (localStartSec < 0) {
-			bufferOffsetSec = -localStartSec;
+			bufferOffsetSec += -localStartSec;
 			localStartSec = 0;
 		}
 		if (localEndSec > chunkDurationSec) {

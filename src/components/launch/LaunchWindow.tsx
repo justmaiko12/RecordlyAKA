@@ -21,7 +21,6 @@ import { useScreenRecorder } from "../../hooks/useScreenRecorder";
 import { useVideoDevices } from "../../hooks/useVideoDevices";
 import { Button } from "../ui/button";
 import { HudInteractionContext } from "./contexts/HudInteractionContext";
-import { canToggleFloatingWebcamPreview } from "./floatingWebcamPreview";
 import { useHudBarDrag } from "./hooks/useHudBarDrag";
 import { useLaunchHudInteractionState } from "./hooks/useLaunchHudInteractionState";
 import { useLaunchWindowActions } from "./hooks/useLaunchWindowActions";
@@ -76,9 +75,11 @@ function LaunchWindowContent() {
 		webcamEnabled,
 		setWebcamEnabled,
 		webcamDeviceId,
-		setWebcamDeviceId,
-		webcamFrameRate,
-		setWebcamFrameRate,
+			setWebcamDeviceId,
+			webcamFrameRate,
+			setWebcamFrameRate,
+			webcamQualityMode,
+			setWebcamQualityMode,
 		cameraFullActive,
 		toggleCameraLayout,
 		sceneStyleMode,
@@ -112,7 +113,16 @@ function LaunchWindowContent() {
 		devices: videoDevices,
 		selectedDeviceId: selectedVideoDeviceId,
 		setSelectedDeviceId: setSelectedVideoDeviceId,
+		refreshDevices: refreshVideoDevices,
+		isLoading: videoDevicesLoading,
+		error: videoDevicesError,
 	} = useVideoDevices(webcamEnabled || openId === "webcam");
+
+	useEffect(() => {
+		if (openId === "webcam") {
+			refreshVideoDevices();
+		}
+	}, [openId, refreshVideoDevices]);
 
 	const {
 		hudOverlayMousePassthroughSupported,
@@ -152,11 +162,26 @@ function LaunchWindowContent() {
 		window.electronAPI?.webcamLayoutStyleChanged?.(webcamLayoutStyle);
 	}, [webcamLayoutStyle]);
 
+	const selectedVideoDevice = videoDevices.find(
+		(device) => device.deviceId === (webcamDeviceId ?? selectedVideoDeviceId),
+	);
+	const nativeWebcamPreviewPreferred = platform === "darwin";
+	const nativePreviewDeviceId =
+		selectedVideoDevice?.nativeDeviceId ??
+		(selectedVideoDevice?.nativeOnly ? selectedVideoDevice.deviceId : null);
+	const nativePreviewLabel =
+		selectedVideoDevice?.nativeLabel ??
+		selectedVideoDevice?.label.replace(/\s+\(Native\)$/u, "") ??
+		null;
+	const browserWebcamPreviewAvailable = selectedVideoDevice?.nativeOnly !== true;
+
 	const {
-		showFloatingWebcamPreview,
-		setShowFloatingWebcamPreview,
 		showRecordingWebcamPreview,
 		webcamPreviewOffset,
+		nativePreviewUrl,
+		nativePreviewImageIssue,
+		handleNativePreviewImageLoad,
+		handleNativePreviewImageError,
 		recordingWebcamPreviewContainerRef,
 		isWebcamPreviewDraggingRef,
 		webcamPreviewDragStartRef,
@@ -169,10 +194,16 @@ function LaunchWindowContent() {
 		webcamEnabled,
 		webcamDeviceId,
 		webcamFrameRate,
+		webcamQualityMode,
+		browserPreviewAvailable: browserWebcamPreviewAvailable,
+		nativePreviewPreferred: nativeWebcamPreviewPreferred,
+		nativePreviewDeviceId,
+		nativePreviewLabel,
 		showWebcamControls,
 		webcamPopoverOpen: openId === "webcam",
 		hudOverlayMousePassthroughSupported,
 		hudCompact: recording || finalizing,
+		recordingActive: recording,
 	});
 
 	const {
@@ -319,19 +350,19 @@ function LaunchWindowContent() {
 				}
 			/>
 
-			<WebcamPopover
-				disabled={recording}
-				webcamEnabled={webcamEnabled}
-				onDisableWebcam={() => setWebcamEnabled(false)}
-				canToggleFloatingPreview={canToggleFloatingWebcamPreview(
-					hudOverlayMousePassthroughSupported,
-				)}
-				showFloatingWebcamPreview={showFloatingWebcamPreview}
-				onToggleFloatingPreview={() => setShowFloatingWebcamPreview((current) => !current)}
-				webcamLayoutStyle={webcamLayoutStyle}
-				onWebcamLayoutStyleChange={setWebcamLayoutStyle}
-				showWebcamControls={showWebcamControls}
-				setWebcamPreviewNode={setWebcamPreviewNode}
+				<WebcamPopover
+					disabled={recording}
+					webcamEnabled={webcamEnabled}
+					onDisableWebcam={() => setWebcamEnabled(false)}
+					webcamLayoutStyle={webcamLayoutStyle}
+					onWebcamLayoutStyleChange={setWebcamLayoutStyle}
+					showWebcamControls={showWebcamControls}
+					setWebcamPreviewNode={setWebcamPreviewNode}
+				nativePreviewPreferred={nativeWebcamPreviewPreferred}
+				nativePreviewUrl={nativePreviewUrl}
+				nativePreviewImageIssue={nativePreviewImageIssue}
+				onNativePreviewImageLoad={handleNativePreviewImageLoad}
+				onNativePreviewImageError={handleNativePreviewImageError}
 				videoDevices={videoDevices}
 				webcamDeviceId={webcamDeviceId}
 				selectedVideoDeviceId={selectedVideoDeviceId}
@@ -339,13 +370,18 @@ function LaunchWindowContent() {
 					setWebcamEnabled(true);
 					setSelectedVideoDeviceId(deviceId);
 					setWebcamDeviceId(deviceId);
-				}}
-				webcamFrameRate={webcamFrameRate}
-				onWebcamFrameRateChange={setWebcamFrameRate}
-				trigger={
-					<Button
-						variant="ghost"
-						size="icon"
+					}}
+					onRefreshVideoDevices={refreshVideoDevices}
+					videoDevicesLoading={videoDevicesLoading}
+					videoDevicesError={videoDevicesError}
+					webcamFrameRate={webcamFrameRate}
+					onWebcamFrameRateChange={setWebcamFrameRate}
+					webcamQualityMode={webcamQualityMode}
+					onWebcamQualityModeChange={setWebcamQualityMode}
+					trigger={
+						<Button
+							variant="ghost"
+							size="icon"
 						iconSize="lg"
 						title={
 							webcamEnabled
@@ -557,7 +593,9 @@ function LaunchWindowContent() {
 						{showRecordingWebcamPreview && (
 							<div
 								ref={recordingWebcamPreviewContainerRef}
-								className={`${styles.recordingWebcamPreview} ${styles.electronNoDrag} pointer-events-auto`}
+								className={`${styles.recordingWebcamPreview} ${styles.electronNoDrag} pointer-events-auto ${
+									nativePreviewImageIssue ? "ring-2 ring-red-400/70" : ""
+								}`}
 								data-hud-interactive
 								title={t("recording.webcam")}
 								style={{
@@ -570,13 +608,28 @@ function LaunchWindowContent() {
 								onPointerUp={handleWebcamPreviewPointerUp}
 								onPointerCancel={handleWebcamPreviewPointerUp}
 							>
-								<video
-									ref={setRecordingWebcamPreviewNode}
-									className={styles.recordingWebcamPreviewVideo}
-									muted
-									playsInline
-									style={{ transform: "scaleX(-1)" }}
-								/>
+								{nativeWebcamPreviewPreferred ? (
+									nativePreviewUrl ? (
+										<img
+											src={nativePreviewUrl}
+											alt=""
+											className={styles.recordingWebcamPreviewVideo}
+											decoding="sync"
+											draggable={false}
+											onError={handleNativePreviewImageError}
+											onLoad={handleNativePreviewImageLoad}
+											style={{ transform: "scaleX(-1)" }}
+										/>
+									) : null
+								) : (
+									<video
+										ref={setRecordingWebcamPreviewNode}
+										className={styles.recordingWebcamPreviewVideo}
+										muted
+										playsInline
+										style={{ transform: "scaleX(-1)" }}
+									/>
+								)}
 							</div>
 						)}
 					</div>

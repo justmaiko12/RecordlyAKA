@@ -1,14 +1,24 @@
 import { BrowserWindow } from "electron";
 import { registerAssetHandlers } from "./register/assets";
 import { registerCaptionHandlers } from "./register/captions";
+import { registerDeviceHandlers } from "./register/devices";
 import { registerExportHandlers } from "./register/export";
+import { registerNativeWebcamPreviewHandlers } from "./register/nativeWebcamPreview";
 import { registerPermissionHandlers } from "./register/permissions";
 import { registerProjectHandlers } from "./register/project";
 import { registerRecordingHandlers } from "./register/recording";
 import { registerSettingsHandlers } from "./register/settings";
 import { registerSourceHandlers } from "./register/sources";
 import {
+	nativeCaptureProcess,
 	selectedSource,
+	setNativeCaptureMicrophonePath,
+	setNativeCapturePaused,
+	setNativeCaptureProcess,
+	setNativeCaptureStopRequested,
+	setNativeCaptureSystemAudioPath,
+	setNativeCaptureTargetPath,
+	setNativeCaptureWebcamPath,
 	setNativeScreenRecordingActive,
 	setWindowsCapturePaused,
 	setWindowsCaptureProcess,
@@ -50,6 +60,24 @@ export function killWindowsCaptureProcess() {
 	}
 }
 
+export function killNativeCaptureProcess() {
+	if (nativeCaptureProcess) {
+		try {
+			nativeCaptureProcess.kill();
+		} catch {
+			/* ignore */
+		}
+		setNativeCaptureProcess(null);
+		setNativeCaptureTargetPath(null);
+		setNativeCaptureSystemAudioPath(null);
+		setNativeCaptureMicrophonePath(null);
+		setNativeCaptureWebcamPath(null);
+		setNativeScreenRecordingActive(false);
+		setNativeCaptureStopRequested(false);
+		setNativeCapturePaused(false);
+	}
+}
+
 export function registerIpcHandlers(
 	createEditorWindow: () => void,
 	createSourceSelectorWindow: () => BrowserWindow,
@@ -63,8 +91,10 @@ export function registerIpcHandlers(
 		getSourceSelectorWindow,
 	});
 	registerRecordingHandlers(onRecordingStateChange);
+	registerNativeWebcamPreviewHandlers();
 	registerPermissionHandlers();
 	registerAssetHandlers();
+	registerDeviceHandlers();
 	registerExportHandlers();
 	registerCaptionHandlers();
 	registerProjectHandlers();

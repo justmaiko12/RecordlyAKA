@@ -11,6 +11,7 @@ import {
 	getCaptionTextMaxWidth,
 	getCaptionWordVisualState,
 } from "@/components/video-editor/captionStyle";
+import { shouldShowCursorAtMs } from "@/components/video-editor/cursorVisibility";
 import {
 	type FillFrameRegion,
 	fillFrameProgressAtMs,
@@ -43,7 +44,11 @@ import {
 	PixiCursorOverlay,
 	preloadCursorAssets,
 } from "@/components/video-editor/videoPlayback/cursorRenderer";
-import { computePaddedLayout } from "@/components/video-editor/videoPlayback/layoutUtils";
+import {
+	computePaddedLayout,
+	scalePreviewMarginForCanvas,
+	scalePreviewRadiusForCanvas,
+} from "@/components/video-editor/videoPlayback/layoutUtils";
 import {
 	createSpringState,
 	getZoomSpringConfig,
@@ -156,6 +161,7 @@ interface FrameRenderConfig {
 	previewHeight?: number;
 	cursorTelemetry?: CursorTelemetryPoint[];
 	showCursor?: boolean;
+	hideCursorInFillFrame?: boolean;
 	cursorStyle?: CursorStyle;
 	cursorSize?: number;
 	cursorSmoothing?: number;
@@ -3052,7 +3058,13 @@ export class FrameRenderer {
 				Math.min(this.config.width, this.config.height) * CAMERA_FULL_PADDING_FRACTION,
 			);
 		} else {
-			const margin = webcam.margin ?? 24;
+			const margin = scalePreviewMarginForCanvas({
+				width: this.config.width,
+				height: this.config.height,
+				previewWidth: this.config.previewWidth || 1920,
+				previewHeight: this.config.previewHeight || 1080,
+				margin: webcam.margin ?? 24,
+			});
 			const size = getWebcamOverlaySizePx({
 				containerWidth: this.config.width,
 				containerHeight: this.config.height,
@@ -3074,7 +3086,15 @@ export class FrameRenderer {
 			layoutRect = { x: position.x, y: position.y, width: size, height: size };
 		}
 		// Fill renders edge to edge: no squircle rounding and no drop shadow.
-		const radius = cameraFullFill ? 0 : Math.max(0, webcam.cornerRadius ?? 18);
+		const radius = cameraFullFill
+			? 0
+			: scalePreviewRadiusForCanvas({
+					width: this.config.width,
+					height: this.config.height,
+					previewWidth: this.config.previewWidth || 1920,
+					previewHeight: this.config.previewHeight || 1080,
+					radius: webcam.cornerRadius ?? 18,
+				});
 		const shadowStrength = cameraFullFill ? 0 : clampUnitInterval(webcam.shadow ?? 0);
 
 		this.webcamRootContainer.visible = true;
@@ -3131,7 +3151,7 @@ export class FrameRenderer {
 				this.config.cursorTelemetry ?? [],
 				cursorTimeMs,
 				layoutCache.maskRect,
-				this.config.showCursor ?? true,
+				this.shouldShowCursorAtTimeMs(timeMs),
 				false,
 			);
 		}
@@ -3381,7 +3401,7 @@ export class FrameRenderer {
 				this.config.cursorTelemetry ?? [],
 				cursorTimeMs,
 				layoutCache.maskRect,
-				this.config.showCursor ?? true,
+				this.shouldShowCursorAtTimeMs(timeMs),
 				false,
 			);
 		}
@@ -3737,6 +3757,16 @@ export class FrameRenderer {
 			this.config.fillFrameRegions ?? [],
 			this.currentVideoTime * 1000,
 		);
+	}
+
+	private shouldShowCursorAtTimeMs(timeMs: number): boolean {
+		return shouldShowCursorAtMs({
+			showCursor: this.config.showCursor ?? true,
+			hideCursorInFillFrame: this.config.hideCursorInFillFrame,
+			fillFrameDefault: this.config.fillFrameDefault,
+			fillFrameRegions: this.config.fillFrameRegions,
+			timeMs,
+		});
 	}
 
 	private updateLayout(): void {

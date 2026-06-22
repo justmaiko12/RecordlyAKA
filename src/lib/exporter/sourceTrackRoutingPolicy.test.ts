@@ -28,15 +28,15 @@ describe("resolveSourceTrackRoutingPolicy", () => {
 		expect(policy.includeEmbeddedInExport).toBe(false);
 	});
 
-	it("keeps embedded audio when only mic sidecar is present", () => {
+	it("uses mic sidecar instead of embedded audio when only mic sidecar is present", () => {
 		const policy = resolveSourceTrackRoutingPolicy("/tmp/recording.mp4", [
 			"/tmp/recording.mp4",
 			"/tmp/recording.mic.wav",
 		]);
 
 		expect(policy.playbackPaths).toEqual(["/tmp/recording.mic.wav"]);
-		expect(policy.muteEmbeddedPreview).toBe(false);
-		expect(policy.includeEmbeddedInExport).toBe(true);
+		expect(policy.muteEmbeddedPreview).toBe(true);
+		expect(policy.includeEmbeddedInExport).toBe(false);
 	});
 
 	it("mutes embedded preview when only a mic sidecar exists without an embedded source entry", () => {
@@ -48,6 +48,6 @@ describe("resolveSourceTrackRoutingPolicy", () => {
 
 		expect(policy.playbackPaths).toEqual(["/tmp/recording.mic.m4a"]);
 		expect(policy.muteEmbeddedPreview).toBe(true);
-		expect(policy.includeEmbeddedInExport).toBe(true);
+		expect(policy.includeEmbeddedInExport).toBe(false);
 	});
 });

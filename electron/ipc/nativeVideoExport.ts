@@ -39,6 +39,7 @@ export interface NativeVideoExportFinishOptions {
 	audioSourcePath?: string | null;
 	audioSourceCodec?: string | null;
 	audioSourceSampleRate?: number;
+	audioSourceDurationSec?: number;
 	outputDurationSec?: number;
 	trimSegments?: NativeVideoExportAudioSegment[];
 	editedTrackStrategy?: NativeVideoExportEditedTrackStrategy;
@@ -51,10 +52,14 @@ export interface NativeVideoAudioMuxMetrics {
 	tempVideoWriteMs?: number;
 	tempEditedAudioWriteMs?: number;
 	ffmpegExecMs?: number;
+	audioMuxValidationMs?: number;
 	muxedVideoReadMs?: number;
 	tempVideoBytes?: number;
 	tempEditedAudioBytes?: number;
 	muxedVideoBytes?: number;
+	muxedVideoDurationSec?: number;
+	muxedAudioDurationSec?: number;
+	muxedAudioVideoDriftMs?: number;
 }
 
 export type NativeStaticLayoutBackend =

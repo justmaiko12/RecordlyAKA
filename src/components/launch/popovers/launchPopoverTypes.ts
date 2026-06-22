@@ -50,4 +50,13 @@ export function mapRawSource(s: DesktopSource): DesktopSource {
 export interface DeviceOption {
 	deviceId: string;
 	label: string;
+	nativeDeviceId?: string;
+	nativeLabel?: string;
+	nativeOnly?: boolean;
+	connection?: {
+		kind: "built-in" | "usb" | "wireless" | "external" | "unknown";
+		label: string;
+		confidence: "system" | "inferred" | "ambiguous";
+		detail: string | null;
+	};
 }

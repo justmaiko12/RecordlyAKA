@@ -290,7 +290,7 @@ describe("ModernVideoExporter native fallback routing", () => {
 		expect(mocks.muxerFinalize).toHaveBeenCalledTimes(1);
 	});
 
-	it("forwards the camera-full layout style and regions into the modern frame renderer", async () => {
+	it("forwards camera-full and fill-frame regions into the modern frame renderer", async () => {
 		const { ModernVideoExporter } = await import("./modernVideoExporter");
 		const { FrameRenderer } = await import("./modernFrameRenderer");
 		mocks.streamingDecoderGetEffectiveDuration.mockReturnValue(1);
@@ -298,6 +298,7 @@ describe("ModernVideoExporter native fallback routing", () => {
 		// Mirrors the exporterConfig assembled in VideoEditor.handleExport for a
 		// camera-full "Fill screen" project: layout regions plus the fill style.
 		const webcamLayoutRegions = [{ id: "layout-1", startMs: 5_000, endMs: 9_000 }];
+		const fillFrameRegions = [{ id: "fill-1", startMs: 1_000, endMs: 3_000 }];
 		const exporter = new ModernVideoExporter({
 			videoUrl: "file:///recording.mp4",
 			width: 1920,
@@ -316,6 +317,8 @@ describe("ModernVideoExporter native fallback routing", () => {
 			webcamUrl: "file:///webcam.mp4",
 			webcamLayoutRegions,
 			webcamLayoutStyle: "fill",
+			fillFrameRegions,
+			fillFrameDefault: false,
 		} as never) as unknown as {
 			export: () => Promise<{ success: boolean; blob?: Blob; error?: string }>;
 			initializeEncoder: () => Promise<unknown>;
@@ -333,6 +336,8 @@ describe("ModernVideoExporter native fallback routing", () => {
 			expect.objectContaining({
 				webcamLayoutStyle: "fill",
 				webcamLayoutRegions,
+				fillFrameRegions,
+				fillFrameDefault: false,
 			}),
 		);
 	});

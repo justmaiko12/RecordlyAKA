@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-	getHudOverlayWindowBounds,
-	resizeHudOverlayFallbackBounds,
-} from "./hudOverlayBounds";
+import { getHudOverlayWindowBounds, resizeHudOverlayFallbackBounds } from "./hudOverlayBounds";
 
 describe("getHudOverlayWindowBounds", () => {
 	const workArea = {
@@ -21,6 +18,15 @@ describe("getHudOverlayWindowBounds", () => {
 		expect(getHudOverlayWindowBounds(workArea, false)).toEqual({
 			x: 650,
 			y: 920,
+			width: 860,
+			height: 160,
+		});
+	});
+
+	it("can reserve the bottom edge for the macOS Dock when the HUD is interactive", () => {
+		expect(getHudOverlayWindowBounds(workArea, false, false, 96)).toEqual({
+			x: 650,
+			y: 824,
 			width: 860,
 			height: 160,
 		});

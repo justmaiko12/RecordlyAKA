@@ -1,13 +1,9 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { SourceAudioTrackSettings } from "@/components/video-editor/audio/audioTypes";
 import { resolveSourceTrackRoutingPolicy } from "@/lib/exporter/sourceTrackRoutingPolicy";
-import type {
-	AudioRegion,
-	ClipRegion,
-	SpeedRegion,
-} from "../types";
+import type { AudioRegion, ClipRegion, SpeedRegion } from "../types";
 import { getActiveClipIdAtSourceTime, isClipMutedById } from "./clipAudio";
-import { useAudioPreviewSync } from "./useAudioPreviewSync";
+import { getSourceAudioPreviewSyncRatio, useAudioPreviewSync } from "./useAudioPreviewSync";
 import { useClipAudioSettingsController } from "./useClipAudioSettingsController";
 import { useSourceAudioFallback } from "./useSourceAudioFallback";
 
@@ -50,6 +46,21 @@ interface UseVideoEditorAudioParams {
 	onSourceFallbackLoadError: (error: unknown) => void;
 }
 
+export function shouldMutePreviewVideoAudio({
+	muteEmbeddedPreview,
+	controlledEmbeddedAudioPreview,
+	sourceAudioPreviewPlaybackConfirmed,
+}: {
+	muteEmbeddedPreview: boolean;
+	controlledEmbeddedAudioPreview: boolean;
+	sourceAudioPreviewPlaybackConfirmed: boolean;
+}) {
+	return (
+		muteEmbeddedPreview ||
+		(controlledEmbeddedAudioPreview && sourceAudioPreviewPlaybackConfirmed)
+	);
+}
+
 export function useVideoEditorAudio({
 	currentSourcePath,
 	selectedClipId,
@@ -85,8 +96,68 @@ export function useVideoEditorAudio({
 		() => resolveSourceTrackRoutingPolicy(currentSourcePath, sourceAudioFallbackPaths),
 		[currentSourcePath, sourceAudioFallbackPaths],
 	);
-	const previewSourceAudioFallbackPaths = sourceTrackRoutingPolicy.playbackPaths;
-	const shouldMutePreviewVideo = sourceTrackRoutingPolicy.muteEmbeddedPreview;
+	const [embeddedAudioDurationSec, setEmbeddedAudioDurationSec] = useState<number | null>(null);
+
+	useEffect(() => {
+		let cancelled = false;
+		setEmbeddedAudioDurationSec(null);
+
+		if (!fallbackLookupSourcePath || !window.electronAPI?.probeNativeVideoMetadata) {
+			return () => {
+				cancelled = true;
+			};
+		}
+
+		void window.electronAPI
+			.probeNativeVideoMetadata(fallbackLookupSourcePath)
+			.then((result) => {
+				if (cancelled) {
+					return;
+				}
+				const audioDuration = result.success ? result.metadata?.audioDuration : undefined;
+				setEmbeddedAudioDurationSec(
+					Number.isFinite(audioDuration) && (audioDuration ?? 0) > 0
+						? (audioDuration ?? null)
+						: null,
+				);
+			})
+			.catch(() => {
+				if (!cancelled) {
+					setEmbeddedAudioDurationSec(null);
+				}
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [fallbackLookupSourcePath]);
+
+	const shouldUseControlledEmbeddedAudioPreview =
+		Boolean(fallbackLookupSourcePath) &&
+		sourceTrackRoutingPolicy.playbackPaths.length === 0 &&
+		getSourceAudioPreviewSyncRatio(duration, embeddedAudioDurationSec) !== 1;
+	const previewSourceAudioFallbackPaths = useMemo(() => {
+		if (!shouldUseControlledEmbeddedAudioPreview || !fallbackLookupSourcePath) {
+			return sourceTrackRoutingPolicy.playbackPaths;
+		}
+
+		return Array.from(
+			new Set([...sourceTrackRoutingPolicy.playbackPaths, fallbackLookupSourcePath]),
+		);
+	}, [
+		fallbackLookupSourcePath,
+		shouldUseControlledEmbeddedAudioPreview,
+		sourceTrackRoutingPolicy.playbackPaths,
+	]);
+	const sourceAudioDurationSecByPath = useMemo(
+		() =>
+			fallbackLookupSourcePath &&
+			Number.isFinite(embeddedAudioDurationSec) &&
+			(embeddedAudioDurationSec ?? 0) > 0
+				? { [fallbackLookupSourcePath]: embeddedAudioDurationSec ?? 0 }
+				: {},
+		[embeddedAudioDurationSec, fallbackLookupSourcePath],
+	);
 
 	const activeClipIdAtCurrentTime = useMemo(
 		() => getActiveClipIdAtSourceTime(currentTime, clipRegions),
@@ -116,7 +187,7 @@ export function useVideoEditorAudio({
 		setDefaultSourceAudioTrackSettings,
 	});
 
-	const { playSourceAudioPreview } = useAudioPreviewSync({
+	const { playSourceAudioPreview, sourceAudioPreviewPlaybackConfirmed } = useAudioPreviewSync({
 		audioRegions,
 		previewVolume,
 		isPlaying,
@@ -126,9 +197,15 @@ export function useVideoEditorAudio({
 		effectiveSpeedRegions,
 		previewSourceAudioFallbackPaths,
 		sourceAudioFallbackStartDelayMsByPath,
+		sourceAudioDurationSecByPath,
 		isCurrentClipMuted,
 		getSourceTrackPreviewGain,
 		onSourceFallbackLoadError,
+	});
+	const shouldMutePreviewVideo = shouldMutePreviewVideoAudio({
+		muteEmbeddedPreview: sourceTrackRoutingPolicy.muteEmbeddedPreview,
+		controlledEmbeddedAudioPreview: shouldUseControlledEmbeddedAudioPreview,
+		sourceAudioPreviewPlaybackConfirmed,
 	});
 
 	return {

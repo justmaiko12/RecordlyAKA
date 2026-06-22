@@ -39,3 +39,16 @@ describe("normalizeProjectEditor fillFrameDefault", () => {
 		).toBe(false);
 	});
 });
+
+describe("normalizeProjectEditor hideCursorInFillFrame", () => {
+	it("defaults to false and round-trips true", () => {
+		expect(normalizeProjectEditor({}).hideCursorInFillFrame).toBe(false);
+		expect(
+			normalizeProjectEditor({ hideCursorInFillFrame: true }).hideCursorInFillFrame,
+		).toBe(true);
+		expect(
+			normalizeProjectEditor({ hideCursorInFillFrame: "yes" as never })
+				.hideCursorInFillFrame,
+		).toBe(false);
+	});
+});

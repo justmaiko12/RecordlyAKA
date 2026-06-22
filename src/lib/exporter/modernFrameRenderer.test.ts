@@ -715,6 +715,61 @@ describe("ModernFrameRenderer webcam export fallback", () => {
 		expect(bubbleLayout.width).not.toBeCloseTo(cameraFullLayout.width);
 	});
 
+	it("scales the webcam bubble margin from preview pixels for export placement", () => {
+		const renderer = createRenderer() as any;
+		renderer.config.previewWidth = 960;
+		renderer.config.previewHeight = 540;
+		renderer.config.webcam = {
+			...DEFAULT_WEBCAM_OVERLAY,
+			enabled: true,
+			size: 40,
+			margin: 24,
+			cornerRadius: 90,
+			corner: "bottom-right",
+			positionPreset: "bottom-right",
+			positionX: 1,
+			positionY: 1,
+		};
+		renderer.lastSyncedWebcamTime = 2;
+		renderer.currentVideoTime = 2;
+		renderer.webcamVideoElement = {
+			currentTime: 2,
+			readyState: 2,
+			seeking: false,
+			videoWidth: 640,
+			videoHeight: 360,
+			duration: Number.NaN,
+		};
+		renderer.cameraContainer = { visible: true };
+		renderer.webcamRootContainer = {
+			visible: false,
+			position: { set: vi.fn() },
+		};
+		renderer.webcamContainer = {
+			addChildAt: vi.fn(),
+		};
+		renderer.webcamMaskGraphics = {
+			clear: vi.fn(),
+			moveTo: vi.fn(),
+			lineTo: vi.fn(),
+			closePath: vi.fn(),
+			fill: vi.fn(),
+		};
+		renderer.webcamShadowLayers = [];
+		renderer.animationState = {
+			appliedScale: 1,
+		};
+
+		renderer.updateWebcamOverlay();
+
+		const bubbleLayout = renderer.webcamLayoutCache;
+		expect(bubbleLayout.width).toBeCloseTo(432);
+		expect(bubbleLayout.height).toBeCloseTo(432);
+		expect(bubbleLayout.positionX).toBeCloseTo(1440);
+		expect(bubbleLayout.positionY).toBeCloseTo(600);
+		expect(bubbleLayout.radius).toBeCloseTo(180);
+	});
+
 	it("fills the full frame during camera-full segments when the layout style is fill", () => {
 		const renderer = createRenderer() as any;
 		renderer.config.webcam = {

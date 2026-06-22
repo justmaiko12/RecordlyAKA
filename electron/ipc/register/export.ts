@@ -27,6 +27,7 @@ import {
 	muxNativeVideoExportAudio,
 	type NativeStaticLayoutExportOptions,
 	type NativeVideoExportSession,
+	type NativeVideoMetadataProbe,
 	nativeStaticLayoutExportSessions,
 	nativeVideoExportSessions,
 	probeNativeVideoMetadata,
@@ -34,6 +35,7 @@ import {
 	resolveNativeVideoEncoder,
 	sendNativeVideoExportWriteFrameResult,
 	settleNativeVideoExportWriteFrameRequest,
+	validateNativeVideoAudioMuxOutputMetadata,
 } from "../export/native-video";
 import { getFfmpegBinaryPath } from "../ffmpeg/binary";
 import {
@@ -69,12 +71,7 @@ export async function moveExportedTempFile(tempPath: string, destinationPath: st
 		return;
 	} catch (error) {
 		const code = (error as NodeJS.ErrnoException).code;
-		if (
-			code !== "EXDEV" &&
-			code !== "EPERM" &&
-			code !== "ENOTEMPTY" &&
-			code !== "EEXIST"
-		) {
+		if (code !== "EXDEV" && code !== "EPERM" && code !== "ENOTEMPTY" && code !== "EEXIST") {
 			throw error;
 		}
 		// Cross-device or Windows permission quirks — fall back to copy + unlink so
@@ -107,9 +104,7 @@ export async function moveExportedTempFile(tempPath: string, destinationPath: st
 				await fs.rename(partialDestinationPath, destinationPath);
 			} catch (replaceError) {
 				if (movedExistingDestination) {
-					await fs
-						.rename(backupDestinationPath, destinationPath)
-						.catch(() => undefined);
+					await fs.rename(backupDestinationPath, destinationPath).catch(() => undefined);
 				}
 				throw replaceError;
 			}
@@ -244,6 +239,51 @@ function isTempPathSafe(tempPath: string): boolean {
 	}
 	const withSep = tempRoot.endsWith(path.sep) ? tempRoot : tempRoot + path.sep;
 	return candidate.startsWith(withSep);
+}
+
+function isMp4LikeExportPath(filePath: string) {
+	const extension = path.extname(filePath).toLowerCase();
+	return extension === ".mp4" || extension === ".m4v" || extension === ".mov";
+}
+
+function formatSavedMp4AudioVideoSyncError(
+	filePath: string,
+	validation: ReturnType<typeof validateNativeVideoAudioMuxOutputMetadata>,
+) {
+	if (validation.ok) {
+		return `Saved MP4 audio/video duration matched: ${filePath}`;
+	}
+	if (validation.reason === "missing-audio-duration") {
+		return `Saved MP4 audio duration could not be verified: ${filePath}`;
+	}
+	if (validation.reason === "duration-drift") {
+		return `Saved MP4 audio/video duration mismatch: video=${validation.videoDurationSec.toFixed(3)}s audio=${(validation.audioDurationSec ?? 0).toFixed(3)}s drift=${(validation.driftSec ?? 0).toFixed(3)}s path=${filePath}`;
+	}
+	return `Saved MP4 audio stream could not be verified: ${filePath}`;
+}
+
+export async function validateSavedMp4AudioVideoSyncIfPresent(
+	filePath: string,
+	probeMetadata: (filePath: string) => Promise<NativeVideoMetadataProbe> = (candidate) =>
+		probeNativeVideoMetadata(getFfmpegBinaryPath(), candidate),
+	options: { expectedAudio?: boolean } = {},
+) {
+	if (!isMp4LikeExportPath(filePath)) {
+		return;
+	}
+
+	const metadata = await probeMetadata(filePath);
+	if (!metadata.hasAudio) {
+		if (options.expectedAudio) {
+			throw new Error(`Saved MP4 is missing expected audio stream: path=${filePath}`);
+		}
+		return;
+	}
+
+	const validation = validateNativeVideoAudioMuxOutputMetadata(metadata);
+	if (!validation.ok) {
+		throw new Error(formatSavedMp4AudioVideoSyncError(filePath, validation));
+	}
 }
 
 export function registerExportHandlers() {
@@ -829,7 +869,12 @@ export function registerExportHandlers() {
 
 	ipcMain.handle(
 		"save-exported-video",
-		async (event, videoData: ArrayBuffer, fileName: string) => {
+		async (
+			event,
+			videoData: ArrayBuffer,
+			fileName: string,
+			options?: { expectedAudio?: boolean },
+		) => {
 			try {
 				const sizeError = getInMemoryExportTooLargeMessage(videoData.byteLength);
 				if (sizeError) {
@@ -866,6 +911,9 @@ export function registerExportHandlers() {
 				}
 
 				await fs.writeFile(result.filePath, Buffer.from(videoData));
+				await validateSavedMp4AudioVideoSyncIfPresent(result.filePath, undefined, {
+					expectedAudio: options?.expectedAudio === true,
+				});
 				approveUserPath(result.filePath);
 
 				return {
@@ -886,7 +934,12 @@ export function registerExportHandlers() {
 
 	ipcMain.handle(
 		"write-exported-video-to-path",
-		async (_event, videoData: ArrayBuffer, outputPath: string) => {
+		async (
+			_event,
+			videoData: ArrayBuffer,
+			outputPath: string,
+			options?: { expectedAudio?: boolean },
+		) => {
 			try {
 				const sizeError = getInMemoryExportTooLargeMessage(videoData.byteLength);
 				if (sizeError) {
@@ -901,6 +954,9 @@ export function registerExportHandlers() {
 				const resolvedPath = path.resolve(outputPath);
 				await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
 				await fs.writeFile(resolvedPath, Buffer.from(videoData));
+				await validateSavedMp4AudioVideoSyncIfPresent(resolvedPath, undefined, {
+					expectedAudio: options?.expectedAudio === true,
+				});
 				approveUserPath(resolvedPath);
 
 				return {
@@ -929,6 +985,7 @@ export function registerExportHandlers() {
 				tempPath: string;
 				fileName: string;
 				outputPath?: string | null;
+				expectedAudio?: boolean;
 			},
 		) => {
 			const tempPath = payload?.tempPath;
@@ -954,8 +1011,14 @@ export function registerExportHandlers() {
 			}
 
 			try {
+				const validateOptions = { expectedAudio: payload.expectedAudio === true };
 				if (payload.outputPath) {
 					const resolvedPath = path.resolve(payload.outputPath);
+					await validateSavedMp4AudioVideoSyncIfPresent(
+						tempPath,
+						undefined,
+						validateOptions,
+					);
 					await moveExportedTempFile(tempPath, resolvedPath);
 					releaseOwnedExportPath(tempPath);
 					approveUserPath(resolvedPath);
@@ -993,6 +1056,7 @@ export function registerExportHandlers() {
 					};
 				}
 
+				await validateSavedMp4AudioVideoSyncIfPresent(tempPath, undefined, validateOptions);
 				await moveExportedTempFile(tempPath, result.filePath);
 				releaseOwnedExportPath(tempPath);
 				approveUserPath(result.filePath);

@@ -26,6 +26,12 @@ type OfflineRenderTestHarness = AudioProcessor & {
 		sourceAudioFallbackStartDelayMsByPath: Record<string, number> | undefined,
 		muxer: unknown,
 	): Promise<void>;
+	processTrimOnlyAudio(
+		demuxer: unknown,
+		muxer: unknown,
+		trimRegions: never[],
+		readEndSec?: number,
+	): Promise<void>;
 	buildTimelineSlices(
 		sourceDurationMs: number,
 		trimRegions: Array<{ id: string; startMs: number; endMs: number }>,
@@ -64,7 +70,7 @@ function fakeAudioBuffer(channels: Float32Array[]): AudioBuffer {
 }
 
 describe("AudioProcessor offline render preparation", () => {
-	it("keeps embedded source audio separate from external companion sidecars", async () => {
+	it("uses mic sidecar instead of embedded source audio when both are present", async () => {
 		const processor = new AudioProcessor() as unknown as OfflineRenderTestHarness;
 		const mainBuffer = { duration: 10, numberOfChannels: 2 } as AudioBuffer;
 		const micBuffer = { duration: 9.5, numberOfChannels: 1 } as AudioBuffer;
@@ -90,12 +96,11 @@ describe("AudioProcessor offline render preparation", () => {
 			["/tmp/recording.mp4", "/tmp/recording.mic.wav"],
 		);
 
-		expect(prepared.mainBufferEntry?.buffer).toBe(mainBuffer);
-		expect(prepared.mainBufferEntry?.gain).toBe(1);
+		expect(prepared.mainBufferEntry).toBeNull();
 		expect(prepared.companionEntries).toHaveLength(1);
 		expect(prepared.companionEntries[0]?.buffer).toBe(micBuffer);
 		expect(prepared.companionEntries[0]?.gain).toBe(1);
-		expect(decodeAudioFromUrl).toHaveBeenCalledWith("file:///tmp/recording.mp4");
+		expect(decodeAudioFromUrl).not.toHaveBeenCalledWith("file:///tmp/recording.mp4");
 		expect(decodeAudioFromUrl).toHaveBeenCalledWith("/tmp/recording.mic.wav");
 		expect(decodeAudioFromUrl).not.toHaveBeenCalledWith("/tmp/recording.mp4");
 	});
@@ -125,7 +130,7 @@ describe("AudioProcessor offline render preparation", () => {
 	it("uses recorded companion start-delay metadata instead of inferring from duration gap", async () => {
 		const processor = new AudioProcessor() as unknown as OfflineRenderTestHarness;
 		const mainBuffer = { duration: 600, numberOfChannels: 2 } as AudioBuffer;
-		const micBuffer = { duration: 565, numberOfChannels: 1 } as AudioBuffer;
+		const micBuffer = { duration: 596.5, numberOfChannels: 1 } as AudioBuffer;
 
 		vi.spyOn(processor, "decodeAudioFromUrl").mockImplementation(async (url: string) => {
 			if (url === "file:///tmp/recording.mp4") {
@@ -136,6 +141,7 @@ describe("AudioProcessor offline render preparation", () => {
 			}
 			return null;
 		});
+		vi.spyOn(processor, "getMediaDurationSec").mockResolvedValue(600);
 
 		const prepared = await processor.prepareOfflineRender(
 			"file:///tmp/recording.mp4",
@@ -147,6 +153,63 @@ describe("AudioProcessor offline render preparation", () => {
 		);
 
 		expect(prepared.companionEntries[0]?.startDelaySec).toBeCloseTo(3.5);
+	});
+
+	it("does not double-apply baked start delay metadata for browser mic WAV sidecars", async () => {
+		const processor = new AudioProcessor() as unknown as OfflineRenderTestHarness;
+		const mainBuffer = { duration: 600, numberOfChannels: 2 } as AudioBuffer;
+		const micBuffer = { duration: 600, numberOfChannels: 1 } as AudioBuffer;
+
+		vi.spyOn(processor, "decodeAudioFromUrl").mockImplementation(async (url: string) => {
+			if (url === "file:///tmp/recording.mp4") {
+				return mainBuffer;
+			}
+			if (url === "/tmp/recording.mic.wav") {
+				return micBuffer;
+			}
+			return null;
+		});
+		vi.spyOn(processor, "getMediaDurationSec").mockResolvedValue(600);
+
+		const prepared = await processor.prepareOfflineRender(
+			"file:///tmp/recording.mp4",
+			[],
+			[],
+			[],
+			["/tmp/recording.mp4", "/tmp/recording.mic.wav"],
+			{ "/tmp/recording.mic.wav": 3_500 },
+		);
+
+		expect(prepared.companionEntries[0]?.startDelaySec).toBe(0);
+	});
+
+	it("rejects companion audio that is too short for the rendered source timeline", async () => {
+		const processor = new AudioProcessor() as unknown as OfflineRenderTestHarness;
+		const mainBuffer = { duration: 512.532, numberOfChannels: 2 } as AudioBuffer;
+		const micBuffer = { duration: 483.637, numberOfChannels: 1 } as AudioBuffer;
+
+		vi.spyOn(processor, "decodeAudioFromUrl").mockImplementation(async (url: string) => {
+			if (url === "file:///tmp/recording.mp4") {
+				return mainBuffer;
+			}
+			if (url === "/tmp/recording.mic.wav") {
+				return micBuffer;
+			}
+			return null;
+		});
+		vi.spyOn(processor, "getMediaDurationSec").mockResolvedValue(512.532);
+
+		await expect(
+			processor.prepareOfflineRender(
+				"file:///tmp/recording.mp4",
+				[],
+				[],
+				[],
+				["/tmp/recording.mic.wav"],
+			),
+		).rejects.toThrow(
+			"Companion mic audio is too short for offline export: required=512.532s available=483.637s",
+		);
 	});
 
 	it("avoids the single-sidecar fast path when companion timing metadata is present", async () => {
@@ -172,9 +235,19 @@ describe("AudioProcessor offline render preparation", () => {
 		expect(renderAndMuxOfflineAudio).toHaveBeenCalled();
 	});
 
-	it("avoids the single-sidecar fast path for legacy mac mic sidecars that still need embedded audio", async () => {
+	it("allows the single-sidecar fast path for canonical mac mic sidecars", async () => {
 		const processor = new AudioProcessor() as unknown as OfflineRenderTestHarness;
-		const loadAudioFileDemuxer = vi.spyOn(processor, "loadAudioFileDemuxer");
+		const sidecarDemuxer = {
+			destroy: vi.fn(),
+			getMediaInfo: vi.fn().mockResolvedValue({ duration: 60 }),
+		};
+		vi.spyOn(processor, "getMediaDurationSec").mockResolvedValue(60);
+		const loadAudioFileDemuxer = vi
+			.spyOn(processor, "loadAudioFileDemuxer")
+			.mockResolvedValue(sidecarDemuxer);
+		const processTrimOnlyAudio = vi
+			.spyOn(processor, "processTrimOnlyAudio")
+			.mockResolvedValue();
 		const renderAndMuxOfflineAudio = vi
 			.spyOn(processor, "renderAndMuxOfflineAudio")
 			.mockResolvedValue();
@@ -190,8 +263,40 @@ describe("AudioProcessor offline render preparation", () => {
 			["/tmp/recording.mic.m4a"],
 		);
 
-		expect(loadAudioFileDemuxer).not.toHaveBeenCalled();
-		expect(renderAndMuxOfflineAudio).toHaveBeenCalled();
+		expect(loadAudioFileDemuxer).toHaveBeenCalledWith("/tmp/recording.mic.m4a");
+		expect(processTrimOnlyAudio).toHaveBeenCalledWith(sidecarDemuxer, {}, []);
+		expect(renderAndMuxOfflineAudio).not.toHaveBeenCalled();
+	});
+
+	it("rejects a single-sidecar fast path when the sidecar is too short for the source timeline", async () => {
+		const processor = new AudioProcessor() as unknown as OfflineRenderTestHarness;
+		const sidecarDemuxer = {
+			destroy: vi.fn(),
+			getMediaInfo: vi.fn().mockResolvedValue({ duration: 483.637 }),
+		};
+		vi.spyOn(processor, "getMediaDurationSec").mockResolvedValue(512.532);
+		vi.spyOn(processor, "loadAudioFileDemuxer").mockResolvedValue(sidecarDemuxer);
+		const processTrimOnlyAudio = vi
+			.spyOn(processor, "processTrimOnlyAudio")
+			.mockResolvedValue();
+
+		await expect(
+			processor.process(
+				{} as never,
+				{} as never,
+				"file:///tmp/recording.mp4",
+				[],
+				[],
+				undefined,
+				[],
+				["/tmp/recording.mic.m4a"],
+			),
+		).rejects.toThrow(
+			"Companion mic audio is too short for fast sidecar export: required=512.532s available=483.637s",
+		);
+
+		expect(processTrimOnlyAudio).not.toHaveBeenCalled();
+		expect(sidecarDemuxer.destroy).toHaveBeenCalled();
 	});
 
 	it("keeps trimmed intervals as silent slices when gaps export as black", () => {

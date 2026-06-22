@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	getDecodedFrameStartupOffsetUs,
 	getDecodedFrameTimelineOffsetUs,
+	shouldFailDecodeEndedEarly,
 	StreamingVideoDecoder,
 } from "./streamingDecoder";
 
@@ -107,6 +108,36 @@ describe("StreamingVideoDecoder local media loading", () => {
 			"/tmp/fallback.mp4",
 		);
 	});
+
+	it("returns audio stream duration when metadata includes a separate audio clock", async () => {
+		mockDemuxerGetMediaInfo.mockResolvedValueOnce({
+			duration: 1038.662,
+			start_time: 0,
+			streams: [
+				{
+					codec_type_string: "video",
+					width: 1920,
+					height: 1080,
+					avg_frame_rate: "30/1",
+					codec_string: "avc1.640034",
+					start_time: 0,
+					duration: 1038.662,
+				},
+				{
+					codec_type_string: "audio",
+					codec_string: "mp4a.40.2",
+					sample_rate: "48000",
+					duration: 1038.112,
+				},
+			],
+		});
+
+		const decoder = new StreamingVideoDecoder();
+		const metadata = await decoder.loadMetadata("/tmp/drift.mp4");
+
+		expect(metadata.audioDuration).toBe(1038.112);
+		expect(metadata.audioSampleRate).toBe(48000);
+	});
 });
 
 describe("getDecodedFrameStartupOffsetUs", () => {
@@ -162,5 +193,66 @@ describe("getDecodedFrameTimelineOffsetUs", () => {
 				mediaStartTime: 0.1,
 			}),
 		).toBe(150_000);
+	});
+});
+
+describe("shouldFailDecodeEndedEarly", () => {
+	const base = {
+		cancelled: false,
+		lastDecodedFrameSec: 8,
+		requiredEndSec: 10,
+		renderedFrames: 100,
+		expectedFrames: 120,
+	};
+
+	it("fails when decode ends before any usable frame", () => {
+		expect(
+			shouldFailDecodeEndedEarly({
+				...base,
+				lastDecodedFrameSec: null,
+			}),
+		).toBe(true);
+	});
+
+	it("does not fail when all expected frames already rendered", () => {
+		expect(
+			shouldFailDecodeEndedEarly({
+				...base,
+				lastDecodedFrameSec: 6,
+				renderedFrames: 120,
+				expectedFrames: 120,
+			}),
+		).toBe(false);
+	});
+
+	it("allows a small decode gap at the end of the requested range", () => {
+		expect(
+			shouldFailDecodeEndedEarly({
+				...base,
+				lastDecodedFrameSec: 9.2,
+			}),
+		).toBe(false);
+	});
+
+	it("allows a tiny metadata tail when decoded frames reached the real stream duration", () => {
+		expect(
+			shouldFailDecodeEndedEarly({
+				...base,
+				lastDecodedFrameSec: 8.98,
+				requiredEndSec: 10,
+				streamDurationSec: 9,
+			}),
+		).toBe(false);
+	});
+
+	it("fails when the decoder stops well before the stream duration", () => {
+		expect(
+			shouldFailDecodeEndedEarly({
+				...base,
+				lastDecodedFrameSec: 6,
+				requiredEndSec: 10,
+				streamDurationSec: 10,
+			}),
+		).toBe(true);
 	});
 });

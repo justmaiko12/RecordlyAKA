@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { USER_DATA_PATH } from "./appPaths";
 import { getHudOverlayWindowBounds, resizeHudOverlayFallbackBounds } from "./hudOverlayBounds";
+import { appendRecordingEventLogEntry } from "./ipc/recording/recordingEventLog";
+import { currentRecordingSession, currentVideoPath, nativeCaptureTargetPath } from "./ipc/state";
 import { getPackagedRendererBaseUrl } from "./rendererServer";
 import { getTeleprompterDefaultBounds } from "./teleprompterBounds";
 import {
@@ -41,9 +43,36 @@ let updateToastWindow: BrowserWindow | null = null;
 
 const HUD_OVERLAY_SETTINGS_FILE = path.join(USER_DATA_PATH, "hud-overlay-settings.json");
 const HUD_EDGE_MARGIN_DIP = 16;
+const MAC_RECORDING_HUD_DOCK_SAFE_AREA_DIP = 96;
 const UPDATE_TOAST_WIDTH = 456;
 const UPDATE_TOAST_HEIGHT = 252;
 const UPDATE_TOAST_GAP_DIP = 18;
+
+function getActiveRecordingEventSessionId() {
+	const candidatePath =
+		currentRecordingSession?.videoPath ?? currentVideoPath ?? nativeCaptureTargetPath;
+	if (!candidatePath) {
+		return null;
+	}
+
+	return path.basename(candidatePath, path.extname(candidatePath));
+}
+
+function logWindowLifecycleEvent(event: string, details?: Record<string, unknown>) {
+	const sessionId = getActiveRecordingEventSessionId();
+	if (!sessionId) {
+		return;
+	}
+
+	void appendRecordingEventLogEntry({
+		recordingsDir: path.join(app.getPath("userData"), "recordings"),
+		sessionId,
+		event,
+		details,
+	}).catch((error) => {
+		console.warn("[recording-log] Failed to write window lifecycle event:", error);
+	});
+}
 
 function getEditorWindowQuery(): Record<string, string> {
 	const query: Record<string, string> = {
@@ -196,10 +225,15 @@ function getHudOverlayDisplay() {
 
 function getHudOverlayBounds() {
 	const { workArea } = getHudOverlayDisplay();
+	const bottomSafeAreaDip =
+		process.platform === "darwin" && hudOverlayRecordingActive
+			? MAC_RECORDING_HUD_DOCK_SAFE_AREA_DIP
+			: 0;
 	return getHudOverlayWindowBounds(
 		workArea,
 		isHudOverlayMousePassthroughSupported() && !hudOverlayRecordingActive,
 		hudOverlayFallbackExpanded,
+		bottomSafeAreaDip,
 	);
 }
 
@@ -274,6 +308,7 @@ function setHudOverlayFallbackExpanded(expanded: boolean) {
 		workArea,
 		hudOverlayWindow.getBounds(),
 		expanded,
+		0,
 	);
 	hudOverlayWindow.setBounds(nextBounds, false);
 	positionUpdateToastWindow();
@@ -502,6 +537,38 @@ export function createHudOverlayWindow(): BrowserWindow {
 			win.setIgnoreMouseEvents(true, { forward: true });
 		}
 	}
+
+	const releaseHudInput = (reason: string, details?: unknown) => {
+		console.error(`[hud-overlay] ${reason}`, details ?? "");
+		if (win.isDestroyed()) {
+			return;
+		}
+		try {
+			win.setIgnoreMouseEvents(true, { forward: true });
+		} catch {
+			try {
+				win.setIgnoreMouseEvents(true);
+			} catch {
+				// ignore
+			}
+		}
+		win.hide();
+	};
+
+	win.webContents.on("render-process-gone", (_event, details) => {
+		releaseHudInput("render-process-gone", details);
+		logWindowLifecycleEvent("hud-render-process-gone", {
+			reason: details.reason,
+			exitCode: details.exitCode,
+		});
+		if (!win.isDestroyed()) {
+			win.destroy();
+		}
+	});
+	win.on("unresponsive", () => {
+		releaseHudInput("unresponsive");
+		logWindowLifecycleEvent("hud-window-unresponsive");
+	});
 
 	// On Windows 11+, focus changes (e.g. showing a native notification) can break
 	// setIgnoreMouseEvents forwarding on a transparent always-on-top window, making
@@ -903,6 +970,10 @@ export function createEditorWindow(): BrowserWindow {
 
 	win.webContents.on("render-process-gone", (_event, details) => {
 		console.error("[editor-window] render-process-gone", details);
+		logWindowLifecycleEvent("editor-render-process-gone", {
+			reason: details.reason,
+			exitCode: details.exitCode,
+		});
 	});
 
 	win.on("show", () => {

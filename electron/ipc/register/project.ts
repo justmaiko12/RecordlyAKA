@@ -5,27 +5,33 @@ import path from "node:path";
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { RECORDINGS_DIR } from "../../appPaths";
 import { buildMediaUrl, getMediaServerBaseUrl } from "../../mediaServer";
+import { LEGACY_PROJECT_FILE_EXTENSIONS, PROJECT_FILE_EXTENSION } from "../constants";
 import {
-	LEGACY_PROJECT_FILE_EXTENSIONS,
-	PROJECT_FILE_EXTENSION,
-} from "../constants";
+	clearActiveEditorSession,
+	clearDismissedEditorSession,
+	isDismissedEditorSessionVideoPath,
+} from "../project/activeEditorSession";
 import {
 	getProjectsDir,
-  getProjectThumbnailPath,
+	getProjectThumbnailPath,
 	isPathInsideDirectory,
 	isTrustedProjectPath,
 	listProjectLibraryEntries,
 	loadProjectFromPath,
-  loadRecentProjectPaths,
+	loadRecentProjectPaths,
 	persistRecordingsDirectorySetting,
+	rememberApprovedLocalReadPath,
 	rememberRecentProject,
 	replaceApprovedSessionLocalReadPaths,
-	rememberApprovedLocalReadPath,
 	resolveApprovedLocalMediaPath,
 	saveProjectThumbnail,
-  saveRecentProjectPaths,
+	saveRecentProjectPaths,
 } from "../project/manager";
-import { persistRecordingSessionManifest, resolveRecordingSession } from "../project/session";
+import {
+	estimateRecordingWebcamTimeOffsetMs,
+	persistRecordingSessionManifest,
+	resolveRecordingSession,
+} from "../project/session";
 import {
 	currentProjectPath,
 	currentRecordingSession,
@@ -446,7 +452,11 @@ export function registerProjectHandlers() {
         return { success: false, canceled: true, message: 'Open project canceled' }
       }
 
-      return await loadProjectFromPath(result.filePaths[0])
+      const projectResult = await loadProjectFromPath(result.filePaths[0])
+      if (projectResult.success) {
+        clearDismissedEditorSession()
+      }
+      return projectResult
     } catch (error) {
       console.error('Failed to load project file:', error)
       return {
@@ -508,7 +518,11 @@ export function registerProjectHandlers() {
 
   ipcMain.handle('open-project-file-at-path', async (_, filePath: string) => {
     try {
-      return await loadProjectFromPath(filePath)
+      const projectResult = await loadProjectFromPath(filePath)
+      if (projectResult.success) {
+        clearDismissedEditorSession()
+      }
+      return projectResult
     } catch (error) {
       console.error('Failed to open project file at path:', error)
       return {
@@ -533,10 +547,20 @@ export function registerProjectHandlers() {
       return { success: false, error: String(error), message: 'Failed to open projects folder.' }
     }
   })
-  ipcMain.handle('set-current-video-path', async (_, path: string, options?: { preserveProjectPath?: boolean; hideOverlayCursorByDefault?: boolean }) => {
-    setCurrentVideoPath(normalizeVideoSourcePath(path) ?? path)
+  ipcMain.handle('set-current-video-path', async (_, path: string, options?: { preserveProjectPath?: boolean; hideOverlayCursorByDefault?: boolean; source?: 'recording-finalization' | 'recording-background-finalization' | 'user-open' }) => {
+    const normalizedPath = normalizeVideoSourcePath(path) ?? path
+    if (options?.source === 'recording-background-finalization' && isDismissedEditorSessionVideoPath(normalizedPath)) {
+      return { success: false, suppressed: true, webcamPath: null }
+    }
+    if (options?.source === 'user-open') {
+      clearDismissedEditorSession()
+    }
+
+    setCurrentVideoPath(normalizedPath)
     approveUserPath(currentVideoPath)
-    const resolvedSession = await resolveRecordingSession(currentVideoPath)
+    const resolvedSession = await resolveRecordingSession(currentVideoPath, {
+      allowLinkedWebcamFallback: options?.source !== 'recording-finalization',
+    })
       ?? {
         videoPath: currentVideoPath!,
         webcamPath: null,
@@ -556,7 +580,7 @@ export function registerProjectHandlers() {
       resolvedSession.webcamPath,
     ])
 
-    if (nextSession.webcamPath) {
+    if (nextSession.webcamPath || options?.source === 'recording-finalization') {
       await persistRecordingSessionManifest(nextSession)
     }
 
@@ -573,13 +597,28 @@ export function registerProjectHandlers() {
     return { success: true, webcamPath: nextSession.webcamPath ?? null }
   })
 
-  ipcMain.handle('set-current-recording-session', async (_, session: { videoPath: string; webcamPath?: string | null; timeOffsetMs?: number; hideOverlayCursorByDefault?: boolean }, options?: { preserveProjectPath?: boolean }) => {
+  ipcMain.handle('set-current-recording-session', async (_, session: { videoPath: string; webcamPath?: string | null; timeOffsetMs?: number; hideOverlayCursorByDefault?: boolean }, options?: { preserveProjectPath?: boolean; source?: 'recording-finalization' | 'recording-background-finalization' | 'user-open' }) => {
     const normalizedVideoPath = normalizeVideoSourcePath(session.videoPath) ?? session.videoPath
+    if (options?.source === 'recording-background-finalization' && isDismissedEditorSessionVideoPath(normalizedVideoPath)) {
+      return { success: false, suppressed: true }
+    }
+    if (options?.source === 'user-open') {
+      clearDismissedEditorSession()
+    }
+    const normalizedWebcamPath = normalizeVideoSourcePath(session.webcamPath ?? null)
+    const initialTimeOffsetMs = normalizeRecordingTimeOffsetMs(session.timeOffsetMs)
+    const shouldEstimateTimeOffset =
+      Boolean(normalizedWebcamPath) &&
+      initialTimeOffsetMs === 0 &&
+      (options?.source === 'recording-finalization' || options?.source === 'recording-background-finalization')
+    const resolvedTimeOffsetMs = shouldEstimateTimeOffset
+      ? (await estimateRecordingWebcamTimeOffsetMs(normalizedVideoPath)) ?? initialTimeOffsetMs
+      : initialTimeOffsetMs
     setCurrentVideoPath(normalizedVideoPath)
     setCurrentRecordingSession({
       videoPath: normalizedVideoPath,
-      webcamPath: normalizeVideoSourcePath(session.webcamPath ?? null),
-      timeOffsetMs: normalizeRecordingTimeOffsetMs(session.timeOffsetMs),
+      webcamPath: normalizedWebcamPath,
+      timeOffsetMs: resolvedTimeOffsetMs,
       hideOverlayCursorByDefault: normalizeBoolean(session.hideOverlayCursorByDefault),
     });
     await rememberApprovedLocalReadPath(currentRecordingSession!.videoPath)
@@ -614,8 +653,7 @@ export function registerProjectHandlers() {
   });
 
   ipcMain.handle('clear-current-video-path', () => {
-    setCurrentVideoPath(null);
-    setCurrentRecordingSession(null);
+    clearActiveEditorSession();
     return { success: true };
   });
 

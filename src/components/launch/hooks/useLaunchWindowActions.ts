@@ -22,7 +22,7 @@ export function useLaunchWindowActions() {
 		const result = await window.electronAPI.openVideoFilePicker();
 		if (result.canceled) return;
 		if (result.success && result.path) {
-			await window.electronAPI.setCurrentVideoPath(result.path);
+			await window.electronAPI.setCurrentVideoPath(result.path, { source: "user-open" });
 			await window.electronAPI.switchToEditor();
 		}
 	}, []);

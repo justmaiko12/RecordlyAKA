@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	acquireWebcamSession,
 	coerceWebcamFrameRate,
+	coerceWebcamQualityMode,
 	createWebcamSessionConstraints,
+	forceRestartWebcamSessionForRecording,
 	resetWebcamSessionForTests,
 } from "./webcamSession";
 
@@ -152,22 +154,104 @@ describe("acquireWebcamSession", () => {
 		const handle = await acquireWebcamSession("cam-1", 30, getUserMedia);
 		expect(handle.stream).toBe(stream);
 	});
+
+	it("passes the chosen quality mode into the shared camera constraints", async () => {
+		const { stream } = createFakeStream();
+		const getUserMedia = vi.fn().mockResolvedValue(stream);
+
+		const handle = await acquireWebcamSession("cam-1", 30, "sharp", getUserMedia);
+		handle.release();
+
+		expect(getUserMedia).toHaveBeenCalledWith({
+			audio: false,
+			video: expect.objectContaining({
+				width: { ideal: 1920, max: 1920 },
+				height: { ideal: 1080, max: 1080 },
+			}),
+		});
+	});
+
+	it("can force a pre-recording restart so stable constraints replace a held preview session", async () => {
+		const preview = createFakeStream();
+		const recording = createFakeStream();
+		const getUserMedia = vi
+			.fn()
+			.mockResolvedValueOnce(preview.stream)
+			.mockResolvedValueOnce(recording.stream);
+
+		const previewHandle = await acquireWebcamSession("iphone", 30, "sharp", getUserMedia);
+		forceRestartWebcamSessionForRecording();
+		const recordingHandle = await acquireWebcamSession("iphone", 30, "stable", getUserMedia);
+
+		expect(preview.track.stop).toHaveBeenCalledTimes(1);
+		expect(recordingHandle.stream).toBe(recording.stream);
+		expect(getUserMedia).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				video: expect.objectContaining({
+					width: { ideal: 1280, max: 1280 },
+					height: { ideal: 720, max: 720 },
+				}),
+			}),
+		);
+
+		previewHandle.release();
+		recordingHandle.release();
+		expect(recording.track.stop).toHaveBeenCalledTimes(1);
+	});
 });
 
 describe("createWebcamSessionConstraints", () => {
-	it("applies the chosen frame rate as ideal and max", () => {
+	it("locks webcam capture to 30fps even when a stale setting requests another rate", () => {
 		const constraints = createWebcamSessionConstraints("cam-1", 24) as Record<string, unknown>;
-		expect(constraints.frameRate).toEqual({ ideal: 24, max: 24 });
+		expect(constraints.frameRate).toEqual({ ideal: 30, max: 30 });
 		expect(constraints.deviceId).toEqual({ exact: "cam-1" });
+	});
+
+	it("caps capture size to the stable 720p facecam profile", () => {
+		const constraints = createWebcamSessionConstraints(undefined, 30) as Record<
+			string,
+			unknown
+		>;
+		expect(constraints.width).toEqual({ ideal: 1280, max: 1280 });
+		expect(constraints.height).toEqual({ ideal: 720, max: 720 });
+	});
+
+	it("supports an opt-in 1080p webcam profile", () => {
+		const constraints = createWebcamSessionConstraints(undefined, 30, "sharp") as Record<
+			string,
+			unknown
+		>;
+		expect(constraints.width).toEqual({ ideal: 1920, max: 1920 });
+		expect(constraints.height).toEqual({ ideal: 1080, max: 1080 });
+	});
+
+	it("supports an opt-in max webcam profile up to 4K", () => {
+		const constraints = createWebcamSessionConstraints(undefined, 30, "max") as Record<
+			string,
+			unknown
+		>;
+		expect(constraints.width).toEqual({ ideal: 3840, max: 3840 });
+		expect(constraints.height).toEqual({ ideal: 2160, max: 2160 });
 	});
 });
 
 describe("coerceWebcamFrameRate", () => {
-	it("accepts supported rates and falls back to 30", () => {
-		expect(coerceWebcamFrameRate(24)).toBe(24);
-		expect(coerceWebcamFrameRate(60)).toBe(60);
+	it("keeps webcam capture locked to 30fps", () => {
+		expect(coerceWebcamFrameRate(24)).toBe(30);
+		expect(coerceWebcamFrameRate(60)).toBe(30);
 		expect(coerceWebcamFrameRate(48)).toBe(30);
 		expect(coerceWebcamFrameRate(undefined)).toBe(30);
 		expect(coerceWebcamFrameRate("30")).toBe(30);
+	});
+});
+
+describe("coerceWebcamQualityMode", () => {
+	it("accepts supported modes and falls back to stable", () => {
+		expect(coerceWebcamQualityMode("stable")).toBe("stable");
+		expect(coerceWebcamQualityMode("sharp")).toBe("sharp");
+		expect(coerceWebcamQualityMode("max")).toBe("max");
+		expect(coerceWebcamQualityMode("4k")).toBe("stable");
+		expect(coerceWebcamQualityMode(undefined)).toBe("stable");
 	});
 });

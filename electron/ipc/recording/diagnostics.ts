@@ -243,6 +243,7 @@ export function parseFfprobeVideoStreamDuration(output: string): VideoStreamDura
 		streams?: Array<{
 			duration?: unknown;
 			nb_frames?: unknown;
+			nb_read_packets?: unknown;
 			nb_read_frames?: unknown;
 			avg_frame_rate?: unknown;
 			r_frame_rate?: unknown;
@@ -255,7 +256,9 @@ export function parseFfprobeVideoStreamDuration(output: string): VideoStreamDura
 
 	const frameRate = parseFrameRate(stream.avg_frame_rate) ?? parseFrameRate(stream.r_frame_rate);
 	const frameCount =
-		parsePositiveInteger(stream.nb_read_frames) ?? parsePositiveInteger(stream.nb_frames);
+		parsePositiveInteger(stream.nb_read_frames) ??
+		parsePositiveInteger(stream.nb_read_packets) ??
+		parsePositiveInteger(stream.nb_frames);
 	const streamDuration = parsePositiveNumber(stream.duration);
 	const frameDerivedDuration =
 		frameCount !== null && frameRate !== null && frameRate > 0 ? frameCount / frameRate : null;
@@ -277,10 +280,11 @@ export async function probeVideoStreamDuration(
 			[
 				"-v",
 				"error",
+				"-count_packets",
 				"-select_streams",
 				"v:0",
 				"-show_entries",
-				"stream=duration,nb_frames,nb_read_frames,avg_frame_rate,r_frame_rate",
+				"stream=duration,nb_frames,nb_read_frames,nb_read_packets,avg_frame_rate,r_frame_rate",
 				"-of",
 				"json",
 				filePath,

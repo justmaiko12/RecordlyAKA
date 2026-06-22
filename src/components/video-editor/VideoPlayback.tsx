@@ -32,6 +32,7 @@ import {
 	getCaptionTextMaxWidth,
 	getCaptionWordVisualState,
 } from "./captionStyle";
+import { shouldShowCursorAtMs } from "./cursorVisibility";
 import {
 	type AnnotationRegion,
 	type AutoCaptionSettings,
@@ -63,6 +64,10 @@ import {
 	type SpringState,
 	stepSpringValue,
 } from "./videoPlayback/motionSmoothing";
+import {
+	resolvePreviewVideoReadiness,
+	type PreviewVideoReadinessInput,
+} from "./videoPlayback/previewVideoReadiness";
 import { useProcessedWebcamPreview } from "./videoPlayback/useProcessedWebcamPreview";
 
 function getContributedCursorStylesSignature() {
@@ -383,6 +388,7 @@ interface VideoPlaybackProps {
 	onAnnotationSizeChange?: (id: string, size: { width: number; height: number }) => void;
 	cursorTelemetry?: CursorTelemetryPoint[];
 	showCursor?: boolean;
+	hideCursorInFillFrame?: boolean;
 	cursorStyle?: CursorStyle;
 	cursorSize?: number;
 	cursorSmoothing?: number;
@@ -481,6 +487,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			onAnnotationSizeChange,
 			cursorTelemetry = [],
 			showCursor = false,
+			hideCursorInFillFrame = false,
 			cursorStyle = DEFAULT_CURSOR_STYLE,
 			cursorSize = DEFAULT_CURSOR_SIZE,
 			cursorSmoothing = DEFAULT_CURSOR_SMOOTHING,
@@ -618,6 +625,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		const cursorEffectsCanvasRef = useRef<HTMLCanvasElement | null>(null);
 		const cursorTelemetryRef = useRef<CursorTelemetryPoint[]>([]);
 		const showCursorRef = useRef(showCursor);
+		const hideCursorInFillFrameRef = useRef(hideCursorInFillFrame);
 		const cursorSizeRef = useRef(cursorSize);
 		const cursorStyleRef = useRef(cursorStyle);
 		const cursorSmoothingRef = useRef(cursorSmoothing);
@@ -1830,6 +1838,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		}, [showCursor]);
 
 		useEffect(() => {
+			hideCursorInFillFrameRef.current = hideCursorInFillFrame;
+		}, [hideCursorInFillFrame]);
+
+		useEffect(() => {
 			cursorStyleRef.current = cursorStyle;
 		}, [cursorStyle]);
 
@@ -2093,8 +2105,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			const webcamDuration = Number.isFinite(webcamVideo.duration)
 				? webcamVideo.duration
 				: null;
+			const timelineTime = currentTimeRef.current / 1000;
 			const targetTime = getWebcamMediaTargetTimeSeconds({
-				currentTime,
+				currentTime: timelineTime,
 				webcamDuration,
 				timeOffsetMs: webcamTimeOffsetMs,
 			});
@@ -2103,21 +2116,29 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					? Math.min(1 / 60, webcamDuration)
 					: targetTime;
 
-			const timelineTimeMs = currentTime * 1000;
+			const timelineTimeMs = timelineTime * 1000;
 			const activeSpeedRegion = speedRegionsRef.current.find(
 				(region) => timelineTimeMs >= region.startMs && timelineTimeMs < region.endMs,
 			);
 			const targetPlaybackRate = activeSpeedRegion ? activeSpeedRegion.speed : 1;
 			enablePitchPreservingPlayback(webcamVideo);
-			if (Math.abs(webcamVideo.playbackRate - targetPlaybackRate) > 0.001) {
-				webcamVideo.playbackRate = targetPlaybackRate;
+			const syncedPlaybackRate = getMediaSyncPlaybackRate({
+				basePlaybackRate: targetPlaybackRate,
+				currentTime: webcamVideo.currentTime,
+				targetTime: mediaTargetTime,
+				toleranceSeconds: 0.02,
+				correctionWindowSeconds: 1.5,
+				maxAdjustment: 0.12,
+			});
+			if (Math.abs(webcamVideo.playbackRate - syncedPlaybackRate) > 0.001) {
+				webcamVideo.playbackRate = syncedPlaybackRate;
 			}
 
 			const previousTimelineTime = lastWebcamSyncTimeRef.current;
 			if (
 				shouldSeekWebcamMedia({
 					desiredTime: mediaTargetTime,
-					isPlaying,
+					isPlaying: isPlayingRef.current,
 					isSeeking: webcamVideo.seeking,
 					previousTimelineTime,
 					timelineTime: targetTime,
@@ -2131,17 +2152,19 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				}
 			}
 
-			if (isPlaying) {
-				const playPromise = webcamVideo.play();
-				if (playPromise) {
-					playPromise.catch(() => undefined);
+			if (isPlayingRef.current) {
+				if (webcamVideo.paused) {
+					const playPromise = webcamVideo.play();
+					if (playPromise) {
+						playPromise.catch(() => undefined);
+					}
 				}
-			} else {
+			} else if (!webcamVideo.paused) {
 				webcamVideo.pause();
 			}
 
 			lastWebcamSyncTimeRef.current = targetTime;
-		}, [currentTime, isPlaying, webcamEnabled, webcamTimeOffsetMs, webcamVideoPath]);
+		}, [webcamEnabled, webcamTimeOffsetMs, webcamVideoPath]);
 
 		const handleWebcamMediaReady = useCallback(
 			(event: React.SyntheticEvent<HTMLVideoElement>) => {
@@ -2656,6 +2679,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 
 				updateWebcamLayoutMode();
 				applyWebcamBubbleLayout(animationStateRef.current.appliedScale || 1);
+				syncWebcamMedia();
 
 				const timeMs = currentTimeRef.current;
 				const effectsCanvas = cursorEffectsCanvasRef.current;
@@ -2671,11 +2695,18 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				const cursorOverlay = cursorOverlayRef.current;
 				if (cursorOverlay) {
 					const telemetry = cursorTelemetryRef.current;
+					const shouldShowCursor = shouldShowCursorAtMs({
+						showCursor: showCursorRef.current,
+						hideCursorInFillFrame: hideCursorInFillFrameRef.current,
+						fillFrameDefault: fillFrameDefaultRef.current,
+						fillFrameRegions: fillFrameRegionsRef.current,
+						timeMs,
+					});
 					cursorOverlay.update(
 						telemetry,
 						timeMs,
 						baseMaskRef.current,
-						showCursorRef.current,
+						shouldShowCursor,
 						!isPlayingRef.current || isSeekingRef.current,
 					);
 
@@ -2854,6 +2885,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			clampFocusToStage,
 			applyWebcamBubbleLayout,
 			updateWebcamLayoutMode,
+			syncWebcamMedia,
 			applyFillFrameChrome,
 			borderRadius,
 			padding,
@@ -2964,6 +2996,39 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			};
 		}, []);
 
+		const markTimelinePreviewReady = (
+			video: PreviewVideoReadinessInput,
+			reason: string,
+			elapsedMs = 0,
+		) => {
+			const readiness = resolvePreviewVideoReadiness(video, elapsedMs);
+			if (!readiness.ready) {
+				return false;
+			}
+
+			if (videoReadyRafRef.current) {
+				cancelAnimationFrame(videoReadyRafRef.current);
+				videoReadyRafRef.current = null;
+			}
+
+			if (readiness.usedFallback) {
+				console.warn(
+					"[VideoPlayback] Timeline preview enabled before Chromium reported current frame data.",
+					{
+						elapsedMs: Math.round(elapsedMs),
+						hasData: readiness.hasData,
+						hasDimensions: readiness.hasDimensions,
+						readyState: video.readyState,
+						reason,
+						videoPath,
+					},
+				);
+			}
+
+			setVideoReady(true);
+			return true;
+		};
+
 		const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
 			const video = e.currentTarget;
 			onDurationChange(video.duration);
@@ -2989,18 +3054,29 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				videoReadyRafRef.current = null;
 			}
 
+			const waitStartedAt =
+				typeof performance !== "undefined" && typeof performance.now === "function"
+					? performance.now()
+					: Date.now();
+
 			const waitForRenderableFrame = () => {
-				const hasDimensions = video.videoWidth > 0 && video.videoHeight > 0;
-				const hasData = video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
-				if (hasDimensions && hasData) {
-					videoReadyRafRef.current = null;
-					setVideoReady(true);
+				const nowMs =
+					typeof performance !== "undefined" && typeof performance.now === "function"
+						? performance.now()
+						: Date.now();
+				if (markTimelinePreviewReady(video, "metadata-wait", nowMs - waitStartedAt)) {
 					return;
 				}
 				videoReadyRafRef.current = requestAnimationFrame(waitForRenderableFrame);
 			};
 
 			videoReadyRafRef.current = requestAnimationFrame(waitForRenderableFrame);
+		};
+
+		const handleTimelineVideoDataReady = (
+			e: React.SyntheticEvent<HTMLVideoElement, Event>,
+		) => {
+			markTimelinePreviewReady(e.currentTarget, e.type);
 		};
 
 		const [resolvedWallpaper, setResolvedWallpaper] = useState<string | null>(null);
@@ -3253,9 +3329,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 												src={webcamVideoPath}
 												className="pointer-events-none absolute inset-0 block h-full w-full object-fill"
 												style={{
-													visibility: webcamProcessingActive
-														? "hidden"
-														: undefined,
+													opacity: webcamProcessingActive ? 0 : undefined,
 												}}
 												muted
 												playsInline
@@ -3441,10 +3515,12 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					ref={videoRef}
 					src={videoPath}
 					className={fallbackVideoClassName}
-					preload="metadata"
+					preload="auto"
 					playsInline
 					aria-hidden="true"
 					onLoadedMetadata={handleLoadedMetadata}
+					onLoadedData={handleTimelineVideoDataReady}
+					onCanPlay={handleTimelineVideoDataReady}
 					onDurationChange={(e) => {
 						onDurationChange(e.currentTarget.duration);
 					}}

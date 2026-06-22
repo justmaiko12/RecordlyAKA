@@ -54,6 +54,7 @@ import {
 	buildNativeStaticLayoutTimelineSegments,
 	buildNativeVideoAudioMuxArgs,
 	canCopyAudioCodecIntoMp4,
+	getCopySourceAudioSyncTempoRatio,
 	getExperimentalNvidiaCudaExportSkipReason,
 	getNativeExportCapabilities,
 	getNativeGpuCompositorStallTimeoutMs,
@@ -64,19 +65,24 @@ import {
 	hasNvidiaGpuDeviceInGpuInfo,
 	mapNvidiaCudaWrapperProgressPercentage,
 	muxExportedVideoAudioBuffer,
+	muxNativeVideoExportAudio,
 	type NativeStaticLayoutExportOptions,
 	normalizeNativeStaticLayoutBackground,
 	parseFfmpegDurationSeconds,
 	parseFfmpegFrameRate,
 	parseFfmpegProgressLineSeconds,
+	parseNativeAudioDurationProbeJsonOutput,
+	parseNativeVideoMetadataProbeJsonOutput,
 	parseNativeVideoMetadataProbeOutput,
 	parseNativeVideoStreamStatsProbeOutput,
 	parseNvidiaCudaExportSummary,
 	parseWindowsGpuExportProgressLine,
 	parseWindowsGpuExportSummary,
 	resolveExperimentalNvidiaCudaExportScriptPath,
+	resolveNativeVideoAudioMuxOptions,
 	shouldCreateNativeStaticLayoutSourceProxy,
 	validateNativeStaticLayoutSourceProxyMetadata,
+	validateNativeVideoAudioMuxOutputMetadata,
 	validateNativeVideoStreamStats,
 	validateNvidiaCudaExportSummary,
 	validateWindowsGpuExportSummary,
@@ -400,7 +406,9 @@ describe("hasNvidiaGpuDeviceInGpuInfo", () => {
 describe("getNativeExportCapabilities", () => {
 	it("reports NVIDIA CUDA availability when the wrapper and an NVIDIA GPU are present", async () => {
 		const capabilities = await withPackagedCudaCandidate(
-			{ gpuDevice: [{ vendorId: 0x10de, deviceString: "NVIDIA GeForce GTX 1650" }] },
+			{
+				gpuDevice: [{ vendorId: 0x10de, deviceString: "NVIDIA GeForce GTX 1650" }],
+			},
 			() => getNativeExportCapabilities(),
 		);
 
@@ -415,11 +423,16 @@ describe("getNativeExportCapabilities", () => {
 describe("getExperimentalNvidiaCudaExportSkipReason", () => {
 	it("requires user opt-in before packaged CUDA candidates run", async () => {
 		const reason = await withPackagedCudaCandidate(
-			{ gpuDevice: [{ vendorId: 0x10de, deviceString: "NVIDIA GeForce GTX 1650" }] },
+			{
+				gpuDevice: [{ vendorId: 0x10de, deviceString: "NVIDIA GeForce GTX 1650" }],
+			},
 			() =>
 				getExperimentalNvidiaCudaExportSkipReason(
 					createNvidiaCudaSkipOptions({
-						audioOptions: { audioMode: "copy-source", audioSourcePath: "input.mp4" },
+						audioOptions: {
+							audioMode: "copy-source",
+							audioSourcePath: "input.mp4",
+						},
 					}),
 				),
 		);
@@ -429,12 +442,17 @@ describe("getExperimentalNvidiaCudaExportSkipReason", () => {
 
 	it("allows user opt-in CUDA candidates when the helper and an NVIDIA GPU are present", async () => {
 		const reason = await withPackagedCudaCandidate(
-			{ gpuDevice: [{ vendorId: 0x10de, deviceString: "NVIDIA GeForce GTX 1650" }] },
+			{
+				gpuDevice: [{ vendorId: 0x10de, deviceString: "NVIDIA GeForce GTX 1650" }],
+			},
 			() =>
 				getExperimentalNvidiaCudaExportSkipReason(
 					createNvidiaCudaSkipOptions({
 						experimentalNvidiaCudaExport: true,
-						audioOptions: { audioMode: "copy-source", audioSourcePath: "input.mp4" },
+						audioOptions: {
+							audioMode: "copy-source",
+							audioSourcePath: "input.mp4",
+						},
 					}),
 				),
 		);
@@ -456,7 +474,10 @@ describe("getExperimentalNvidiaCudaExportSkipReason", () => {
 		try {
 			const reason = await getExperimentalNvidiaCudaExportSkipReason(
 				createNvidiaCudaSkipOptions({
-					audioOptions: { audioMode: "copy-source", audioSourcePath: "input.mp4" },
+					audioOptions: {
+						audioMode: "copy-source",
+						audioSourcePath: "input.mp4",
+					},
 				}),
 			);
 
@@ -496,7 +517,10 @@ describe("getExperimentalNvidiaCudaExportSkipReason", () => {
 		try {
 			const reason = await getExperimentalNvidiaCudaExportSkipReason(
 				createNvidiaCudaSkipOptions({
-					audioOptions: { audioMode: "copy-source", audioSourcePath: "input.mp4" },
+					audioOptions: {
+						audioMode: "copy-source",
+						audioSourcePath: "input.mp4",
+					},
 				}),
 			);
 
@@ -539,7 +563,9 @@ describe("getExperimentalNvidiaCudaExportSkipReason", () => {
 
 	it("lets the user opt-in candidate be explicitly disabled", async () => {
 		const reason = await withPackagedCudaCandidate(
-			{ gpuDevice: [{ vendorId: 0x10de, deviceString: "NVIDIA GeForce GTX 1650" }] },
+			{
+				gpuDevice: [{ vendorId: 0x10de, deviceString: "NVIDIA GeForce GTX 1650" }],
+			},
 			async () => {
 				process.env.RECORDLY_EXPERIMENTAL_NVIDIA_CUDA_EXPORT = "0";
 				return getExperimentalNvidiaCudaExportSkipReason(
@@ -615,7 +641,10 @@ describe("buildExperimentalNvidiaCudaStaticLayoutArgs", () => {
 	it("keeps explicit copy-source CUDA audio inline by default", () => {
 		const args = buildExperimentalNvidiaCudaStaticLayoutArgs(
 			createNvidiaCudaSkipOptions({
-				audioOptions: { audioMode: "copy-source", audioSourcePath: "input.mp4" },
+				audioOptions: {
+					audioMode: "copy-source",
+					audioSourcePath: "input.mp4",
+				},
 			}),
 			"output.mp4",
 			"work",
@@ -627,7 +656,10 @@ describe("buildExperimentalNvidiaCudaStaticLayoutArgs", () => {
 	it("forces packaged auto CUDA candidates onto the shared audio mux path", () => {
 		const args = buildExperimentalNvidiaCudaStaticLayoutArgs(
 			createNvidiaCudaSkipOptions({
-				audioOptions: { audioMode: "copy-source", audioSourcePath: "input.mp4" },
+				audioOptions: {
+					audioMode: "copy-source",
+					audioSourcePath: "input.mp4",
+				},
 				nvidiaCudaForceVideoOnly: true,
 			}),
 			"output.mp4",
@@ -839,7 +871,9 @@ describe("buildNativeStaticLayoutTimelineSegments", () => {
 describe("muxExportedVideoAudioBuffer", () => {
 	it("returns the muxed output path without reading the muxed file into memory", async () => {
 		const videoData = new ArrayBuffer(64);
-		const result = await muxExportedVideoAudioBuffer(videoData, { audioMode: "none" });
+		const result = await muxExportedVideoAudioBuffer(videoData, {
+			audioMode: "none",
+		});
 
 		expect(typeof result.outputPath).toBe("string");
 		expect(result.outputPath.length).toBeGreaterThan(0);
@@ -850,7 +884,9 @@ describe("muxExportedVideoAudioBuffer", () => {
 
 	it("preserves the input temp path when audioMode='none' (no re-mux)", async () => {
 		const videoData = new ArrayBuffer(32);
-		const result = await muxExportedVideoAudioBuffer(videoData, { audioMode: "none" });
+		const result = await muxExportedVideoAudioBuffer(videoData, {
+			audioMode: "none",
+		});
 
 		expect(result.outputPath).toMatch(/recordly-export-video-/);
 	});
@@ -891,6 +927,106 @@ describe("buildNativeVideoAudioMuxArgs", () => {
 		expect(args).not.toContain("-shortest");
 	});
 
+	it("stretches slightly shorter copy-source audio before padding to the rendered video duration", () => {
+		const args = buildNativeVideoAudioMuxArgs("video.mp4", "source.mp4", "out.mp4", {
+			audioMode: "copy-source",
+			audioSourceCodec: "aac (LC) (mp4a / 0x6134706D)",
+			audioSourceDurationSec: 561.450667,
+			outputDurationSec: 563.546667,
+		});
+
+		expect(args).toEqual(expect.arrayContaining(["-filter_complex"]));
+		expect(args).toEqual(expect.arrayContaining(["-map", "[aout_sync]"]));
+		expect(args).toEqual(expect.arrayContaining(["-c:a", "aac", "-b:a", "192k"]));
+		expect(args.join(";")).toContain(
+			"[1:a]atempo=0.996281,apad,atrim=duration=563.547,aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[aout_sync]",
+		);
+		expect(args.join(";")).not.toContain("-c:a;copy");
+	});
+
+	it("probes missing copy-source audio duration before building sync-safe mux args", async () => {
+		const options = await resolveNativeVideoAudioMuxOptions(
+			{
+				audioMode: "copy-source",
+				audioSourceCodec: "aac",
+				outputDurationSec: 563.546667,
+			},
+			"recording.mic.m4a",
+			async () => 561.450667,
+		);
+
+		const args = buildNativeVideoAudioMuxArgs(
+			"video.mp4",
+			"recording.mic.m4a",
+			"out.mp4",
+			options,
+		);
+
+		expect(options.audioSourceDurationSec).toBe(561.450667);
+		expect(args.join(";")).toContain("atempo=0.996281");
+		expect(args.join(";")).toContain("atrim=duration=563.547");
+	});
+
+	it("probes missing trim-source audio duration before validating retained source ranges", async () => {
+		const options = await resolveNativeVideoAudioMuxOptions(
+			{
+				audioMode: "trim-source",
+				trimSegments: [{ startMs: 0, endMs: 60_000 }],
+				outputDurationSec: 60,
+			},
+			"recording.mic.wav",
+			async () => 48,
+		);
+
+		expect(options.audioSourceDurationSec).toBe(48);
+		expect(() =>
+			buildNativeVideoAudioMuxArgs("video.mp4", "recording.mic.wav", "out.mp4", options),
+		).toThrow(
+			"Trim-source audio is too short for the retained source range: required=60.000s audio=48.000s",
+		);
+	});
+
+	it("probes missing edited-track fast-path audio duration before validating source ranges", async () => {
+		const options = await resolveNativeVideoAudioMuxOptions(
+			{
+				audioMode: "edited-track",
+				editedTrackStrategy: "filtergraph-fast-path",
+				audioSourceSampleRate: 48_000,
+				editedTrackSegments: [{ startMs: 0, endMs: 512_532, speed: 1 }],
+				outputDurationSec: 512.532,
+			},
+			"recording.mic.wav",
+			async () => 483.637,
+		);
+
+		expect(options.audioSourceDurationSec).toBe(483.637);
+		expect(() =>
+			buildNativeVideoAudioMuxArgs("video.mp4", "recording.mic.wav", "out.mp4", options),
+		).toThrow(
+			"Edited-track source audio is too short for the edited source range: required=512.532s audio=483.637s",
+		);
+	});
+
+	it("rejects large copy-source duration mismatches instead of padding a desynced track", () => {
+		expect(() =>
+			buildNativeVideoAudioMuxArgs("video.mp4", "source.mp4", "out.mp4", {
+				audioMode: "copy-source",
+				audioSourceCodec: "aac",
+				audioSourceDurationSec: 480,
+				outputDurationSec: 600,
+			}),
+		).toThrow(
+			"Copy-source audio/video mismatch is too large to export safely: video=600.000s audio=480.000s drift=120.000s",
+		);
+	});
+
+	it("tempo-corrects small shorter-audio drift but leaves long mismatches anchored", () => {
+		expect(getCopySourceAudioSyncTempoRatio(1038.661667, 1038.112)).toBeCloseTo(0.999471, 6);
+		expect(getCopySourceAudioSyncTempoRatio(563.546667, 561.450667)).toBeCloseTo(0.996281, 6);
+		expect(getCopySourceAudioSyncTempoRatio(120, 120.5)).toBe(1);
+		expect(getCopySourceAudioSyncTempoRatio(600, 480)).toBe(1);
+	});
+
 	it("transcodes WebM/Opus source audio when muxing into MP4", () => {
 		const args = buildNativeVideoAudioMuxArgs("video.mp4", "source.webm", "out.mp4", {
 			audioMode: "copy-source",
@@ -923,6 +1059,38 @@ describe("buildNativeVideoAudioMuxArgs", () => {
 		expect(args).toEqual(expect.arrayContaining(["-c:a", "aac", "-b:a", "192k"]));
 	});
 
+	it("pads and trims trim-source audio to the rendered timeline duration", () => {
+		const args = buildNativeVideoAudioMuxArgs("video.mp4", "source.mp4", "out.mp4", {
+			audioMode: "trim-source",
+			trimSegments: [
+				{ startMs: 0, endMs: 30_000 },
+				{ startMs: 45_000, endMs: 60_000 },
+			],
+			outputDurationSec: 45,
+		});
+
+		expect(args).toEqual(expect.arrayContaining(["-map", "[aout_sync]"]));
+		expect(args.join(";")).toContain(
+			"[aout]apad,atrim=duration=45.000,asetpts=PTS-STARTPTS[aout_sync]",
+		);
+	});
+
+	it("rejects trim-source exports when source audio is shorter than the retained source range", () => {
+		expect(() =>
+			buildNativeVideoAudioMuxArgs("video.mp4", "source.mp4", "out.mp4", {
+				audioMode: "trim-source",
+				trimSegments: [
+					{ startMs: 0, endMs: 30_000 },
+					{ startMs: 45_000, endMs: 60_000 },
+				],
+				audioSourceDurationSec: 48,
+				outputDurationSec: 45,
+			}),
+		).toThrow(
+			"Trim-source audio is too short for the retained source range: required=60.000s audio=48.000s",
+		);
+	});
+
 	it("pads and trims edited-track filtergraph audio to the expected duration", () => {
 		const args = buildNativeVideoAudioMuxArgs("video.mp4", "source.mp4", "out.mp4", {
 			audioMode: "edited-track",
@@ -938,18 +1106,157 @@ describe("buildNativeVideoAudioMuxArgs", () => {
 		);
 	});
 
+	it("rejects edited-track fast-path exports when source audio cannot cover edited source segments", () => {
+		expect(() =>
+			buildNativeVideoAudioMuxArgs("video.mp4", "source.mp4", "out.mp4", {
+				audioMode: "edited-track",
+				editedTrackStrategy: "filtergraph-fast-path",
+				audioSourceSampleRate: 48_000,
+				editedTrackSegments: [{ startMs: 0, endMs: 512_532, speed: 1 }],
+				audioSourceDurationSec: 483.637,
+				outputDurationSec: 512.532,
+			}),
+		).toThrow(
+			"Edited-track source audio is too short for the edited source range: required=512.532s audio=483.637s",
+		);
+	});
+
 	it("can enable machine-readable FFmpeg mux progress", () => {
 		const args = buildNativeVideoAudioMuxArgs(
 			"video.mp4",
 			"source.mp4",
 			"out.mp4",
-			{ audioMode: "copy-source", audioSourceCodec: "aac", outputDurationSec: 60 },
+			{
+				audioMode: "copy-source",
+				audioSourceCodec: "aac",
+				outputDurationSec: 60,
+			},
 			{ progressPipe: 2 },
 		);
 
 		expect(args).toEqual(
 			expect.arrayContaining(["-stats_period", "0.5", "-progress", "pipe:2", "-nostats"]),
 		);
+	});
+});
+
+describe("validateNativeVideoAudioMuxOutputMetadata", () => {
+	it("accepts final mux outputs when audio and video stream durations match", () => {
+		const validation = validateNativeVideoAudioMuxOutputMetadata({
+			width: 1920,
+			height: 1080,
+			duration: 600,
+			mediaStartTime: 0,
+			streamStartTime: 0,
+			streamDuration: 600,
+			frameRate: 30,
+			codec: "h264",
+			hasAudio: true,
+			audioCodec: "aac",
+			audioSampleRate: 48_000,
+			audioDuration: 599.98,
+		});
+
+		expect(validation).toMatchObject({
+			ok: true,
+			videoDurationSec: 600,
+			audioDurationSec: 599.98,
+		});
+	});
+
+	it("rejects final mux outputs whose audio stream duration drifts from video", () => {
+		const validation = validateNativeVideoAudioMuxOutputMetadata({
+			width: 1920,
+			height: 1080,
+			duration: 600,
+			mediaStartTime: 0,
+			streamStartTime: 0,
+			streamDuration: 600,
+			frameRate: 30,
+			codec: "h264",
+			hasAudio: true,
+			audioCodec: "aac",
+			audioSampleRate: 48_000,
+			audioDuration: 597.9,
+		});
+
+		expect(validation).toMatchObject({
+			ok: false,
+			reason: "duration-drift",
+			videoDurationSec: 600,
+			audioDurationSec: 597.9,
+			driftSec: 2.1,
+		});
+	});
+});
+
+describe("muxNativeVideoExportAudio final sync validation", () => {
+	it("rejects audio export modes that do not provide an audio source", async () => {
+		await expect(
+			muxNativeVideoExportAudio("video.mp4", {
+				audioMode: "copy-source",
+				audioSourcePath: null,
+				outputDurationSec: 60,
+			}),
+		).rejects.toThrow("Native export audio source is missing for audioMode=copy-source");
+	});
+
+	it("rejects a mux that produces drift between final video and audio streams", async () => {
+		const defaultExecFileImplementation = execFileMock.getMockImplementation();
+		fsMocks.unlink.mockClear();
+		execFileMock.mockImplementation(
+			(
+				cmd: string,
+				_args: string[],
+				_opts: unknown,
+				cb: (err: Error | null, result?: { stdout: string; stderr: string }) => void,
+			) => {
+				if (cmd === "ffprobe") {
+					cb(null, {
+						stdout: JSON.stringify({
+							streams: [
+								{
+									codec_type: "video",
+									codec_name: "h264",
+									width: 1920,
+									height: 1080,
+									duration: "600.000000",
+									avg_frame_rate: "30/1",
+								},
+								{
+									codec_type: "audio",
+									codec_name: "aac",
+									duration: "597.900000",
+									sample_rate: "48000",
+								},
+							],
+							format: { duration: "600.000000", start_time: "0.000000" },
+						}),
+						stderr: "",
+					});
+					return { stdout: "", stderr: "" } as unknown;
+				}
+
+				cb(null, { stdout: "", stderr: "" });
+				return { stdout: "", stderr: "" } as unknown;
+			},
+		);
+
+		try {
+			await expect(
+				muxNativeVideoExportAudio("video.mp4", {
+					audioMode: "copy-source",
+					audioSourcePath: "source.m4a",
+					audioSourceDurationSec: 600,
+					outputDurationSec: 600,
+				}),
+			).rejects.toThrow(/Muxed export audio\/video duration mismatch/);
+			expect(fsMocks.unlink).not.toHaveBeenCalledWith("video.mp4");
+		} finally {
+			if (defaultExecFileImplementation) {
+				execFileMock.mockImplementation(defaultExecFileImplementation);
+			}
+		}
 	});
 });
 
@@ -1264,6 +1571,29 @@ describe("validateNvidiaCudaExportSummary", () => {
 
 		expect(issues).toEqual([]);
 	});
+
+	it("rejects inline-audio CUDA output when audio duration drifts from video duration", () => {
+		const issues = validateNvidiaCudaExportSummary(
+			{
+				success: true,
+				targetFrames: 300,
+				durationSec: 10,
+				nativeSummary: {
+					success: true,
+					frames: 300,
+					sourceTimestampMode: "pts",
+					selectionStage: "timestamp-mapped-callback",
+				},
+				outputVideo: { duration: "10.000000", nb_frames: "300" },
+				outputAudio: { duration: "10.400000" },
+			},
+			{ durationSec: 10, targetFrames: 300, requiresTimelineSync: true },
+		);
+
+		expect(issues).toEqual([
+			"output audio/video duration drift 0.400s exceeds sync tolerance 0.050s",
+		]);
+	});
 });
 
 describe("parseWindowsGpuExportProgressLine", () => {
@@ -1358,13 +1688,23 @@ describe("hasNativeStaticLayoutProgressAdvanced", () => {
 
 		expect(
 			hasNativeStaticLayoutProgressAdvanced(
-				{ currentFrame: 0, totalFrames: 100, percentage: 2.5, stage: "preparing" },
+				{
+					currentFrame: 0,
+					totalFrames: 100,
+					percentage: 2.5,
+					stage: "preparing",
+				},
 				previous,
 			),
 		).toBe(false);
 		expect(
 			hasNativeStaticLayoutProgressAdvanced(
-				{ currentFrame: 0, totalFrames: 100, percentage: 2.7, stage: "preparing" },
+				{
+					currentFrame: 0,
+					totalFrames: 100,
+					percentage: 2.7,
+					stage: "preparing",
+				},
 				previous,
 			),
 		).toBe(true);
@@ -1376,7 +1716,12 @@ describe("hasNativeStaticLayoutProgressAdvanced", () => {
 		).toBe(true);
 		expect(
 			hasNativeStaticLayoutProgressAdvanced(
-				{ currentFrame: 100, totalFrames: 100, percentage: 97.25, stage: "finalizing" },
+				{
+					currentFrame: 100,
+					totalFrames: 100,
+					percentage: 97.25,
+					stage: "finalizing",
+				},
 				{ currentFrame: 100, percentage: 97.25 },
 			),
 		).toBe(true);
@@ -1434,6 +1779,103 @@ Input #0, matroska,webm, from 'recording.webm':
 	it("rejects output without usable video metadata", () => {
 		expect(parseNativeVideoMetadataProbeOutput("Duration: N/A")).toBeNull();
 		expect(parseNativeVideoMetadataProbeOutput("not a media file")).toBeNull();
+	});
+});
+
+describe("parseNativeVideoMetadataProbeJsonOutput", () => {
+	it("parses separate video and audio stream durations from ffprobe JSON", () => {
+		const metadata = parseNativeVideoMetadataProbeJsonOutput(
+			JSON.stringify({
+				streams: [
+					{
+						codec_type: "video",
+						codec_name: "h264",
+						profile: "High",
+						width: 1920,
+						height: 1080,
+						duration: "1038.661667",
+						start_time: "0.000000",
+						avg_frame_rate: "0/0",
+						r_frame_rate: "30/1",
+					},
+					{
+						codec_type: "audio",
+						codec_name: "aac",
+						profile: "LC",
+						duration: "1038.112000",
+						sample_rate: "48000",
+					},
+				],
+				format: {
+					duration: "1038.661667",
+					start_time: "0.000000",
+				},
+			}),
+		);
+
+		expect(metadata).toEqual({
+			width: 1920,
+			height: 1080,
+			duration: 1038.661667,
+			mediaStartTime: 0,
+			streamStartTime: 0,
+			streamDuration: 1038.661667,
+			frameRate: 30,
+			codec: "h264 (High)",
+			hasAudio: true,
+			audioCodec: "aac (LC)",
+			audioSampleRate: 48000,
+			audioDuration: 1038.112,
+		});
+	});
+
+	it("rejects invalid or video-less ffprobe JSON", () => {
+		expect(parseNativeVideoMetadataProbeJsonOutput("not json")).toBeNull();
+		expect(parseNativeVideoMetadataProbeJsonOutput(JSON.stringify({ streams: [] }))).toBeNull();
+	});
+});
+
+describe("parseNativeAudioDurationProbeJsonOutput", () => {
+	it("parses audio-only ffprobe JSON duration from the audio stream", () => {
+		expect(
+			parseNativeAudioDurationProbeJsonOutput(
+				JSON.stringify({
+					streams: [
+						{
+							codec_type: "audio",
+							codec_name: "aac",
+							duration: "561.450667",
+							sample_rate: "48000",
+						},
+					],
+					format: {
+						duration: "563.546667",
+					},
+				}),
+			),
+		).toBe(561.450667);
+	});
+
+	it("falls back to format duration when the audio stream duration is absent", () => {
+		expect(
+			parseNativeAudioDurationProbeJsonOutput(
+				JSON.stringify({
+					streams: [{ codec_type: "audio", codec_name: "pcm_s16le" }],
+					format: { duration: "12.25" },
+				}),
+			),
+		).toBe(12.25);
+	});
+
+	it("rejects JSON without an audio stream", () => {
+		expect(
+			parseNativeAudioDurationProbeJsonOutput(
+				JSON.stringify({
+					streams: [{ codec_type: "video", duration: "10" }],
+					format: { duration: "10" },
+				}),
+			),
+		).toBeNull();
 	});
 });
 

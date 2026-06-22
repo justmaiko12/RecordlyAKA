@@ -29,6 +29,7 @@ export let nativeCaptureTargetPath: string | null = null;
 export let nativeCaptureStopRequested = false;
 export let nativeCaptureSystemAudioPath: string | null = null;
 export let nativeCaptureMicrophonePath: string | null = null;
+export let nativeCaptureWebcamPath: string | null = null;
 export let nativeCapturePaused = false;
 
 // ── Native cursor monitor ─────────────────────────────────────────────────────
@@ -131,6 +132,9 @@ export function setNativeCaptureProcess(v: ChildProcessWithoutNullStreams | null
 export function setNativeCaptureOutputBuffer(v: string) {
 	nativeCaptureOutputBuffer = v;
 }
+export function appendNativeCaptureOutputBuffer(v: string) {
+	nativeCaptureOutputBuffer += v;
+}
 export function setNativeCaptureTargetPath(v: string | null) {
 	nativeCaptureTargetPath = v;
 }
@@ -142,6 +146,9 @@ export function setNativeCaptureSystemAudioPath(v: string | null) {
 }
 export function setNativeCaptureMicrophonePath(v: string | null) {
 	nativeCaptureMicrophonePath = v;
+}
+export function setNativeCaptureWebcamPath(v: string | null) {
+	nativeCaptureWebcamPath = v;
 }
 export function setNativeCapturePaused(v: boolean) {
 	nativeCapturePaused = v;

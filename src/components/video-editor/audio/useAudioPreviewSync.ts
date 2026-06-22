@@ -1,459 +1,598 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildResolvedAudioPlan } from "@/lib/exporter/audioRoutingEngine";
 import { resolveMediaElementSource } from "@/lib/exporter/localMediaSource";
 import {
-  clampMediaTimeToDuration,
-  enablePitchPreservingPlayback,
-  estimateCompanionAudioStartDelaySeconds,
-  getMediaSyncPlaybackRate,
+	clampMediaTimeToDuration,
+	enablePitchPreservingPlayback,
+	estimateCompanionAudioStartDelaySeconds,
+	getMediaSyncPlaybackRate,
 } from "@/lib/mediaTiming";
 import type { AudioRegion, SpeedRegion } from "../types";
 
 const SOURCE_AUDIO_PREVIEW_PLAYING_SEEK_DRIFT_SECONDS = 0.18;
 const SOURCE_AUDIO_PREVIEW_PAUSED_SEEK_DRIFT_SECONDS = 0.01;
+const SOURCE_AUDIO_PREVIEW_SYNC_EPSILON_SECONDS = 0.02;
 
 interface UseAudioPreviewSyncParams {
-  audioRegions: AudioRegion[];
-  previewVolume: number;
-  isPlaying: boolean;
-  currentTime: number;
-  timelineTime: number;
-  duration: number;
-  effectiveSpeedRegions: SpeedRegion[];
-  previewSourceAudioFallbackPaths: string[];
-  sourceAudioFallbackStartDelayMsByPath: Record<string, number>;
-  isCurrentClipMuted: boolean;
-  getSourceTrackPreviewGain: (audioPath: string) => number;
-  onSourceFallbackLoadError: (error: unknown) => void;
+	audioRegions: AudioRegion[];
+	previewVolume: number;
+	isPlaying: boolean;
+	currentTime: number;
+	timelineTime: number;
+	duration: number;
+	effectiveSpeedRegions: SpeedRegion[];
+	previewSourceAudioFallbackPaths: string[];
+	sourceAudioFallbackStartDelayMsByPath: Record<string, number>;
+	sourceAudioDurationSecByPath: Record<string, number>;
+	isCurrentClipMuted: boolean;
+	getSourceTrackPreviewGain: (audioPath: string) => number;
+	onSourceFallbackLoadError: (error: unknown) => void;
+}
+
+export function getSourceAudioPreviewSyncRatio(
+	outputDurationSec: number,
+	audioDurationSec: number | null | undefined,
+) {
+	if (
+		!Number.isFinite(outputDurationSec) ||
+		!Number.isFinite(audioDurationSec) ||
+		outputDurationSec <= 0 ||
+		(audioDurationSec ?? 0) <= 0
+	) {
+		return 1;
+	}
+
+	const audioDuration = audioDurationSec ?? 0;
+	const durationDeltaSec = outputDurationSec - audioDuration;
+	if (Math.abs(durationDeltaSec) <= SOURCE_AUDIO_PREVIEW_SYNC_EPSILON_SECONDS) {
+		return 1;
+	}
+
+	// Match native export behavior: longer audio stays anchored and trims at the
+	// end, while slightly short recorder drift is slowed to meet the video end.
+	if (durationDeltaSec < 0) {
+		return 1;
+	}
+
+	const absDeltaMs = Math.abs(durationDeltaSec * 1000);
+	const relativeDelta = absDeltaMs / Math.max(outputDurationSec * 1000, 1);
+	if (relativeDelta > 0.03 && absDeltaMs > 1500) {
+		return 1;
+	}
+
+	return Math.max(0.5, Math.min(2, audioDuration / outputDurationSec));
 }
 
 export function useAudioPreviewSync({
-  audioRegions,
-  previewVolume,
-  isPlaying,
-  currentTime,
-  timelineTime,
-  duration,
-  effectiveSpeedRegions,
-  previewSourceAudioFallbackPaths,
-  sourceAudioFallbackStartDelayMsByPath,
-  isCurrentClipMuted,
-  getSourceTrackPreviewGain,
-  onSourceFallbackLoadError,
+	audioRegions,
+	previewVolume,
+	isPlaying,
+	currentTime,
+	timelineTime,
+	duration,
+	effectiveSpeedRegions,
+	previewSourceAudioFallbackPaths,
+	sourceAudioFallbackStartDelayMsByPath,
+	sourceAudioDurationSecByPath,
+	isCurrentClipMuted,
+	getSourceTrackPreviewGain,
+	onSourceFallbackLoadError,
 }: UseAudioPreviewSyncParams) {
-  const resolvedPlan = useMemo(
-    () =>
-      buildResolvedAudioPlan({
-        videoResource: null,
-        sourceAudioFallbackPaths: previewSourceAudioFallbackPaths,
-        audioRegions,
-      }),
-    [audioRegions, previewSourceAudioFallbackPaths],
-  );
-  const resolvedUserTracks = useMemo(
-    () => resolvedPlan.tracks.filter((track) => track.kind === "user"),
-    [resolvedPlan],
-  );
-  const resolvedSourceTracks = useMemo(
-    () => resolvedPlan.tracks.filter((track) => track.kind !== "user"),
-    [resolvedPlan],
-  );
+	const resolvedPlan = useMemo(
+		() =>
+			buildResolvedAudioPlan({
+				videoResource: null,
+				sourceAudioFallbackPaths: previewSourceAudioFallbackPaths,
+				audioRegions,
+			}),
+		[audioRegions, previewSourceAudioFallbackPaths],
+	);
+	const resolvedUserTracks = useMemo(
+		() => resolvedPlan.tracks.filter((track) => track.kind === "user"),
+		[resolvedPlan],
+	);
+	const resolvedSourceTracks = useMemo(
+		() => resolvedPlan.tracks.filter((track) => track.kind !== "user"),
+		[resolvedPlan],
+	);
 
-  const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
-  const audioElementRevokersRef = useRef<Map<string, () => void>>(new Map());
-  const audioElementResourcesRef = useRef<Map<string, string>>(new Map());
-  const sourceAudioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
-  const sourceAudioMediaNodesRef = useRef<Map<string, MediaElementAudioSourceNode>>(new Map());
-  const sourceAudioGainNodesRef = useRef<Map<string, GainNode>>(new Map());
-  const sourceAudioElementRevokersRef = useRef<Map<string, () => void>>(new Map());
-  const sourceAudioElementResourcesRef = useRef<Map<string, string>>(new Map());
-  const sourceAudioContextRef = useRef<AudioContext | null>(null);
-  const sourceAudioMasterGainRef = useRef<GainNode | null>(null);
-  const sourceAudioResumePromiseRef = useRef<Promise<void> | null>(null);
-  const lastSourceAudioSyncTimeRef = useRef<number | null>(null);
+	const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+	const audioElementRevokersRef = useRef<Map<string, () => void>>(new Map());
+	const audioElementResourcesRef = useRef<Map<string, string>>(new Map());
+	const sourceAudioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+	const sourceAudioMediaNodesRef = useRef<Map<string, MediaElementAudioSourceNode>>(new Map());
+	const sourceAudioGainNodesRef = useRef<Map<string, GainNode>>(new Map());
+	const sourceAudioElementRevokersRef = useRef<Map<string, () => void>>(new Map());
+	const sourceAudioElementResourcesRef = useRef<Map<string, string>>(new Map());
+	const sourceAudioContextRef = useRef<AudioContext | null>(null);
+	const sourceAudioMasterGainRef = useRef<GainNode | null>(null);
+	const sourceAudioResumePromiseRef = useRef<Promise<void> | null>(null);
+	const lastSourceAudioSyncTimeRef = useRef<number | null>(null);
+	const [confirmedSourceAudioPlaybackPaths, setConfirmedSourceAudioPlaybackPaths] = useState<
+		Set<string>
+	>(() => new Set());
 
-  const ensureSourceAudioContext = useCallback(() => {
-    if (!sourceAudioContextRef.current) {
-      const context = new AudioContext({ latencyHint: "interactive" });
-      const masterGain = context.createGain();
-      masterGain.gain.value = 1;
-      masterGain.connect(context.destination);
-      sourceAudioContextRef.current = context;
-      sourceAudioMasterGainRef.current = masterGain;
-    }
-    return sourceAudioContextRef.current;
-  }, []);
+	const markSourceAudioPlaybackConfirmed = useCallback((audioPath: string) => {
+		if (!audioPath) return;
+		setConfirmedSourceAudioPlaybackPaths((current) => {
+			if (current.has(audioPath)) return current;
+			const next = new Set(current);
+			next.add(audioPath);
+			return next;
+		});
+	}, []);
 
-  const ensureSourceAudioRunning = useCallback(() => {
-    const context = ensureSourceAudioContext();
-    if (context.state === "running") {
-      return Promise.resolve();
-    }
-    if (!sourceAudioResumePromiseRef.current) {
-      sourceAudioResumePromiseRef.current = context
-        .resume()
-        .catch(() => undefined)
-        .finally(() => {
-          sourceAudioResumePromiseRef.current = null;
-        });
-    }
-    return sourceAudioResumePromiseRef.current;
-  }, [ensureSourceAudioContext]);
+	const clearSourceAudioPlaybackConfirmation = useCallback((audioPath: string) => {
+		if (!audioPath) return;
+		setConfirmedSourceAudioPlaybackPaths((current) => {
+			if (!current.has(audioPath)) return current;
+			const next = new Set(current);
+			next.delete(audioPath);
+			return next;
+		});
+	}, []);
 
-  const playSourceAudioPreview = useCallback(() => {
-    void ensureSourceAudioRunning();
-    for (const audio of sourceAudioElementsRef.current.values()) {
-      if (!audio.src) continue;
-      audio.play().catch(() => undefined);
-    }
-  }, [ensureSourceAudioRunning]);
+	const retainSourceAudioPlaybackConfirmations = useCallback((audioPaths: Set<string>) => {
+		setConfirmedSourceAudioPlaybackPaths((current) => {
+			let changed = false;
+			const next = new Set<string>();
+			for (const audioPath of current) {
+				if (audioPaths.has(audioPath)) {
+					next.add(audioPath);
+				} else {
+					changed = true;
+				}
+			}
+			return changed ? next : current;
+		});
+	}, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const existing = audioElementsRef.current;
-    const currentIds = new Set(resolvedUserTracks.map((track) => track.id));
+	const ensureSourceAudioContext = useCallback(() => {
+		if (!sourceAudioContextRef.current) {
+			const context = new AudioContext({ latencyHint: "interactive" });
+			const masterGain = context.createGain();
+			masterGain.gain.value = 1;
+			masterGain.connect(context.destination);
+			sourceAudioContextRef.current = context;
+			sourceAudioMasterGainRef.current = masterGain;
+		}
+		return sourceAudioContextRef.current;
+	}, []);
 
-    for (const [id, audio] of existing) {
-      if (!currentIds.has(id)) {
-        audio.pause();
-        audio.src = "";
-        audioElementRevokersRef.current.get(id)?.();
-        audioElementRevokersRef.current.delete(id);
-        audioElementResourcesRef.current.delete(id);
-        existing.delete(id);
-      }
-    }
+	const ensureSourceAudioRunning = useCallback(() => {
+		const context = ensureSourceAudioContext();
+		if (context.state === "running") {
+			return Promise.resolve();
+		}
+		if (!sourceAudioResumePromiseRef.current) {
+			sourceAudioResumePromiseRef.current = context
+				.resume()
+				.catch(() => undefined)
+				.finally(() => {
+					sourceAudioResumePromiseRef.current = null;
+				});
+		}
+		return sourceAudioResumePromiseRef.current;
+	}, [ensureSourceAudioContext]);
 
-    for (const track of resolvedUserTracks) {
-      let audio = existing.get(track.id);
-      if (!audio) {
-        audio = new Audio();
-        audio.preload = "auto";
-        existing.set(track.id, audio);
-      }
+	const playSourceAudioPreview = useCallback(() => {
+		void ensureSourceAudioRunning().then(() => {
+			for (const audio of sourceAudioElementsRef.current.values()) {
+				if (!audio.src) continue;
+				const audioPath = audio.dataset.sourceAudioPath ?? "";
+				audio
+					.play()
+					.then(() => {
+						markSourceAudioPlaybackConfirmed(audioPath);
+					})
+					.catch(() => undefined);
+			}
+		});
+	}, [ensureSourceAudioRunning, markSourceAudioPlaybackConfirmed]);
 
-      if (audioElementResourcesRef.current.get(track.id) !== track.sourceRef.path) {
-        audio.pause();
-        audio.src = "";
-        audioElementRevokersRef.current.get(track.id)?.();
-        audioElementRevokersRef.current.delete(track.id);
-        audioElementResourcesRef.current.set(track.id, track.sourceRef.path);
+	useEffect(() => {
+		let cancelled = false;
+		const existing = audioElementsRef.current;
+		const currentIds = new Set(resolvedUserTracks.map((track) => track.id));
 
-        void (async () => {
-          const resolved = await resolveMediaElementSource(track.sourceRef.path);
-          const latestAudio = existing.get(track.id);
+		for (const [id, audio] of existing) {
+			if (!currentIds.has(id)) {
+				audio.pause();
+				audio.src = "";
+				audioElementRevokersRef.current.get(id)?.();
+				audioElementRevokersRef.current.delete(id);
+				audioElementResourcesRef.current.delete(id);
+				existing.delete(id);
+			}
+		}
 
-          if (
-            cancelled ||
-            latestAudio !== audio ||
-            audioElementResourcesRef.current.get(track.id) !== track.sourceRef.path
-          ) {
-            resolved.revoke();
-            return;
-          }
+		for (const track of resolvedUserTracks) {
+			let audio = existing.get(track.id);
+			if (!audio) {
+				audio = new Audio();
+				audio.preload = "auto";
+				existing.set(track.id, audio);
+			}
 
-          audioElementRevokersRef.current.set(track.id, resolved.revoke);
-          latestAudio.src = resolved.src;
-        })();
-      }
+			if (audioElementResourcesRef.current.get(track.id) !== track.sourceRef.path) {
+				audio.pause();
+				audio.src = "";
+				audioElementRevokersRef.current.get(track.id)?.();
+				audioElementRevokersRef.current.delete(track.id);
+				audioElementResourcesRef.current.set(track.id, track.sourceRef.path);
 
-      audio.volume = Math.max(0, Math.min(1, track.gain * previewVolume));
-    }
+				void (async () => {
+					const resolved = await resolveMediaElementSource(track.sourceRef.path);
+					const latestAudio = existing.get(track.id);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [previewVolume, resolvedUserTracks]);
+					if (
+						cancelled ||
+						latestAudio !== audio ||
+						audioElementResourcesRef.current.get(track.id) !== track.sourceRef.path
+					) {
+						resolved.revoke();
+						return;
+					}
 
-  useEffect(() => {
-    let cancelled = false;
-    const existing = sourceAudioElementsRef.current;
-    const currentIds = new Set(resolvedSourceTracks.map((track) => track.sourceRef.path));
+					audioElementRevokersRef.current.set(track.id, resolved.revoke);
+					latestAudio.src = resolved.src;
+				})();
+			}
 
-    for (const [id, audio] of existing) {
-      if (!currentIds.has(id)) {
-        audio.pause();
-        audio.src = "";
-        sourceAudioMediaNodesRef.current.get(id)?.disconnect();
-        sourceAudioMediaNodesRef.current.delete(id);
-        sourceAudioGainNodesRef.current.get(id)?.disconnect();
-        sourceAudioGainNodesRef.current.delete(id);
-        sourceAudioElementRevokersRef.current.get(id)?.();
-        sourceAudioElementRevokersRef.current.delete(id);
-        sourceAudioElementResourcesRef.current.delete(id);
-        existing.delete(id);
-      }
-    }
+			audio.volume = Math.max(0, Math.min(1, track.gain * previewVolume));
+		}
 
-    for (const track of resolvedSourceTracks) {
-      const audioPath = track.sourceRef.path;
-      let audio = existing.get(audioPath);
-      if (!audio) {
-        audio = new Audio();
-        audio.preload = "auto";
-        audio.crossOrigin = "anonymous";
-        existing.set(audioPath, audio);
-      }
-      audio.volume = 1;
-      audio.dataset.sourceAudioPath = audioPath;
+		return () => {
+			cancelled = true;
+		};
+	}, [previewVolume, resolvedUserTracks]);
 
-      // Web Audio API createMediaElementSource breaks preservesPitch on Chromium.
-      // We route directly through the HTMLAudioElement to ensure pitch preservation works
-      // during speed changes. Note: this limits maximum preview volume to 1.0 (100%).
+	useEffect(() => {
+		let cancelled = false;
+		const existing = sourceAudioElementsRef.current;
+		const currentIds = new Set(resolvedSourceTracks.map((track) => track.sourceRef.path));
+		retainSourceAudioPlaybackConfirmations(currentIds);
 
-      if (sourceAudioElementResourcesRef.current.get(audioPath) !== audioPath) {
-        audio.pause();
-        audio.src = "";
-        sourceAudioElementRevokersRef.current.get(audioPath)?.();
-        sourceAudioElementRevokersRef.current.delete(audioPath);
-        sourceAudioElementResourcesRef.current.set(audioPath, audioPath);
+		for (const [id, audio] of existing) {
+			if (!currentIds.has(id)) {
+				audio.pause();
+				audio.src = "";
+				clearSourceAudioPlaybackConfirmation(id);
+				sourceAudioMediaNodesRef.current.get(id)?.disconnect();
+				sourceAudioMediaNodesRef.current.delete(id);
+				sourceAudioGainNodesRef.current.get(id)?.disconnect();
+				sourceAudioGainNodesRef.current.delete(id);
+				sourceAudioElementRevokersRef.current.get(id)?.();
+				sourceAudioElementRevokersRef.current.delete(id);
+				sourceAudioElementResourcesRef.current.delete(id);
+				existing.delete(id);
+			}
+		}
 
-        void (async () => {
-          try {
-            const resolved = await resolveMediaElementSource(audioPath);
-            const latestAudio = existing.get(audioPath);
+		for (const track of resolvedSourceTracks) {
+			const audioPath = track.sourceRef.path;
+			let audio = existing.get(audioPath);
+			if (!audio) {
+				audio = new Audio();
+				audio.preload = "auto";
+				audio.crossOrigin = "anonymous";
+				existing.set(audioPath, audio);
+			}
+			audio.volume = 1;
+			audio.dataset.sourceAudioPath = audioPath;
 
-            if (
-              cancelled ||
-              latestAudio !== audio ||
-              sourceAudioElementResourcesRef.current.get(audioPath) !== audioPath
-            ) {
-              resolved.revoke();
-              return;
-            }
+			// Web Audio API createMediaElementSource breaks preservesPitch on Chromium.
+			// We route directly through the HTMLAudioElement to ensure pitch preservation works
+			// during speed changes. Note: this limits maximum preview volume to 1.0 (100%).
 
-            sourceAudioElementRevokersRef.current.set(audioPath, resolved.revoke);
-            latestAudio.src = resolved.src;
-            latestAudio.load();
-            if (isPlaying) {
-              playSourceAudioPreview();
-            }
-          } catch (error) {
-            if (cancelled) {
-              return;
-            }
+			if (sourceAudioElementResourcesRef.current.get(audioPath) !== audioPath) {
+				audio.pause();
+				audio.src = "";
+				clearSourceAudioPlaybackConfirmation(audioPath);
+				sourceAudioElementRevokersRef.current.get(audioPath)?.();
+				sourceAudioElementRevokersRef.current.delete(audioPath);
+				sourceAudioElementResourcesRef.current.set(audioPath, audioPath);
 
-            sourceAudioElementRevokersRef.current.get(audioPath)?.();
-            sourceAudioElementRevokersRef.current.delete(audioPath);
-            sourceAudioElementResourcesRef.current.delete(audioPath);
-            const latestAudio = existing.get(audioPath);
-            if (latestAudio === audio) {
-              latestAudio.pause();
-              latestAudio.src = "";
-            }
-            onSourceFallbackLoadError(error);
-          }
-        })();
-      }
+				void (async () => {
+					try {
+						const resolved = await resolveMediaElementSource(audioPath);
+						const latestAudio = existing.get(audioPath);
 
-      audio.volume = Math.max(0, Math.min(1, getSourceTrackPreviewGain(audioPath) * (isCurrentClipMuted ? 0 : previewVolume)));
-    }
+						if (
+							cancelled ||
+							latestAudio !== audio ||
+							sourceAudioElementResourcesRef.current.get(audioPath) !== audioPath
+						) {
+							resolved.revoke();
+							return;
+						}
 
-    if (sourceAudioMasterGainRef.current) {
-      sourceAudioMasterGainRef.current.gain.value = isCurrentClipMuted
-        ? 0
-        : Math.max(0, Math.min(1, previewVolume));
-    }
+						sourceAudioElementRevokersRef.current.set(audioPath, resolved.revoke);
+						latestAudio.src = resolved.src;
+						latestAudio.load();
+						if (isPlaying) {
+							playSourceAudioPreview();
+						}
+					} catch (error) {
+						if (cancelled) {
+							return;
+						}
 
-    if (resolvedSourceTracks.length === 0) {
-      lastSourceAudioSyncTimeRef.current = null;
-    }
+						sourceAudioElementRevokersRef.current.get(audioPath)?.();
+						sourceAudioElementRevokersRef.current.delete(audioPath);
+						sourceAudioElementResourcesRef.current.delete(audioPath);
+						clearSourceAudioPlaybackConfirmation(audioPath);
+						const latestAudio = existing.get(audioPath);
+						if (latestAudio === audio) {
+							latestAudio.pause();
+							latestAudio.src = "";
+						}
+						onSourceFallbackLoadError(error);
+					}
+				})();
+			}
 
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    getSourceTrackPreviewGain,
-    isPlaying,
-    isCurrentClipMuted,
-    onSourceFallbackLoadError,
-    resolvedSourceTracks,
-    previewVolume,
-    playSourceAudioPreview,
-  ]);
+			audio.volume = Math.max(
+				0,
+				Math.min(
+					1,
+					getSourceTrackPreviewGain(audioPath) * (isCurrentClipMuted ? 0 : previewVolume),
+				),
+			);
+		}
 
-  useEffect(() => {
-    return () => {
-      for (const audio of audioElementsRef.current.values()) {
-        audio.pause();
-        audio.src = "";
-      }
-      for (const revoke of audioElementRevokersRef.current.values()) {
-        revoke();
-      }
-      audioElementsRef.current.clear();
-      audioElementRevokersRef.current.clear();
-      audioElementResourcesRef.current.clear();
-      for (const audio of sourceAudioElementsRef.current.values()) {
-        audio.pause();
-        audio.src = "";
-      }
-      for (const node of sourceAudioMediaNodesRef.current.values()) {
-        node.disconnect();
-      }
-      for (const node of sourceAudioGainNodesRef.current.values()) {
-        node.disconnect();
-      }
-      for (const revoke of sourceAudioElementRevokersRef.current.values()) {
-        revoke();
-      }
-      sourceAudioElementsRef.current.clear();
-      sourceAudioMediaNodesRef.current.clear();
-      sourceAudioGainNodesRef.current.clear();
-      sourceAudioElementRevokersRef.current.clear();
-      sourceAudioElementResourcesRef.current.clear();
-      if (sourceAudioMasterGainRef.current) {
-        sourceAudioMasterGainRef.current.disconnect();
-        sourceAudioMasterGainRef.current = null;
-      }
-      const context = sourceAudioContextRef.current;
-      sourceAudioContextRef.current = null;
-      sourceAudioResumePromiseRef.current = null;
-      if (context) {
-        void context.close();
-      }
-      lastSourceAudioSyncTimeRef.current = null;
-    };
-  }, []);
+		if (sourceAudioMasterGainRef.current) {
+			sourceAudioMasterGainRef.current.gain.value = isCurrentClipMuted
+				? 0
+				: Math.max(0, Math.min(1, previewVolume));
+		}
 
-  useEffect(() => {
-    const currentTimeMs = timelineTime * 1000;
-    const activeSpeedRegion = effectiveSpeedRegions.find(
-      (region) => currentTimeMs >= region.startMs && currentTimeMs < region.endMs,
-    );
-    const targetPlaybackRate = activeSpeedRegion ? activeSpeedRegion.speed : 1;
+		if (resolvedSourceTracks.length === 0) {
+			lastSourceAudioSyncTimeRef.current = null;
+		}
 
-    for (const track of resolvedUserTracks) {
-      const audio = audioElementsRef.current.get(track.id);
-      if (!audio) continue;
+		return () => {
+			cancelled = true;
+		};
+	}, [
+		getSourceTrackPreviewGain,
+		isPlaying,
+		isCurrentClipMuted,
+		onSourceFallbackLoadError,
+		clearSourceAudioPlaybackConfirmation,
+		retainSourceAudioPlaybackConfirmations,
+		resolvedSourceTracks,
+		previewVolume,
+		playSourceAudioPreview,
+	]);
 
-      const startMs = track.timelineBinding.startMs;
-      const endMs = track.timelineBinding.endMs;
-      const isInRegion = currentTimeMs >= startMs && currentTimeMs < endMs;
+	useEffect(() => {
+		return () => {
+			for (const audio of audioElementsRef.current.values()) {
+				audio.pause();
+				audio.src = "";
+			}
+			for (const revoke of audioElementRevokersRef.current.values()) {
+				revoke();
+			}
+			audioElementsRef.current.clear();
+			audioElementRevokersRef.current.clear();
+			audioElementResourcesRef.current.clear();
+			for (const audio of sourceAudioElementsRef.current.values()) {
+				audio.pause();
+				audio.src = "";
+			}
+			for (const node of sourceAudioMediaNodesRef.current.values()) {
+				node.disconnect();
+			}
+			for (const node of sourceAudioGainNodesRef.current.values()) {
+				node.disconnect();
+			}
+			for (const revoke of sourceAudioElementRevokersRef.current.values()) {
+				revoke();
+			}
+			sourceAudioElementsRef.current.clear();
+			sourceAudioMediaNodesRef.current.clear();
+			sourceAudioGainNodesRef.current.clear();
+			sourceAudioElementRevokersRef.current.clear();
+			sourceAudioElementResourcesRef.current.clear();
+			if (sourceAudioMasterGainRef.current) {
+				sourceAudioMasterGainRef.current.disconnect();
+				sourceAudioMasterGainRef.current = null;
+			}
+			const context = sourceAudioContextRef.current;
+			sourceAudioContextRef.current = null;
+			sourceAudioResumePromiseRef.current = null;
+			if (context) {
+				void context.close();
+			}
+			lastSourceAudioSyncTimeRef.current = null;
+		};
+	}, []);
 
-      if (isPlaying && isInRegion) {
-        enablePitchPreservingPlayback(audio);
-        const audioOffset = (currentTimeMs - startMs) / 1000;
-        if (Math.abs(audio.currentTime - audioOffset) > 0.2) {
-          audio.currentTime = audioOffset;
-        }
-        const syncedPlaybackRate = getMediaSyncPlaybackRate({
-          basePlaybackRate: targetPlaybackRate,
-          currentTime: audio.currentTime,
-          targetTime: audioOffset,
-        });
-        if (Math.abs(audio.playbackRate - syncedPlaybackRate) > 0.001) {
-          audio.playbackRate = syncedPlaybackRate;
-        }
-        if (audio.paused) {
-          audio.play().catch(() => undefined);
-        }
-      } else if (!audio.paused) {
-        audio.pause();
-      }
-    }
-  }, [effectiveSpeedRegions, isPlaying, resolvedUserTracks, timelineTime]);
+	useEffect(() => {
+		const currentTimeMs = timelineTime * 1000;
+		const activeSpeedRegion = effectiveSpeedRegions.find(
+			(region) => currentTimeMs >= region.startMs && currentTimeMs < region.endMs,
+		);
+		const targetPlaybackRate = activeSpeedRegion ? activeSpeedRegion.speed : 1;
 
-  useEffect(() => {
-    if (resolvedSourceTracks.length === 0) {
-      lastSourceAudioSyncTimeRef.current = null;
-      return;
-    }
+		for (const track of resolvedUserTracks) {
+			const audio = audioElementsRef.current.get(track.id);
+			if (!audio) continue;
 
-    const activeSpeedRegion = effectiveSpeedRegions.find(
-      (region) => currentTime * 1000 >= region.startMs && currentTime * 1000 < region.endMs,
-    );
-    const targetPlaybackRate = activeSpeedRegion ? activeSpeedRegion.speed : 1;
-    const previousTimelineTime = lastSourceAudioSyncTimeRef.current;
-    const timelineJumped =
-      previousTimelineTime === null || Math.abs(currentTime - previousTimelineTime) > 0.25;
-    const driftThreshold = isPlaying
-      ? SOURCE_AUDIO_PREVIEW_PLAYING_SEEK_DRIFT_SECONDS
-      : SOURCE_AUDIO_PREVIEW_PAUSED_SEEK_DRIFT_SECONDS;
-    if (sourceAudioMasterGainRef.current) {
-      sourceAudioMasterGainRef.current.gain.value = isCurrentClipMuted
-        ? 0
-        : Math.max(0, Math.min(1, previewVolume));
-    }
+			const startMs = track.timelineBinding.startMs;
+			const endMs = track.timelineBinding.endMs;
+			const isInRegion = currentTimeMs >= startMs && currentTimeMs < endMs;
 
-    for (const audio of sourceAudioElementsRef.current.values()) {
-      const sourceAudioPath = audio.dataset.sourceAudioPath ?? "";
-      audio.volume = Math.max(0, Math.min(1, getSourceTrackPreviewGain(sourceAudioPath) * (isCurrentClipMuted ? 0 : previewVolume)));
+			if (isPlaying && isInRegion) {
+				enablePitchPreservingPlayback(audio);
+				const audioOffset = (track.sourceRef.startDelayMs + currentTimeMs - startMs) / 1000;
+				if (Math.abs(audio.currentTime - audioOffset) > 0.2) {
+					audio.currentTime = audioOffset;
+				}
+				const syncedPlaybackRate = getMediaSyncPlaybackRate({
+					basePlaybackRate: targetPlaybackRate,
+					currentTime: audio.currentTime,
+					targetTime: audioOffset,
+				});
+				if (Math.abs(audio.playbackRate - syncedPlaybackRate) > 0.001) {
+					audio.playbackRate = syncedPlaybackRate;
+				}
+				if (audio.paused) {
+					audio.play().catch(() => undefined);
+				}
+			} else if (!audio.paused) {
+				audio.pause();
+			}
+		}
+	}, [effectiveSpeedRegions, isPlaying, resolvedUserTracks, timelineTime]);
 
-      enablePitchPreservingPlayback(audio);
-      const audioDuration = Number.isFinite(audio.duration) ? audio.duration : null;
-      const isMicCompanionTrack = /\.mic\./i.test(sourceAudioPath);
-      const rawStartDelaySeconds = estimateCompanionAudioStartDelaySeconds(
-        duration,
-        audioDuration,
-        sourceAudioFallbackStartDelayMsByPath[sourceAudioPath],
-      );
-      const maxPreviewStartDelaySeconds = isMicCompanionTrack ? 2 : 5;
-      const startDelaySeconds = isMicCompanionTrack
-        ? 0
-        : Number.isFinite(duration) &&
-              (rawStartDelaySeconds >= Math.max(0, duration - 0.01) ||
-                rawStartDelaySeconds > Math.max(maxPreviewStartDelaySeconds, duration * 0.9))
-            ? 0
-            : rawStartDelaySeconds;
-      const beforeAudioStart = currentTime + 0.001 < startDelaySeconds;
-      const targetTime = clampMediaTimeToDuration(currentTime - startDelaySeconds, audioDuration);
+	useEffect(() => {
+		if (resolvedSourceTracks.length === 0) {
+			lastSourceAudioSyncTimeRef.current = null;
+			return;
+		}
 
-      const shouldSeek =
-        timelineJumped ||
-        (!isPlaying && Math.abs(audio.currentTime - targetTime) > driftThreshold) ||
-        (isPlaying && Math.abs(audio.currentTime - targetTime) > 0.9);
-      if (shouldSeek) {
-        try {
-          audio.currentTime = targetTime;
-        } catch {
-          // no-op
-        }
-      }
+		const activeSpeedRegion = effectiveSpeedRegions.find(
+			(region) => currentTime * 1000 >= region.startMs && currentTime * 1000 < region.endMs,
+		);
+		const targetPlaybackRate = activeSpeedRegion ? activeSpeedRegion.speed : 1;
+		const previousTimelineTime = lastSourceAudioSyncTimeRef.current;
+		const timelineJumped =
+			previousTimelineTime === null || Math.abs(currentTime - previousTimelineTime) > 0.25;
+		const driftThreshold = isPlaying
+			? SOURCE_AUDIO_PREVIEW_PLAYING_SEEK_DRIFT_SECONDS
+			: SOURCE_AUDIO_PREVIEW_PAUSED_SEEK_DRIFT_SECONDS;
+		if (sourceAudioMasterGainRef.current) {
+			sourceAudioMasterGainRef.current.gain.value = isCurrentClipMuted
+				? 0
+				: Math.max(0, Math.min(1, previewVolume));
+		}
 
-      // KISS for companion source tracks: fixed playback rate avoids audible flutter/stutter
-      // from continuous micro-corrections on system audio.
-      const syncedPlaybackRate = targetPlaybackRate;
-      if (Math.abs(audio.playbackRate - syncedPlaybackRate) > 0.001) {
-        audio.playbackRate = syncedPlaybackRate;
-      }
+		for (const audio of sourceAudioElementsRef.current.values()) {
+			const sourceAudioPath = audio.dataset.sourceAudioPath ?? "";
+			audio.volume = Math.max(
+				0,
+				Math.min(
+					1,
+					getSourceTrackPreviewGain(sourceAudioPath) *
+						(isCurrentClipMuted ? 0 : previewVolume),
+				),
+			);
 
-      const atEnd = audioDuration !== null && targetTime >= audioDuration;
-      if (isPlaying && !beforeAudioStart && !atEnd) {
-        void ensureSourceAudioRunning().then(() => {
-          audio.play().catch(() => undefined);
-        });
-      } else if (!audio.paused) {
-        audio.pause();
-      }
-    }
+			enablePitchPreservingPlayback(audio);
+			const probedAudioDuration = sourceAudioDurationSecByPath[sourceAudioPath];
+			const audioDuration = Number.isFinite(probedAudioDuration)
+				? probedAudioDuration
+				: Number.isFinite(audio.duration)
+					? audio.duration
+					: null;
+			const isMicCompanionTrack = /\.mic\./i.test(sourceAudioPath);
+			const rawStartDelaySeconds = estimateCompanionAudioStartDelaySeconds(
+				duration,
+				audioDuration,
+				sourceAudioFallbackStartDelayMsByPath[sourceAudioPath],
+			);
+			const maxPreviewStartDelaySeconds = isMicCompanionTrack ? 2 : 5;
+			const startDelaySeconds = isMicCompanionTrack
+				? 0
+				: Number.isFinite(duration) &&
+						(rawStartDelaySeconds >= Math.max(0, duration - 0.01) ||
+							rawStartDelaySeconds >
+								Math.max(maxPreviewStartDelaySeconds, duration * 0.9))
+					? 0
+					: rawStartDelaySeconds;
+			const beforeAudioStart = currentTime + 0.001 < startDelaySeconds;
+			const outputAudioDuration = Math.max(0, duration - startDelaySeconds);
+			const syncRatio = getSourceAudioPreviewSyncRatio(outputAudioDuration, audioDuration);
+			const targetTime = clampMediaTimeToDuration(
+				(currentTime - startDelaySeconds) * syncRatio,
+				audioDuration,
+			);
 
-    lastSourceAudioSyncTimeRef.current = currentTime;
-  }, [
-    currentTime,
-    duration,
-    effectiveSpeedRegions,
-    getSourceTrackPreviewGain,
-    isCurrentClipMuted,
-    isPlaying,
-    previewVolume,
-    resolvedSourceTracks,
-    sourceAudioFallbackStartDelayMsByPath,
-    ensureSourceAudioRunning,
-  ]);
+			const shouldSeek =
+				timelineJumped ||
+				(!isPlaying && Math.abs(audio.currentTime - targetTime) > driftThreshold) ||
+				(isPlaying && Math.abs(audio.currentTime - targetTime) > 0.9);
+			if (shouldSeek) {
+				try {
+					audio.currentTime = targetTime;
+				} catch {
+					// no-op
+				}
+			}
 
-  useEffect(() => {
-    if (!isPlaying || resolvedSourceTracks.length === 0) {
-      return;
-    }
-    void ensureSourceAudioRunning().then(() => {
-      for (const audio of sourceAudioElementsRef.current.values()) {
-        if (audio.paused) {
-          audio.play().catch(() => undefined);
-        }
-      }
-    });
-  }, [isPlaying, resolvedSourceTracks.length, ensureSourceAudioRunning]);
+			// KISS for companion source tracks: fixed playback rate avoids audible flutter/stutter
+			// from continuous micro-corrections on system audio.
+			const syncedPlaybackRate = targetPlaybackRate * syncRatio;
+			if (Math.abs(audio.playbackRate - syncedPlaybackRate) > 0.001) {
+				audio.playbackRate = syncedPlaybackRate;
+			}
 
-  return { playSourceAudioPreview };
+			const atEnd = audioDuration !== null && targetTime >= audioDuration;
+			if (isPlaying && !beforeAudioStart && !atEnd) {
+				void ensureSourceAudioRunning().then(() => {
+					audio
+						.play()
+						.then(() => {
+							markSourceAudioPlaybackConfirmed(sourceAudioPath);
+						})
+						.catch(() => undefined);
+				});
+			} else if (!audio.paused) {
+				audio.pause();
+			}
+		}
+
+		lastSourceAudioSyncTimeRef.current = currentTime;
+	}, [
+		currentTime,
+		duration,
+		effectiveSpeedRegions,
+		getSourceTrackPreviewGain,
+		isCurrentClipMuted,
+		isPlaying,
+		previewVolume,
+		resolvedSourceTracks,
+		sourceAudioFallbackStartDelayMsByPath,
+		sourceAudioDurationSecByPath,
+		ensureSourceAudioRunning,
+		markSourceAudioPlaybackConfirmed,
+	]);
+
+	useEffect(() => {
+		if (!isPlaying || resolvedSourceTracks.length === 0) {
+			return;
+		}
+		void ensureSourceAudioRunning().then(() => {
+			for (const audio of sourceAudioElementsRef.current.values()) {
+				if (audio.paused) {
+					const audioPath = audio.dataset.sourceAudioPath ?? "";
+					audio
+						.play()
+						.then(() => {
+							markSourceAudioPlaybackConfirmed(audioPath);
+						})
+						.catch(() => undefined);
+				}
+			}
+		});
+	}, [
+		isPlaying,
+		resolvedSourceTracks.length,
+		ensureSourceAudioRunning,
+		markSourceAudioPlaybackConfirmed,
+	]);
+
+	const sourceAudioPreviewPlaybackConfirmed = useMemo(
+		() =>
+			resolvedSourceTracks.length > 0 &&
+			resolvedSourceTracks.every((track) =>
+				confirmedSourceAudioPlaybackPaths.has(track.sourceRef.path),
+			),
+		[confirmedSourceAudioPlaybackPaths, resolvedSourceTracks],
+	);
+
+	return { playSourceAudioPreview, sourceAudioPreviewPlaybackConfirmed };
 }

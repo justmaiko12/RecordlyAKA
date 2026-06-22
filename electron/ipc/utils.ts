@@ -113,11 +113,15 @@ export async function getRecordingsDir() {
 	return targetDir;
 }
 
-export function getMacPrivacySettingsUrl(pane: "screen" | "accessibility" | "microphone"): string {
+export function getMacPrivacySettingsUrl(
+	pane: "screen" | "accessibility" | "microphone" | "camera",
+): string {
 	if (pane === "screen")
 		return "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
 	if (pane === "microphone")
 		return "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
+	if (pane === "camera")
+		return "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera";
 	return "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
 }
 
@@ -129,4 +133,3 @@ export function approveUserPath(filePath: string | null | undefined): void {
 		// Ignore invalid paths; later reads will surface the underlying error.
 	}
 }
-

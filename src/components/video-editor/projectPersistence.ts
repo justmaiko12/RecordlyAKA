@@ -114,6 +114,7 @@ export interface ProjectEditorState {
 	zoomOutEasing: ZoomTransitionEasing;
 	connectedZoomEasing: ZoomTransitionEasing;
 	showCursor: boolean;
+	hideCursorInFillFrame: boolean;
 	loopCursor: boolean;
 	cursorStyle: CursorStyle;
 	cursorClickEffect: CursorClickEffectStyle;
@@ -701,6 +702,9 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 						id: region.id,
 						startMs,
 						endMs,
+						sourceStartMs: isFiniteNumber(region.sourceStartMs)
+							? Math.max(0, Math.round(region.sourceStartMs))
+							: undefined,
 						audioPath: typeof region.audioPath === "string" ? region.audioPath : "",
 						volume: isFiniteNumber(region.volume) ? clamp(region.volume, 0, 1) : 1,
 						normalize: Boolean(region.normalize),
@@ -951,6 +955,10 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 			DEFAULT_CONNECTED_ZOOM_EASING,
 		),
 		showCursor: typeof editor.showCursor === "boolean" ? editor.showCursor : true,
+		hideCursorInFillFrame:
+			typeof editor.hideCursorInFillFrame === "boolean"
+				? editor.hideCursorInFillFrame
+				: false,
 		loopCursor: typeof editor.loopCursor === "boolean" ? editor.loopCursor : false,
 		cursorStyle: normalizedCursorStyle,
 		cursorClickEffect: normalizeCursorClickEffectStyle(

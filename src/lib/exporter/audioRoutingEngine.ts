@@ -63,19 +63,20 @@ export function buildResolvedAudioPlan(input: {
 	}
 
 	const hasDedicatedTracks = Boolean(pathsByTrack.system || pathsByTrack.mic);
+	const hasCompanionSidecar = hasDedicatedTracks || Boolean(pathsByTrack.mixed);
 	const playbackPaths: string[] = [];
 	if (pathsByTrack.system) playbackPaths.push(pathsByTrack.system);
 	if (pathsByTrack.mic) playbackPaths.push(pathsByTrack.mic);
 	if (!hasDedicatedTracks && pathsByTrack.mixed) playbackPaths.push(pathsByTrack.mixed);
 
-	const includeEmbeddedInExport = !pathsByTrack.system && !pathsByTrack.mixed;
+	const includeEmbeddedInExport = !hasCompanionSidecar;
 	const resolvedRegions = (input.audioRegions ?? []).slice().sort((a, b) => a.startMs - b.startMs);
 	const tracks: ResolvedAudioTrack[] = resolvedRegions.map((region) => ({
 		id: `user:${region.id}`,
 		kind: "user",
 		sourceRef: {
 			path: region.audioPath,
-			startDelayMs: 0,
+			startDelayMs: Math.max(0, region.sourceStartMs ?? 0),
 		},
 		gain: clampGain(region.volume * (region.normalize ? SOURCE_AUDIO_NORMALIZE_GAIN : 1), 1),
 		timelineBinding: {
@@ -122,8 +123,8 @@ export function buildResolvedAudioPlan(input: {
 		pathsByTrack,
 		playbackPaths,
 		// Mute embedded preview in two situations:
-		// 1. !includeEmbeddedInExport: a system or mixed sidecar supersedes the
-		//    embedded audio, so the sidecars are the canonical playback source.
+		// 1. !includeEmbeddedInExport: a sidecar supersedes the embedded audio,
+		//    so the sidecars are the canonical playback source.
 		// 2. !hasEmbeddedSourceAudio: the video path was not listed as a distinct
 		//    audio source; on macOS mic-only recordings the inline track duplicates
 		//    the .mic sidecar, and playing both echoes the voice.

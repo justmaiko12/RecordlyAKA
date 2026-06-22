@@ -6,6 +6,8 @@ import {
 } from "@/lib/webcamProcessing/webcamProcessor";
 import type { WebcamOverlaySettings } from "../types";
 
+const FRAME_CALLBACK_STALL_REPAINT_MS = 250;
+
 /**
  * Drives the processed (greenscreen/mask/color) webcam preview canvas in the
  * editor. The hidden <video> element stays the time/sync driver; whenever it
@@ -114,6 +116,8 @@ export function useProcessedWebcamPreview({
 		let disposed = false;
 		let rvfcHandle: number | null = null;
 		let rafHandle: number | null = null;
+		let fallbackInterval: number | null = null;
+		let lastRenderedAt = 0;
 
 		const renderFrame = () => {
 			const width = video.videoWidth;
@@ -131,20 +135,27 @@ export function useProcessedWebcamPreview({
 						"[webcam-preview] WebGL unavailable; showing unprocessed webcam preview",
 					);
 				}
-				return;
 			}
 			if (canvas.width !== width || canvas.height !== height) {
 				canvas.width = width;
 				canvas.height = height;
 			}
 			const ctx = canvas.getContext("2d");
-			ctx?.drawImage(processed, 0, 0);
+			ctx?.drawImage(processed ?? video, 0, 0);
+			lastRenderedAt = Date.now();
 		};
 		renderOnceRef.current = renderFrame;
 
 		// The first draw can race the video's readiness (blank camera until the
 		// next settings change); repaint whenever the element becomes drawable.
-		const readinessEvents = ["loadeddata", "canplay", "seeked"] as const;
+		const readinessEvents = [
+			"loadeddata",
+			"canplay",
+			"seeked",
+			"timeupdate",
+			"playing",
+			"ratechange",
+		] as const;
 		for (const eventName of readinessEvents) {
 			video.addEventListener(eventName, renderFrame);
 		}
@@ -170,6 +181,12 @@ export function useProcessedWebcamPreview({
 		// the video's presented frames.
 		renderFrame();
 		scheduleNext();
+		fallbackInterval = window.setInterval(() => {
+			if (disposed || Date.now() - lastRenderedAt < FRAME_CALLBACK_STALL_REPAINT_MS) {
+				return;
+			}
+			renderFrame();
+		}, FRAME_CALLBACK_STALL_REPAINT_MS);
 
 		return () => {
 			disposed = true;
@@ -184,6 +201,9 @@ export function useProcessedWebcamPreview({
 			}
 			if (rafHandle !== null) {
 				cancelAnimationFrame(rafHandle);
+			}
+			if (fallbackInterval !== null) {
+				window.clearInterval(fallbackInterval);
 			}
 		};
 	}, [processingActive, elementsReady, videoPath, resolved, mirrored, videoRef, canvasRef]);

@@ -614,6 +614,7 @@ export interface AudioRegion {
 	id: string;
 	startMs: number;
 	endMs: number;
+	sourceStartMs?: number;
 	audioPath: string;
 	volume: number;
 	normalize?: boolean;

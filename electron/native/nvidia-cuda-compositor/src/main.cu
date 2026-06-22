@@ -1081,6 +1081,44 @@ __device__ bool isInsideRoundedRect(
     return dx * dx + dy * dy <= radius * radius;
 }
 
+__device__ bool isInsideSquircleRect(
+    int x,
+    int y,
+    int left,
+    int top,
+    int width,
+    int height,
+    int radius) {
+    if (x < left || y < top || x >= left + width || y >= top + height) {
+        return false;
+    }
+    if (radius <= 0) {
+        return true;
+    }
+
+    const float halfWidth = static_cast<float>(width) * 0.5f;
+    const float halfHeight = static_cast<float>(height) * 0.5f;
+    const float safeRadius = fminf(
+        static_cast<float>(radius),
+        fminf(halfWidth, halfHeight));
+    if (safeRadius <= 0.5f) {
+        return true;
+    }
+
+    const float px = fabsf(static_cast<float>(x) + 0.5f - (static_cast<float>(left) + halfWidth));
+    const float py = fabsf(static_cast<float>(y) + 0.5f - (static_cast<float>(top) + halfHeight));
+    const float qx = px - halfWidth + safeRadius;
+    const float qy = py - halfHeight + safeRadius;
+    const float outsideX = fmaxf(qx, 0.0f);
+    const float outsideY = fmaxf(qy, 0.0f);
+    const float squircleExponent = 4.5f;
+    const float outside =
+        powf(powf(outsideX, squircleExponent) + powf(outsideY, squircleExponent), 1.0f / squircleExponent) -
+        safeRadius;
+    const float distance = outside + fminf(fmaxf(qx, qy), 0.0f);
+    return distance <= 0.0f;
+}
+
 __global__ void overlayContentRectNv12Kernel(
     const unsigned char* src,
     int srcPitch,
@@ -1575,7 +1613,7 @@ __global__ void compositeStaticNv12Kernel(
             outY = static_cast<unsigned char>((static_cast<int>(outY) * (100 - darkenPct)) / 100);
         }
     }
-    if (webcam && isInsideRoundedRect(x, y, webcamX, webcamY, webcamSize, webcamSize, webcamRadius)) {
+    if (webcam && isInsideSquircleRect(x, y, webcamX, webcamY, webcamSize, webcamSize, webcamRadius)) {
         const int localX = max(0, min(webcamSize - 1, x - webcamX));
         const int localY = max(0, min(webcamSize - 1, y - webcamY));
         const int sampleX = min(webcamFrameWidth - 1, (localX * webcamFrameWidth) / webcamSize);
@@ -1677,7 +1715,7 @@ __global__ void compositeStaticNv12Kernel(
             }
         }
         if (webcam &&
-            isInsideRoundedRect(
+            isInsideSquircleRect(
                 x + 1,
                 y + 1,
                 webcamX,
@@ -1787,7 +1825,7 @@ __global__ void overlayWebcamNv12Kernel(
         return;
     }
 
-    if (isInsideRoundedRect(x, y, webcamX, webcamY, webcamSize, webcamSize, webcamRadius)) {
+    if (isInsideSquircleRect(x, y, webcamX, webcamY, webcamSize, webcamSize, webcamRadius)) {
         const int webcamLocalX = max(0, min(webcamSize - 1, x - webcamX));
         const int webcamLocalY = max(0, min(webcamSize - 1, y - webcamY));
         const int sampleX = min(webcamFrameWidth - 1, (webcamLocalX * webcamFrameWidth) / webcamSize);
@@ -1797,7 +1835,7 @@ __global__ void overlayWebcamNv12Kernel(
     }
 
     if ((x % 2) == 0 && (y % 2) == 0 && x + 1 < dstWidth && y + 1 < dstHeight &&
-        isInsideRoundedRect(x + 1, y + 1, webcamX, webcamY, webcamSize, webcamSize, webcamRadius)) {
+        isInsideSquircleRect(x + 1, y + 1, webcamX, webcamY, webcamSize, webcamSize, webcamRadius)) {
         const int uvLocalX = max(0, min(webcamSize - 1, x + 1 - webcamX));
         const int uvLocalY = max(0, min(webcamSize - 1, y + 1 - webcamY));
         const int uvSampleX = min(webcamFrameWidth - 1, (uvLocalX * webcamFrameWidth) / webcamSize);

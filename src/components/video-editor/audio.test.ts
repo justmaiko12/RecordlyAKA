@@ -163,6 +163,40 @@ describe("Audio region normalization", () => {
 			expect(result.audioRegions[0].endMs).toBeGreaterThan(result.audioRegions[0].startMs);
 		});
 
+		it("preserves non-negative sourceStartMs for synced external camera audio", () => {
+			const result = normalizeProjectEditor({
+				audioRegions: [
+					{
+						id: "audio-1",
+						startMs: 0,
+						endMs: 1000,
+						sourceStartMs: 750,
+						audioPath: "/test.mp4",
+						volume: 1,
+					},
+				],
+			} as any);
+
+			expect(result.audioRegions[0].sourceStartMs).toBe(750);
+		});
+
+		it("clamps negative sourceStartMs to zero", () => {
+			const result = normalizeProjectEditor({
+				audioRegions: [
+					{
+						id: "audio-1",
+						startMs: 0,
+						endMs: 1000,
+						sourceStartMs: -500,
+						audioPath: "/test.mp4",
+						volume: 1,
+					},
+				],
+			} as any);
+
+			expect(result.audioRegions[0].sourceStartMs).toBe(0);
+		});
+
 		it("should preserve valid startMs/endMs for arbitrary non-negative values", () => {
 			fc.assert(
 				fc.property(

@@ -3,6 +3,8 @@ import {
 	computePaddedLayout,
 	type PaddedLayoutResult,
 	scalePreviewBorderRadius,
+	scalePreviewMarginForCanvas,
+	scalePreviewRadiusForCanvas,
 } from "./layoutUtils";
 
 describe("scalePreviewBorderRadius", () => {
@@ -16,6 +18,50 @@ describe("scalePreviewBorderRadius", () => {
 		expect(scalePreviewBorderRadius(0, 540, 16)).toBe(0);
 		expect(scalePreviewBorderRadius(960, 0, 16)).toBe(0);
 		expect(scalePreviewBorderRadius(960, 540, -8)).toBe(0);
+	});
+
+	it("can scale a radius from the actual timeline preview size into export size", () => {
+		expect(
+			scalePreviewRadiusForCanvas({
+				width: 1920,
+				height: 1080,
+				previewWidth: 960,
+				previewHeight: 540,
+				radius: 90,
+			}),
+		).toBeCloseTo(180, 6);
+		expect(
+			scalePreviewRadiusForCanvas({
+				width: 1280,
+				height: 720,
+				previewWidth: 1920,
+				previewHeight: 1080,
+				radius: 90,
+			}),
+		).toBeCloseTo(60, 6);
+	});
+});
+
+describe("scalePreviewMarginForCanvas", () => {
+	it("scales webcam margin from the timeline preview canvas into export canvas pixels", () => {
+		expect(
+			scalePreviewMarginForCanvas({
+				width: 1920,
+				height: 1080,
+				previewWidth: 960,
+				previewHeight: 540,
+				margin: 24,
+			}),
+		).toBeCloseTo(48, 6);
+		expect(
+			scalePreviewMarginForCanvas({
+				width: 1280,
+				height: 720,
+				previewWidth: 1920,
+				previewHeight: 1080,
+				margin: 24,
+			}),
+		).toBeCloseTo(16, 6);
 	});
 });
 

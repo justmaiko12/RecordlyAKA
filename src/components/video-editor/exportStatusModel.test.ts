@@ -24,7 +24,26 @@ describe("resolveExportStatusModel", () => {
 		expect(status.isExportPreparing).toBe(true);
 		expect(status.isLightningExportInProgress).toBe(true);
 		expect(status.shouldSuspendPreviewRendering).toBe(true);
+		expect(status.shouldBlockEditorInteractions).toBe(true);
 		expect(status.renderSpeedFps).toBeNull();
+	});
+
+	it("blocks editor interaction for every active export format", () => {
+		const gifStatus = resolveExportStatusModel({
+			isExporting: true,
+			exportProgress: progress(),
+			exportFormat: "gif",
+			exportPipelineModel: "legacy",
+		});
+		const idleStatus = resolveExportStatusModel({
+			isExporting: false,
+			exportProgress: null,
+			exportFormat: "mp4",
+			exportPipelineModel: "modern",
+		});
+
+		expect(gifStatus.shouldBlockEditorInteractions).toBe(true);
+		expect(idleStatus.shouldBlockEditorInteractions).toBe(false);
 	});
 
 	it("marks legacy MP4 progress separately from the modern path", () => {

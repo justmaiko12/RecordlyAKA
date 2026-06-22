@@ -20,6 +20,8 @@ function createExporter(overrides: Record<string, unknown> = {}) {
 		electronAPI: {
 			nativeStaticLayoutExport: vi.fn(),
 			nativeStaticLayoutExportCancel: vi.fn(),
+			muxExportedVideoAudio: vi.fn(),
+			muxExportedVideoAudioFromPath: vi.fn(),
 		},
 	});
 
@@ -58,6 +60,13 @@ function createExporter(overrides: Record<string, unknown> = {}) {
 			videoInfo: DecodedVideoInfo,
 			effectiveDurationSec: number,
 		) => string[];
+		getNativeStaticLayoutWebcamOverlay: () => {
+			inputPath: string;
+			left: number;
+			top: number;
+			size: number;
+			radius: number;
+		} | null;
 		getNativeStaticLayoutSourceCrop: (videoInfo: DecodedVideoInfo) => {
 			x: number;
 			y: number;
@@ -69,6 +78,11 @@ function createExporter(overrides: Record<string, unknown> = {}) {
 			ctx: CanvasRenderingContext2D,
 			wallpaper: string,
 		) => CanvasGradient | null;
+		shouldUseRendererFfmpegAudioFallback: (
+			audioPlan: unknown,
+			requiresFfmpegAudio: boolean,
+			browserAacSupported: boolean,
+		) => boolean;
 	};
 }
 
@@ -106,6 +120,58 @@ describe("ModernVideoExporter native static-layout eligibility", () => {
 			audioMode: "copy-source",
 			audioSourceCodec: "opus",
 		});
+	});
+
+	it("routes Electron renderer copy-source audio through FFmpeg muxing", () => {
+		const exporter = createExporter();
+
+		expect(
+			exporter.shouldUseRendererFfmpegAudioFallback(
+				{
+					audioMode: "copy-source",
+					audioSourcePath: "recording.mp4",
+				},
+				false,
+				true,
+			),
+		).toBe(true);
+	});
+
+	it("keeps browser AAC as the non-Electron fallback for simple copy-source audio", () => {
+		vi.stubGlobal("window", { electronAPI: {} });
+		const exporter = createExporter();
+		vi.stubGlobal("window", { electronAPI: {} });
+
+		expect(
+			exporter.shouldUseRendererFfmpegAudioFallback(
+				{
+					audioMode: "copy-source",
+					audioSourcePath: "recording.mp4",
+				},
+				false,
+				true,
+			),
+		).toBe(false);
+	});
+
+	it("always routes filtergraph-only audio plans through FFmpeg muxing", () => {
+		vi.stubGlobal("window", { electronAPI: {} });
+		const exporter = createExporter();
+		vi.stubGlobal("window", { electronAPI: {} });
+
+		expect(
+			exporter.shouldUseRendererFfmpegAudioFallback(
+				{
+					audioMode: "edited-track",
+					strategy: "filtergraph-fast-path",
+					audioSourcePath: "recording.mp4",
+					audioSourceSampleRate: 48_000,
+					editedTrackSegments: [{ startMs: 0, endMs: 10_000, speed: 1 }],
+				},
+				true,
+				true,
+			),
+		).toBe(true);
 	});
 
 	it("allows native static-layout for H.264 source metadata", () => {
@@ -186,6 +252,31 @@ describe("ModernVideoExporter native static-layout eligibility", () => {
 			audioMode: "edited-track",
 			strategy: "offline-render-fallback",
 			sourceAudioFallbackPaths: [audioPath],
+		});
+	});
+
+	it("does not treat browser mic WAV metadata as a separate native export delay", () => {
+		const audioPath = "C:\\recordly\\recording.mic.wav";
+		const speedRegions: SpeedRegion[] = [
+			{ id: "speed-1", startMs: 1_000, endMs: 4_000, speed: 1.5 },
+		];
+		const exporter = createExporter({
+			speedRegions,
+			sourceAudioFallbackPaths: [audioPath],
+			sourceAudioFallbackStartDelayMsByPath: { [audioPath]: 250 },
+		});
+
+		expect(
+			exporter.buildNativeAudioPlan({
+				...videoInfo,
+				hasAudio: false,
+				audioCodec: undefined,
+				audioSampleRate: undefined,
+			}),
+		).toMatchObject({
+			audioMode: "edited-track",
+			strategy: "filtergraph-fast-path",
+			audioSourcePath: audioPath,
 		});
 	});
 
@@ -407,6 +498,33 @@ describe("ModernVideoExporter native static-layout eligibility", () => {
 		expect(
 			exporter.getNativeStaticLayoutSkipReasons({ audioMode: "none" }, videoInfo, 60),
 		).toEqual(["unsupported-webcam-layout-regions"]);
+	});
+
+	it("scales webcam margin and corner radius from preview pixels before native export", () => {
+		const exporter = createExporter({
+			previewWidth: 960,
+			previewHeight: 540,
+			webcam: {
+				enabled: true,
+				sourcePath: "file:///C:/recordly/webcam.mp4",
+				size: 40,
+				margin: 24,
+				corner: "bottom-right",
+				positionPreset: "bottom-right",
+				positionX: 1,
+				positionY: 1,
+				cornerRadius: 90,
+				shadow: 0.65,
+				mirror: true,
+			},
+		});
+
+		expect(exporter.getNativeStaticLayoutWebcamOverlay()).toMatchObject({
+			left: 1440,
+			top: 600,
+			size: 432,
+			radius: 180,
+		});
 	});
 
 	it("reports invalid crop geometry instead of passing native export bad coordinates", () => {

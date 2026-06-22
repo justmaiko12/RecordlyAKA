@@ -302,9 +302,10 @@ function AudioItemWithWaveform({
 }: AudioItemWithWaveformProps) {
 	const { peaks } = useTimelineAudioPeaks(item.audioPath ?? null);
 	const normalizedWaveformSpan = useMemo(() => {
+		const sourceStart = Math.max(0, item.audioSourceStartMs ?? 0);
 		const duration = Math.max(0, waveformSpan.end - waveformSpan.start);
-		return { start: 0, end: duration };
-	}, [waveformSpan.end, waveformSpan.start]);
+		return { start: sourceStart, end: sourceStart + duration };
+	}, [item.audioSourceStartMs, waveformSpan.end, waveformSpan.start]);
 	return (
 		<Item
 			id={item.id}

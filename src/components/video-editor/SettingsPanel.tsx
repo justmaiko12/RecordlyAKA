@@ -762,6 +762,8 @@ interface SettingsPanelProps {
 	onConnectedZoomEasingChange?: (easing: ZoomTransitionEasing) => void;
 	showCursor?: boolean;
 	onShowCursorChange?: (enabled: boolean) => void;
+	hideCursorInFillFrame?: boolean;
+	onHideCursorInFillFrameChange?: (enabled: boolean) => void;
 	loopCursor?: boolean;
 	onLoopCursorChange?: (enabled: boolean) => void;
 	cursorStyle?: CursorStyle;
@@ -1207,6 +1209,8 @@ export function SettingsPanel({
 	onZoomOutDurationMsChange,
 	showCursor = false,
 	onShowCursorChange,
+	hideCursorInFillFrame = false,
+	onHideCursorInFillFrameChange,
 	loopCursor = false,
 	onLoopCursorChange,
 	cursorStyle = DEFAULT_CURSOR_STYLE,
@@ -1851,6 +1855,7 @@ export function SettingsPanel({
 
 	const resetCursorSection = () => {
 		onShowCursorChange?.(initialEditorPreferences.showCursor);
+		onHideCursorInFillFrameChange?.(initialEditorPreferences.hideCursorInFillFrame);
 		onLoopCursorChange?.(initialEditorPreferences.loopCursor);
 		onCursorStyleChange?.(initialEditorPreferences.cursorStyle);
 		onCursorSizeChange?.(initialEditorPreferences.cursorSize);
@@ -3687,6 +3692,14 @@ export function SettingsPanel({
 									/>
 								</label>
 								<label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+									<span>{tSettings("effects.cursorFramedOnly", "Framed only")}</span>
+									<Switch
+										checked={hideCursorInFillFrame}
+										onCheckedChange={onHideCursorInFillFrameChange}
+										className="data-[state=checked]:bg-[#2563EB] scale-75"
+									/>
+								</label>
+								<label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
 									<span>{tSettings("effects.loopCursor")}</span>
 									<Switch
 										checked={loopCursor}
@@ -3974,6 +3987,22 @@ export function SettingsPanel({
 									className="data-[state=checked]:bg-[#2563EB] scale-75"
 								/>
 							</div>
+							<SliderControl
+								label={tSettings("effects.webcamSync", "Webcam Sync")}
+								value={webcam?.timeOffsetMs ?? 0}
+								defaultValue={0}
+								min={-1000}
+								max={1000}
+								step={25}
+								onChange={(v) => updateWebcam({ timeOffsetMs: Math.round(v) })}
+								formatValue={(v) => `${v > 0 ? "+" : ""}${Math.round(v)}ms`}
+								parseInput={(text) => {
+									const value = parseFloat(
+										text.replace(/ms$/i, "").replace(/^\+/, ""),
+									);
+									return Number.isFinite(value) ? value : null;
+								}}
+							/>
 							{!playheadInCameraFull && (
 								<SliderControl
 									label={tSettings("effects.webcamSize")}

@@ -21,10 +21,68 @@ export interface DecodedVideoInfo {
 	hasAudio: boolean;
 	audioCodec?: string;
 	audioSampleRate?: number;
+	audioDuration?: number;
 }
 
 interface StreamingVideoDecoderLoadOptions {
 	forceReadableFileSource?: boolean;
+}
+
+type EarlyDecodeEndCheck = {
+	cancelled: boolean;
+	lastDecodedFrameSec: number | null;
+	requiredEndSec: number;
+	streamDurationSec?: number;
+	renderedFrames: number;
+	expectedFrames: number;
+};
+
+const EARLY_DECODE_END_THRESHOLD_SEC = 1;
+const METADATA_TAIL_TOLERANCE_SEC = 1.5;
+const STREAM_DURATION_MATCH_TOLERANCE_SEC = 0.25;
+
+export function shouldFailDecodeEndedEarly({
+	cancelled,
+	lastDecodedFrameSec,
+	requiredEndSec,
+	streamDurationSec,
+	renderedFrames,
+	expectedFrames,
+}: EarlyDecodeEndCheck): boolean {
+	if (cancelled || requiredEndSec <= 0 || expectedFrames <= 0) {
+		return false;
+	}
+
+	if (renderedFrames >= expectedFrames) {
+		return false;
+	}
+
+	if (lastDecodedFrameSec === null) {
+		return true;
+	}
+
+	const decodeGapSec = requiredEndSec - lastDecodedFrameSec;
+	if (decodeGapSec <= EARLY_DECODE_END_THRESHOLD_SEC) {
+		return false;
+	}
+
+	if (typeof streamDurationSec !== "number" || !Number.isFinite(streamDurationSec)) {
+		return true;
+	}
+
+	const metadataTailSec = requiredEndSec - streamDurationSec;
+	const decodedNearStreamEnd =
+		Math.abs(lastDecodedFrameSec - streamDurationSec) <= STREAM_DURATION_MATCH_TOLERANCE_SEC;
+
+	if (
+		decodedNearStreamEnd &&
+		metadataTailSec > 0 &&
+		metadataTailSec <= METADATA_TAIL_TOLERANCE_SEC
+	) {
+		return false;
+	}
+
+	return true;
 }
 
 /** Decoder retains ownership of the VideoFrame and closes it after use. */
@@ -186,6 +244,10 @@ export class StreamingVideoDecoder {
 			audioSampleRate:
 				typeof audioStream?.sample_rate === "string"
 					? Number.parseInt(audioStream.sample_rate, 10)
+					: undefined,
+			audioDuration:
+				typeof audioStream?.duration === "number" && Number.isFinite(audioStream.duration)
+					? audioStream.duration
 					: undefined,
 		};
 
@@ -556,14 +618,18 @@ export class StreamingVideoDecoder {
 		this.decoder = null;
 
 		const requiredEndSec = segments.length > 0 ? segments[segments.length - 1].endSec : 0;
-		if (
-			!this.cancelled &&
-			lastDecodedFrameSec !== null &&
-			requiredEndSec - lastDecodedFrameSec > 1 &&
-			exportFrameIndex < expectedOutputFrames
-		) {
+		if (shouldFailDecodeEndedEarly({
+			cancelled: this.cancelled,
+			lastDecodedFrameSec,
+			requiredEndSec,
+			streamDurationSec: this.metadata.streamDuration,
+			renderedFrames: exportFrameIndex,
+			expectedFrames: expectedOutputFrames,
+		})) {
+			const decodedAtLabel =
+				lastDecodedFrameSec === null ? "before any usable frame" : `${lastDecodedFrameSec.toFixed(3)}s`;
 			throw new Error(
-				`Video decode ended early at ${lastDecodedFrameSec.toFixed(3)}s (needed ${requiredEndSec.toFixed(3)}s; rendered ${exportFrameIndex}/${expectedOutputFrames} frames).`,
+				`Video decode ended early at ${decodedAtLabel} (needed ${requiredEndSec.toFixed(3)}s; rendered ${exportFrameIndex}/${expectedOutputFrames} frames).`,
 			);
 		}
 	}

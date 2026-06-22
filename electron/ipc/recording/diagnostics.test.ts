@@ -247,6 +247,28 @@ describe("getCompanionAudioFallbackPaths", () => {
 		});
 	});
 
+	it("uses packet counts as frame cadence evidence when frame counts are absent", async () => {
+		const { parseFfprobeVideoStreamDuration } = await import("./diagnostics");
+
+		expect(
+			parseFfprobeVideoStreamDuration(
+				JSON.stringify({
+					streams: [
+						{
+							duration: "600.000000",
+							nb_read_packets: "18000",
+							avg_frame_rate: "30/1",
+						},
+					],
+				}),
+			),
+		).toEqual({
+			durationSeconds: 600,
+			frameCount: 18000,
+			frameRate: 30,
+		});
+	});
+
 	it("writes a recording diagnostics sidecar with stream and audio probes", async () => {
 		const videoPath = path.join(tempRoot, "recording-123.mp4");
 		const micPath = path.join(tempRoot, "recording-123.mic.wav");

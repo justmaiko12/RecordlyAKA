@@ -9,12 +9,14 @@ import { promisify } from "node:util";
 import type { WebContents } from "electron";
 import { app, powerSaveBlocker } from "electron";
 import { getFfmpegBinaryPath, getFfprobeBinaryPath } from "../ffmpeg/binary";
+import { buildAtempoFilters, getAudioSyncAdjustment } from "../ffmpeg/filters";
 import type {
 	NativeExportEncodingMode,
 	NativeStaticLayoutBackend,
 	NativeStaticLayoutExportArgsConfig,
 	NativeVideoAudioMuxMetrics,
 	NativeVideoExportAudioMode,
+	NativeVideoExportAudioSegment,
 	NativeVideoExportEditedTrackSegment,
 	NativeVideoExportFinishOptions,
 } from "../nativeVideoExport";
@@ -54,6 +56,7 @@ const NATIVE_STATIC_LAYOUT_SOURCE_PROXY_REFERENCE_PIXEL_RATE = 1920 * 1080 * 30;
 const NATIVE_STATIC_LAYOUT_SOURCE_PROXY_1080P30_BITRATE = 24_000_000;
 const NATIVE_STATIC_LAYOUT_SOURCE_PROXY_MAX_BITRATE = 80_000_000;
 const NATIVE_STATIC_LAYOUT_SOURCE_PROXY_CONTAINERS = new Set([".mp4", ".m4v", ".mov"]);
+export const NATIVE_VIDEO_AUDIO_MUX_SYNC_TOLERANCE_SECONDS = 0.05;
 
 type ElectronGpuDeviceLike = {
 	vendorId?: number | string;
@@ -145,7 +148,12 @@ export interface NativeStaticLayoutExportOptions {
 		aspectRatio: number;
 	}>;
 	cursorAtlasMetadataPath?: string | null;
-	zoomTelemetry?: Array<{ timeMs: number; scale: number; x: number; y: number }>;
+	zoomTelemetry?: Array<{
+		timeMs: number;
+		scale: number;
+		x: number;
+		y: number;
+	}>;
 	zoomTelemetryPath?: string | null;
 	timelineSegments?: NativeStaticLayoutTimelineSegment[];
 	timelineMapPath?: string | null;
@@ -296,6 +304,7 @@ export interface NativeVideoMetadataProbe {
 	hasAudio: boolean;
 	audioCodec?: string;
 	audioSampleRate?: number;
+	audioDuration?: number;
 }
 
 export interface NativeVideoStreamStatsProbe {
@@ -474,6 +483,24 @@ export function validateNvidiaCudaExportSummary(
 			)}s differs from expected ${expectedDurationSec.toFixed(3)}s`,
 		);
 	}
+	if (
+		expected.requiresTimelineSync &&
+		outputVideoDurationSec !== null &&
+		outputAudioDurationSec !== null &&
+		outputAudioDurationSec > 0
+	) {
+		const audioVideoDurationDriftSec =
+			Math.round(Math.abs(outputAudioDurationSec - outputVideoDurationSec) * 1000) / 1000;
+		if (audioVideoDurationDriftSec > NATIVE_VIDEO_AUDIO_MUX_SYNC_TOLERANCE_SECONDS) {
+			issues.push(
+				`output audio/video duration drift ${audioVideoDurationDriftSec.toFixed(
+					3,
+				)}s exceeds sync tolerance ${NATIVE_VIDEO_AUDIO_MUX_SYNC_TOLERANCE_SECONDS.toFixed(
+					3,
+				)}s`,
+			);
+		}
+	}
 
 	return issues;
 }
@@ -535,6 +562,12 @@ function parseOptionalPositiveNumber(value: unknown) {
 	const parsed =
 		typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseOptionalFiniteNumber(value: unknown) {
+	const parsed =
+		typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+	return Number.isFinite(parsed) ? parsed : null;
 }
 
 function parseOptionalPositiveInteger(value: unknown) {
@@ -1018,10 +1051,139 @@ export function parseNativeVideoMetadataProbeOutput(
 	};
 }
 
+type FfprobeMetadataStream = {
+	codec_type?: unknown;
+	codec_name?: unknown;
+	profile?: unknown;
+	width?: unknown;
+	height?: unknown;
+	duration?: unknown;
+	start_time?: unknown;
+	avg_frame_rate?: unknown;
+	r_frame_rate?: unknown;
+	sample_rate?: unknown;
+};
+
+function formatFfprobeCodec(stream: FfprobeMetadataStream | undefined) {
+	const codecName = typeof stream?.codec_name === "string" ? stream.codec_name.trim() : "";
+	const profile = typeof stream?.profile === "string" ? stream.profile.trim() : "";
+	if (!codecName) {
+		return "unknown";
+	}
+	return profile ? `${codecName} (${profile})` : codecName;
+}
+
+export function parseNativeVideoMetadataProbeJsonOutput(
+	output: string,
+): NativeVideoMetadataProbe | null {
+	let parsed: {
+		format?: {
+			duration?: unknown;
+			start_time?: unknown;
+		};
+		streams?: FfprobeMetadataStream[];
+	};
+	try {
+		parsed = JSON.parse(output);
+	} catch {
+		return null;
+	}
+
+	const streams = Array.isArray(parsed.streams) ? parsed.streams : [];
+	const videoStream = streams.find((stream) => stream.codec_type === "video");
+	if (!videoStream) {
+		return null;
+	}
+
+	const width = parseOptionalPositiveInteger(videoStream.width);
+	const height = parseOptionalPositiveInteger(videoStream.height);
+	if (width === null || height === null) {
+		return null;
+	}
+
+	const formatDuration = parseOptionalPositiveNumber(parsed.format?.duration);
+	const videoDuration = parseOptionalPositiveNumber(videoStream.duration);
+	const duration = videoDuration ?? formatDuration;
+	if (duration === null) {
+		return null;
+	}
+
+	const mediaStartTime = parseOptionalFiniteNumber(parsed.format?.start_time) ?? 0;
+	const streamStartTime = parseOptionalFiniteNumber(videoStream.start_time) ?? mediaStartTime;
+	const frameRate =
+		parseRationalFrameRate(videoStream.avg_frame_rate) ??
+		parseRationalFrameRate(videoStream.r_frame_rate) ??
+		60;
+	const audioStream = streams.find((stream) => stream.codec_type === "audio");
+	const audioSampleRate = audioStream
+		? (parseOptionalPositiveInteger(audioStream.sample_rate) ?? undefined)
+		: undefined;
+	const audioDuration = audioStream
+		? (parseOptionalPositiveNumber(audioStream.duration) ?? undefined)
+		: undefined;
+
+	return {
+		width,
+		height,
+		duration,
+		mediaStartTime,
+		streamStartTime,
+		streamDuration: videoDuration ?? duration,
+		frameRate,
+		codec: formatFfprobeCodec(videoStream),
+		hasAudio: Boolean(audioStream),
+		audioCodec: audioStream ? formatFfprobeCodec(audioStream) : undefined,
+		audioSampleRate,
+		audioDuration,
+	};
+}
+
+export function parseNativeAudioDurationProbeJsonOutput(output: string): number | null {
+	let parsed: {
+		format?: {
+			duration?: unknown;
+		};
+		streams?: FfprobeMetadataStream[];
+	};
+	try {
+		parsed = JSON.parse(output);
+	} catch {
+		return null;
+	}
+
+	const streams = Array.isArray(parsed.streams) ? parsed.streams : [];
+	const audioStream = streams.find((stream) => stream.codec_type === "audio");
+	if (!audioStream) {
+		return null;
+	}
+
+	return (
+		parseOptionalPositiveNumber(audioStream.duration) ??
+		parseOptionalPositiveNumber(parsed.format?.duration)
+	);
+}
+
 export async function probeNativeVideoMetadata(
 	ffmpegPath: string,
 	inputPath: string,
 ): Promise<NativeVideoMetadataProbe> {
+	try {
+		const result = await execFileAsync(
+			getFfprobeBinaryPath(),
+			["-v", "error", "-print_format", "json", "-show_format", "-show_streams", inputPath],
+			{
+				timeout: 30_000,
+				maxBuffer: 8 * 1024 * 1024,
+			},
+		);
+		const metadata = parseNativeVideoMetadataProbeJsonOutput(result.stdout);
+		if (metadata) {
+			return metadata;
+		}
+	} catch {
+		// Fall through to the legacy ffmpeg stderr parser below.
+	}
+
 	let output = "";
 	try {
 		const result = await execFileAsync(ffmpegPath, ["-hide_banner", "-i", inputPath], {
@@ -1045,6 +1207,22 @@ export async function probeNativeVideoMetadata(
 	}
 
 	return metadata;
+}
+
+export async function probeNativeAudioDurationSeconds(inputPath: string): Promise<number | null> {
+	try {
+		const result = await execFileAsync(
+			getFfprobeBinaryPath(),
+			["-v", "error", "-print_format", "json", "-show_format", "-show_streams", inputPath],
+			{
+				timeout: 30_000,
+				maxBuffer: 8 * 1024 * 1024,
+			},
+		);
+		return parseNativeAudioDurationProbeJsonOutput(result.stdout);
+	} catch {
+		return null;
+	}
 }
 
 export async function probeNativeVideoStreamStats(
@@ -3775,7 +3953,10 @@ export async function exportNativeStaticLayoutVideo(
 				const concatStartedAt = getNowMs();
 				const concatResult = await runFfmpegWithMetrics(
 					ffmpegPath,
-					buildNativeConcatArgs({ listPath: concatListPath, outputPath: videoOnlyPath }),
+					buildNativeConcatArgs({
+						listPath: concatListPath,
+						outputPath: videoOnlyPath,
+					}),
 					15 * 60 * 1000,
 					session,
 				);
@@ -3987,6 +4168,106 @@ export function canCopyAudioCodecIntoMp4(codec?: string | null) {
 	);
 }
 
+function hasPositiveDurationSeconds(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+export function getCopySourceAudioSyncFailureMessage(
+	outputDurationSec: number,
+	audioDurationSec: number | null | undefined,
+) {
+	if (
+		!hasPositiveDurationSeconds(outputDurationSec) ||
+		!hasPositiveDurationSeconds(audioDurationSec)
+	) {
+		return null;
+	}
+
+	const driftSec = roundNativeMuxSyncSeconds(outputDurationSec - audioDurationSec);
+	if (driftSec <= NATIVE_VIDEO_AUDIO_MUX_SYNC_TOLERANCE_SECONDS) {
+		return null;
+	}
+
+	const adjustment = getAudioSyncAdjustment(outputDurationSec, audioDurationSec);
+	if (adjustment.mode === "tempo") {
+		return null;
+	}
+
+	return `Copy-source audio/video mismatch is too large to export safely: video=${outputDurationSec.toFixed(3)}s audio=${audioDurationSec.toFixed(3)}s drift=${driftSec.toFixed(3)}s`;
+}
+
+function getMaxSegmentEndSeconds(segments: Array<Pick<NativeVideoExportAudioSegment, "endMs">>) {
+	const maxEndMs = segments.reduce((max, segment) => {
+		const endMs = Number(segment.endMs);
+		return Number.isFinite(endMs) ? Math.max(max, endMs) : max;
+	}, 0);
+	return maxEndMs > 0 ? maxEndMs / 1000 : null;
+}
+
+function getSourceRangeAudioFailureMessage({
+	mode,
+	segments,
+	audioDurationSec,
+}: {
+	mode: "trim-source" | "edited-track";
+	segments: Array<Pick<NativeVideoExportAudioSegment, "endMs">>;
+	audioDurationSec: number | null | undefined;
+}) {
+	if (!hasPositiveDurationSeconds(audioDurationSec)) {
+		return null;
+	}
+
+	const requiredDurationSec = getMaxSegmentEndSeconds(segments);
+	if (
+		requiredDurationSec === null ||
+		audioDurationSec + NATIVE_VIDEO_AUDIO_MUX_SYNC_TOLERANCE_SECONDS >= requiredDurationSec
+	) {
+		return null;
+	}
+
+	const label =
+		mode === "trim-source"
+			? "Trim-source audio is too short for the retained source range"
+			: "Edited-track source audio is too short for the edited source range";
+	return `${label}: required=${requiredDurationSec.toFixed(3)}s audio=${audioDurationSec.toFixed(3)}s`;
+}
+
+export async function resolveNativeVideoAudioMuxOptions(
+	options: NativeVideoExportFinishOptions,
+	audioInputPath: string | null | undefined,
+	probeAudioDuration: (
+		inputPath: string,
+	) => Promise<number | null> = probeNativeAudioDurationSeconds,
+): Promise<NativeVideoExportFinishOptions> {
+	const audioMode = options.audioMode ?? "none";
+	const usesEditedTrackFiltergraph =
+		audioMode === "edited-track" && options.editedTrackStrategy === "filtergraph-fast-path";
+	const resolvedAudioInputPath =
+		typeof audioInputPath === "string" && audioInputPath.length > 0 ? audioInputPath : null;
+	const shouldProbeAudioSourceDuration =
+		(audioMode === "copy-source" ||
+			audioMode === "trim-source" ||
+			usesEditedTrackFiltergraph) &&
+		resolvedAudioInputPath !== null &&
+		hasPositiveDurationSeconds(options.outputDurationSec) &&
+		!hasPositiveDurationSeconds(options.audioSourceDurationSec);
+	if (!shouldProbeAudioSourceDuration) {
+		return options;
+	}
+
+	const audioSourceDurationSec = await probeAudioDuration(resolvedAudioInputPath);
+	if (!hasPositiveDurationSeconds(audioSourceDurationSec)) {
+		throw new Error(
+			`Unable to determine audio source duration for sync-safe mux: ${audioInputPath}`,
+		);
+	}
+
+	return {
+		...options,
+		audioSourceDurationSec,
+	};
+}
+
 export function buildNativeVideoAudioMuxArgs(
 	videoPath: string,
 	audioInputPath: string,
@@ -3997,6 +4278,17 @@ export function buildNativeVideoAudioMuxArgs(
 	const audioMode = options.audioMode ?? "none";
 	const useEditedTrackFiltergraph =
 		audioMode === "edited-track" && options.editedTrackStrategy === "filtergraph-fast-path";
+	const hasKnownOutputDuration =
+		typeof options.outputDurationSec === "number" &&
+		Number.isFinite(options.outputDurationSec) &&
+		options.outputDurationSec > 0;
+	const outputDurationSec = hasKnownOutputDuration ? (options.outputDurationSec ?? 0) : 0;
+	const hasKnownAudioSourceDuration =
+		typeof options.audioSourceDurationSec === "number" &&
+		Number.isFinite(options.audioSourceDurationSec) &&
+		options.audioSourceDurationSec > 0;
+	const shouldFilterCopySourceAudio =
+		audioMode === "copy-source" && hasKnownOutputDuration && hasKnownAudioSourceDuration;
 	const args = ["-y", "-hide_banner", "-loglevel", "error"];
 	if (argsOptions.progressPipe) {
 		args.push(
@@ -4009,10 +4301,58 @@ export function buildNativeVideoAudioMuxArgs(
 	}
 	args.push("-i", videoPath, "-i", audioInputPath);
 
-	if (audioMode === "trim-source") {
+	if (shouldFilterCopySourceAudio) {
+		const outputDurationMs = Math.round((options.outputDurationSec ?? 0) * 1000);
+		const copySourceSyncFailureMessage = getCopySourceAudioSyncFailureMessage(
+			outputDurationSec,
+			options.audioSourceDurationSec,
+		);
+		if (copySourceSyncFailureMessage) {
+			throw new Error(copySourceSyncFailureMessage);
+		}
+		const copySourceTempoRatio = getCopySourceAudioSyncTempoRatio(
+			outputDurationSec,
+			options.audioSourceDurationSec,
+		);
+		const filters = [
+			...buildAtempoFilters(copySourceTempoRatio),
+			"apad",
+			`atrim=duration=${formatFfmpegSeconds(outputDurationMs)}`,
+			"aresample=async=1:first_pts=0",
+			"asetpts=PTS-STARTPTS",
+		];
+		args.push(
+			"-filter_complex",
+			`[1:a]${filters.join(",")}[aout_sync]`,
+			"-map",
+			"0:v:0",
+			"-map",
+			"[aout_sync]",
+		);
+	} else if (audioMode === "trim-source") {
 		const filter = buildTrimmedSourceAudioFilter(options.trimSegments ?? []);
 		if (filter) {
-			args.push("-filter_complex", filter, "-map", "0:v:0", "-map", "[aout]");
+			const trimSourceFailureMessage = getSourceRangeAudioFailureMessage({
+				mode: "trim-source",
+				segments: options.trimSegments ?? [],
+				audioDurationSec: options.audioSourceDurationSec,
+			});
+			if (trimSourceFailureMessage) {
+				throw new Error(trimSourceFailureMessage);
+			}
+			if (hasKnownOutputDuration) {
+				const duration = formatFfmpegSeconds(outputDurationSec * 1000);
+				args.push(
+					"-filter_complex",
+					`${filter};[aout]apad,atrim=duration=${duration},asetpts=PTS-STARTPTS[aout_sync]`,
+					"-map",
+					"0:v:0",
+					"-map",
+					"[aout_sync]",
+				);
+			} else {
+				args.push("-filter_complex", filter, "-map", "0:v:0", "-map", "[aout]");
+			}
 		} else {
 			args.push("-map", "0:v:0", "-map", "1:a:0");
 		}
@@ -4023,6 +4363,14 @@ export function buildNativeVideoAudioMuxArgs(
 		);
 		if (!filter) {
 			throw new Error("Edited-track filtergraph inputs are incomplete for native export");
+		}
+		const editedTrackFailureMessage = getSourceRangeAudioFailureMessage({
+			mode: "edited-track",
+			segments: options.editedTrackSegments ?? [],
+			audioDurationSec: options.audioSourceDurationSec,
+		});
+		if (editedTrackFailureMessage) {
+			throw new Error(editedTrackFailureMessage);
 		}
 		if (
 			typeof options.outputDurationSec === "number" &&
@@ -4046,23 +4394,141 @@ export function buildNativeVideoAudioMuxArgs(
 	}
 
 	args.push("-c:v", "copy");
-	if (audioMode === "copy-source" && canCopyAudioCodecIntoMp4(options.audioSourceCodec)) {
+	if (
+		audioMode === "copy-source" &&
+		!shouldFilterCopySourceAudio &&
+		canCopyAudioCodecIntoMp4(options.audioSourceCodec)
+	) {
 		args.push("-c:a", "copy");
 	} else {
 		args.push("-c:a", "aac", "-b:a", "192k");
 	}
-	if (
-		typeof options.outputDurationSec === "number" &&
-		Number.isFinite(options.outputDurationSec) &&
-		options.outputDurationSec > 0
-	) {
-		args.push("-t", formatFfmpegSeconds(options.outputDurationSec * 1000));
+	if (hasKnownOutputDuration) {
+		args.push("-t", formatFfmpegSeconds(outputDurationSec * 1000));
 	} else if (audioMode !== "copy-source") {
 		args.push("-shortest");
 	}
 	args.push("-movflags", "+faststart", outputPath);
 
 	return args;
+}
+
+export function getCopySourceAudioSyncTempoRatio(
+	outputDurationSec: number,
+	audioDurationSec: number | null | undefined,
+) {
+	const adjustment = getAudioSyncAdjustment(outputDurationSec, audioDurationSec ?? 0);
+	return adjustment.mode === "tempo" ? adjustment.tempoRatio : 1;
+}
+
+function roundNativeMuxSyncSeconds(value: number) {
+	return Math.round(value * 1000) / 1000;
+}
+
+export type NativeVideoAudioMuxOutputValidation =
+	| {
+			ok: true;
+			videoDurationSec: number;
+			audioDurationSec: number;
+			driftSec: number;
+			toleranceSec: number;
+	  }
+	| {
+			ok: false;
+			reason: "missing-audio" | "missing-audio-duration" | "duration-drift";
+			videoDurationSec: number;
+			audioDurationSec: number | null;
+			driftSec: number | null;
+			toleranceSec: number;
+	  };
+
+export function validateNativeVideoAudioMuxOutputMetadata(
+	metadata: NativeVideoMetadataProbe,
+	toleranceSec = NATIVE_VIDEO_AUDIO_MUX_SYNC_TOLERANCE_SECONDS,
+): NativeVideoAudioMuxOutputValidation {
+	const videoDurationSec = hasPositiveDurationSeconds(metadata.streamDuration)
+		? metadata.streamDuration
+		: metadata.duration;
+	if (!metadata.hasAudio) {
+		return {
+			ok: false,
+			reason: "missing-audio",
+			videoDurationSec,
+			audioDurationSec: null,
+			driftSec: null,
+			toleranceSec,
+		};
+	}
+
+	if (!hasPositiveDurationSeconds(metadata.audioDuration)) {
+		return {
+			ok: false,
+			reason: "missing-audio-duration",
+			videoDurationSec,
+			audioDurationSec: null,
+			driftSec: null,
+			toleranceSec,
+		};
+	}
+
+	const audioDurationSec = metadata.audioDuration;
+	const driftSec = roundNativeMuxSyncSeconds(videoDurationSec - audioDurationSec);
+	if (Math.abs(driftSec) > toleranceSec) {
+		return {
+			ok: false,
+			reason: "duration-drift",
+			videoDurationSec,
+			audioDurationSec,
+			driftSec,
+			toleranceSec,
+		};
+	}
+
+	return {
+		ok: true,
+		videoDurationSec,
+		audioDurationSec,
+		driftSec,
+		toleranceSec,
+	};
+}
+
+function formatNativeVideoAudioMuxOutputValidationError(
+	outputPath: string,
+	validation: NativeVideoAudioMuxOutputValidation,
+) {
+	if (validation.ok) {
+		return `Muxed export audio/video duration matched: ${outputPath}`;
+	}
+	if (validation.reason === "missing-audio") {
+		return `Muxed export is missing an audio stream: ${outputPath}`;
+	}
+	if (validation.reason === "missing-audio-duration") {
+		return `Muxed export audio duration could not be verified: ${outputPath}`;
+	}
+	return `Muxed export audio/video duration mismatch: video=${validation.videoDurationSec.toFixed(3)}s audio=${(validation.audioDurationSec ?? 0).toFixed(3)}s drift=${(validation.driftSec ?? 0).toFixed(3)}s tolerance=${validation.toleranceSec.toFixed(3)}s path=${outputPath}`;
+}
+
+async function validateNativeVideoAudioMuxOutput(
+	ffmpegPath: string,
+	outputPath: string,
+	metrics: NativeVideoAudioMuxMetrics,
+) {
+	const validationStartedAt = getNowMs();
+	const metadata = await probeNativeVideoMetadata(ffmpegPath, outputPath);
+	const validation = validateNativeVideoAudioMuxOutputMetadata(metadata);
+	metrics.audioMuxValidationMs = getNowMs() - validationStartedAt;
+	metrics.muxedVideoDurationSec = validation.videoDurationSec;
+	if (validation.audioDurationSec !== null) {
+		metrics.muxedAudioDurationSec = validation.audioDurationSec;
+	}
+	if (validation.driftSec !== null) {
+		metrics.muxedAudioVideoDriftMs = Math.round(validation.driftSec * 1000);
+	}
+
+	if (!validation.ok) {
+		throw new Error(formatNativeVideoAudioMuxOutputValidationError(outputPath, validation));
+	}
 }
 
 export async function muxNativeVideoExportAudio(
@@ -4104,11 +4570,10 @@ export async function muxNativeVideoExportAudio(
 	}
 
 	if (!audioInputPath) {
-		return {
-			outputPath: videoPath,
-			metrics,
-		};
+		throw new Error(`Native export audio source is missing for audioMode=${audioMode}`);
 	}
+
+	const muxOptions = await resolveNativeVideoAudioMuxOptions(options, audioInputPath);
 
 	const outputPath = path.join(
 		path.dirname(videoPath),
@@ -4119,17 +4584,22 @@ export async function muxNativeVideoExportAudio(
 		videoPath,
 		audioInputPath,
 		outputPath,
-		options,
+		muxOptions,
 		onProgress ? { progressPipe: 2 } : {},
 	);
 
 	try {
 		const ffmpegExecStartedAt = getNowMs();
-		await runFfmpegAudioMux(ffmpegPath, args, 15 * 60 * 1000, options, onProgress, session);
+		await runFfmpegAudioMux(ffmpegPath, args, 15 * 60 * 1000, muxOptions, onProgress, session);
 		metrics.ffmpegExecMs = getNowMs() - ffmpegExecStartedAt;
+		await validateNativeVideoAudioMuxOutput(ffmpegPath, outputPath, metrics);
 		console.info("[native-video-export] Audio mux completed", {
 			ffmpegExecMs: metrics.ffmpegExecMs,
-			audioMode: options.audioMode,
+			audioMuxValidationMs: metrics.audioMuxValidationMs,
+			audioMode: muxOptions.audioMode,
+			muxedVideoDurationSec: metrics.muxedVideoDurationSec,
+			muxedAudioDurationSec: metrics.muxedAudioDurationSec,
+			muxedAudioVideoDriftMs: metrics.muxedAudioVideoDriftMs,
 			tempVideoBytes: metrics.tempVideoBytes,
 			muxedVideoBytes: metrics.muxedVideoBytes,
 		});
@@ -4138,6 +4608,9 @@ export async function muxNativeVideoExportAudio(
 			outputPath,
 			metrics,
 		};
+	} catch (error) {
+		await removeTemporaryExportFile(outputPath).catch(() => undefined);
+		throw error;
 	} finally {
 		await Promise.allSettled(
 			tempArtifacts.map((artifactPath) => removeTemporaryExportFile(artifactPath)),

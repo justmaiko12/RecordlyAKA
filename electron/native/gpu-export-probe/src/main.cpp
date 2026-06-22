@@ -1531,6 +1531,24 @@ float roundedBoxDistance(float2 p, float2 halfSize, float cornerRadius) {
     return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - cornerRadius;
 }
 
+float squircleBoxDistance(float2 p, float2 halfSize, float cornerRadius) {
+    float safeRadius = min(max(cornerRadius, 0.0), min(halfSize.x, halfSize.y));
+    if (safeRadius <= 0.5) {
+        float2 d = abs(p) - halfSize;
+        return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+    }
+
+    // Match the editor/export webcam squircle from src/lib/geometry/squircle.ts.
+    const float squircleExponent = 4.5;
+    float2 q = abs(p) - halfSize + safeRadius;
+    float2 outsideQ = max(q, 0.0);
+    float outside = pow(
+        pow(outsideQ.x, squircleExponent) + pow(outsideQ.y, squircleExponent),
+        1.0 / squircleExponent
+    ) - safeRadius;
+    return outside + min(max(q.x, q.y), 0.0);
+}
+
 float cross2(float2 a, float2 b) {
     return a.x * b.y - a.y * b.x;
 }
@@ -1673,7 +1691,7 @@ float4 main(PSIn input) : SV_Target {
             float2 webcamHalfSize = max((webcamMax - webcamMin) * 0.5, float2(1.0, 1.0));
             float2 webcamCenter = (webcamMin + webcamMax) * 0.5;
             float webcamDistance =
-                roundedBoxDistance(pixel - webcamCenter, webcamHalfSize, webcamRadius);
+                squircleBoxDistance(pixel - webcamCenter, webcamHalfSize, webcamRadius);
             float webcamAlpha = 1.0 - smoothstep(-0.75, 0.75, webcamDistance);
             float webcamOutsideAlpha = smoothstep(-0.75, 0.75, webcamDistance);
             float webcamShadowAlpha =

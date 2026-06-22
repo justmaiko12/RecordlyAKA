@@ -70,6 +70,7 @@ describe("editorPreferences", () => {
 			normalizeEditorPreferences({
 				wallpaper: 123,
 				showCursor: "yes",
+				hideCursorInFillFrame: "yes",
 				cropRegion: { x: 2, width: -1 },
 				aspectRatio: "bad-value",
 				customAspectWidth: "0",
@@ -79,6 +80,7 @@ describe("editorPreferences", () => {
 		).toMatchObject({
 			wallpaper: DEFAULT_EDITOR_PREFERENCES.wallpaper,
 			showCursor: DEFAULT_EDITOR_PREFERENCES.showCursor,
+			hideCursorInFillFrame: DEFAULT_EDITOR_PREFERENCES.hideCursorInFillFrame,
 			aspectRatio: DEFAULT_EDITOR_PREFERENCES.aspectRatio,
 			cursorStyle: DEFAULT_EDITOR_PREFERENCES.cursorStyle,
 			cursorSize: DEFAULT_EDITOR_PREFERENCES.cursorSize,
@@ -163,6 +165,7 @@ describe("editorPreferences", () => {
 					wallpaper: "#123456",
 					backgroundBlur: 3.5,
 					showCursor: false,
+					hideCursorInFillFrame: true,
 					cropRegion: { x: 0.1, y: 0.2, width: 0.7, height: 0.6 },
 					aspectRatio: "native",
 					exportFormat: "gif",
@@ -180,6 +183,7 @@ describe("editorPreferences", () => {
 			wallpaper: "#123456",
 			backgroundBlur: 3.5,
 			showCursor: false,
+			hideCursorInFillFrame: true,
 			aspectRatio: "native",
 			zoomInOverlapMs: 200,
 			exportFormat: "gif",

@@ -4,10 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { app } from "electron";
-import {
-	nativeHelperMigrationPromise,
-	setNativeHelperMigrationPromise,
-} from "../state";
+import { nativeHelperMigrationPromise, setNativeHelperMigrationPromise } from "../state";
 
 const execFileAsync = promisify(execFile);
 
@@ -49,6 +46,11 @@ export function getPrebundledNativeHelperPath(binaryName: string): string {
 	return resolveUnpackedAppPath("electron", "native", "bin", getNativeArchTag(), binaryName);
 }
 
+function getPrebundledWindowsNativeHelperPath(binaryName: string): string {
+	const archTag = process.arch === "arm64" ? "win32-arm64" : "win32-x64";
+	return resolveUnpackedAppPath("electron", "native", "bin", archTag, binaryName);
+}
+
 export function resolvePreferredWindowsNativeHelperPath(
 	helperDirectory: string,
 	binaryName: string,
@@ -61,7 +63,7 @@ export function resolvePreferredWindowsNativeHelperPath(
 		"Release",
 		binaryName,
 	);
-	const prebundledPath = getPrebundledNativeHelperPath(binaryName);
+	const prebundledPath = getPrebundledWindowsNativeHelperPath(binaryName);
 
 	if (app.isPackaged && existsSync(prebundledPath)) {
 		return prebundledPath;
@@ -128,7 +130,11 @@ export function getCursorMonitorExePath(): string {
 async function migrateLegacyNativeHelperBinaries(): Promise<void> {
 	const legacyToCurrentPaths: Array<[string, string]> = [
 		[
-			path.join(app.getPath("userData"), "native-tools", "openscreen-screencapturekit-helper"),
+			path.join(
+				app.getPath("userData"),
+				"native-tools",
+				"openscreen-screencapturekit-helper",
+			),
 			getNativeCaptureHelperBinaryPath(),
 		],
 		[

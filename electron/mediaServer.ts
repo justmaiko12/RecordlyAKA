@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
@@ -7,6 +7,65 @@ import { getMediaContentType } from "./mediaTypes";
 
 let mediaServerBaseUrl: string | null = null;
 let mediaServerStartPromise: Promise<string> | null = null;
+const mjpegBoundary = "recordly-native-webcam-preview";
+const mjpegBackpressureTimeoutMs = 500;
+const mjpegPreviewMinWriteIntervalMs = 33;
+const mjpegPreviewFallbackPollMs = 1000;
+const mjpegPreviewSnapshotHistoryLimit = 120;
+
+type MjpegPreviewFrame = {
+	data: Buffer;
+	path: string;
+	sequence: number;
+};
+
+type MjpegPreviewSubscriber = {
+	response: ServerResponse;
+	requestWriteLatestFrame: () => void;
+	close: () => void;
+};
+
+type MjpegPreviewStreamState = {
+	allowedPaths: Set<string>;
+	framesBySequence: Map<number, MjpegPreviewFrame>;
+	latestFrame: MjpegPreviewFrame | null;
+	subscribers: Set<MjpegPreviewSubscriber>;
+};
+
+const mjpegPreviewStreams = new Map<string, MjpegPreviewStreamState>();
+
+function waitForMjpegResponseDrain(
+	response: ServerResponse,
+	timeoutMs = mjpegBackpressureTimeoutMs,
+): Promise<"drain" | "closed" | "timeout"> {
+	if (response.destroyed) {
+		return Promise.resolve("closed");
+	}
+
+	return new Promise((resolve) => {
+		let timeout: ReturnType<typeof setTimeout>;
+		const cleanup = () => {
+			clearTimeout(timeout);
+			response.off("drain", onDrain);
+			response.off("close", onClose);
+		};
+		const onDrain = () => {
+			cleanup();
+			resolve("drain");
+		};
+		const onClose = () => {
+			cleanup();
+			resolve("closed");
+		};
+		timeout = setTimeout(() => {
+			cleanup();
+			resolve("timeout");
+		}, timeoutMs);
+
+		response.once("drain", onDrain);
+		response.once("close", onClose);
+	});
+}
 
 export function resolveHttpByteRange(
 	rangeHeader: string,
@@ -62,12 +121,368 @@ export function isAllowedMediaPath(realPath: string): boolean {
 	return approvedLocalReadPaths.has(realPath);
 }
 
+export function registerMjpegPreviewStream(streamId: string, framePaths: string[]): void {
+	if (!streamId || framePaths.length === 0) {
+		return;
+	}
+
+	mjpegPreviewStreams.set(streamId, {
+		allowedPaths: new Set(framePaths.map((framePath) => path.resolve(framePath))),
+		framesBySequence: new Map(),
+		latestFrame: null,
+		subscribers: new Set(),
+	});
+}
+
+function rememberMjpegPreviewSnapshot(
+	stream: MjpegPreviewStreamState,
+	frame: MjpegPreviewFrame,
+): void {
+	stream.framesBySequence.set(frame.sequence, frame);
+	while (stream.framesBySequence.size > mjpegPreviewSnapshotHistoryLimit) {
+		const oldestSequence = stream.framesBySequence.keys().next().value;
+		if (typeof oldestSequence !== "number") {
+			break;
+		}
+		stream.framesBySequence.delete(oldestSequence);
+	}
+}
+
+export function unregisterMjpegPreviewStream(streamId: string | null | undefined): void {
+	if (!streamId) {
+		return;
+	}
+
+	const stream = mjpegPreviewStreams.get(streamId);
+	mjpegPreviewStreams.delete(streamId);
+	if (!stream) {
+		return;
+	}
+
+	for (const subscriber of stream.subscribers) {
+		subscriber.close();
+	}
+	stream.subscribers.clear();
+}
+
+export function publishMjpegPreviewFrame(
+	streamId: string | null | undefined,
+	framePath: string,
+	sequence: number,
+): boolean {
+	if (!streamId || !Number.isFinite(sequence) || sequence <= 0) {
+		return false;
+	}
+
+	const stream = mjpegPreviewStreams.get(streamId);
+	if (!stream) {
+		return false;
+	}
+
+	const resolvedPath = path.resolve(framePath);
+	if (!stream.allowedPaths.has(resolvedPath) || !approvedLocalReadPaths.has(resolvedPath)) {
+		return false;
+	}
+
+	if (stream.latestFrame && sequence <= stream.latestFrame.sequence) {
+		return false;
+	}
+
+	let data: Buffer;
+	try {
+		data = readFileSync(resolvedPath);
+	} catch {
+		return false;
+	}
+
+	const frame = { data, path: resolvedPath, sequence };
+	stream.latestFrame = frame;
+	rememberMjpegPreviewSnapshot(stream, frame);
+	for (const subscriber of stream.subscribers) {
+		subscriber.requestWriteLatestFrame();
+	}
+	return true;
+}
+
+function parsePositiveIntegerQueryParam(value: string | null): number | null {
+	if (!value || !/^\d+$/.test(value)) {
+		return null;
+	}
+	const parsed = Number.parseInt(value, 10);
+	return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+async function handleMjpegPreviewRequest(
+	request: IncomingMessage,
+	response: ServerResponse,
+	url: URL,
+): Promise<void> {
+	const corsHeaders = {
+		"Access-Control-Allow-Origin": "*",
+		"Access-Control-Allow-Credentials": "false",
+	};
+
+	if (request.method === "OPTIONS") {
+		response.writeHead(204, {
+			...corsHeaders,
+			"Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+			"Access-Control-Allow-Headers": "Range",
+		});
+		response.end();
+		return;
+	}
+
+	const streamId = url.searchParams.get("streamId");
+	const stream = streamId ? mjpegPreviewStreams.get(streamId) : null;
+	if (!stream) {
+		response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+		response.end("Not Found");
+		return;
+	}
+	const activeStreamId = streamId;
+	if (!activeStreamId) {
+		response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+		response.end("Not Found");
+		return;
+	}
+
+	response.writeHead(200, {
+		...corsHeaders,
+		"Content-Type": `multipart/x-mixed-replace; boundary=${mjpegBoundary}`,
+		"Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+		Pragma: "no-cache",
+		Expires: "0",
+		Connection: "keep-alive",
+		"X-Accel-Buffering": "no",
+	});
+	response.socket?.setNoDelay(true);
+	response.flushHeaders?.();
+
+	if (request.method === "HEAD") {
+		response.end();
+		return;
+	}
+
+	let closed = false;
+	let inFlight = false;
+	let lastSentSequence = 0;
+	let lastSentAtMs = 0;
+	let interval: ReturnType<typeof setInterval> | null = null;
+	let scheduledWriteTimer: ReturnType<typeof setTimeout> | null = null;
+	let subscriber: MjpegPreviewSubscriber;
+
+	const cleanup = () => {
+		if (closed) {
+			return;
+		}
+		closed = true;
+		stream.subscribers.delete(subscriber);
+		if (scheduledWriteTimer !== null) {
+			clearTimeout(scheduledWriteTimer);
+			scheduledWriteTimer = null;
+		}
+		if (interval !== null) {
+			clearInterval(interval);
+			interval = null;
+		}
+	};
+
+	const getNextWriteDelayMs = () => {
+		if (lastSentSequence === 0) {
+			return 0;
+		}
+
+		const elapsedMs = Date.now() - lastSentAtMs;
+		return Math.max(0, mjpegPreviewMinWriteIntervalMs - elapsedMs);
+	};
+
+	const writeLatestFrame = async () => {
+		if (scheduledWriteTimer !== null) {
+			clearTimeout(scheduledWriteTimer);
+			scheduledWriteTimer = null;
+		}
+		if (closed || inFlight) {
+			return;
+		}
+
+		if (mjpegPreviewStreams.get(activeStreamId) !== stream) {
+			cleanup();
+			if (!response.destroyed) {
+				response.end();
+			}
+			return;
+		}
+
+		const frame = stream.latestFrame;
+		if (!frame || frame.sequence <= lastSentSequence) {
+			return;
+		}
+
+		if (!stream.allowedPaths.has(frame.path) || !approvedLocalReadPaths.has(frame.path)) {
+			return;
+		}
+
+		inFlight = true;
+		try {
+			if (closed || frame.sequence <= lastSentSequence) {
+				return;
+			}
+
+			const headerWritten = response.write(
+				`--${mjpegBoundary}\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.data.length}\r\nX-Recordly-Sequence: ${frame.sequence}\r\n\r\n`,
+			);
+			const frameWritten = response.write(frame.data);
+			const trailerWritten = response.write("\r\n");
+			lastSentSequence = frame.sequence;
+			lastSentAtMs = Date.now();
+			if (!headerWritten || !frameWritten || !trailerWritten) {
+				const result = await waitForMjpegResponseDrain(response);
+				if (result === "timeout" && !closed && !response.destroyed) {
+					cleanup();
+					response.destroy();
+				}
+			}
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+				console.warn("[media-server] Failed to stream native webcam preview frame:", error);
+			}
+		} finally {
+			inFlight = false;
+			if (!closed && stream.latestFrame && stream.latestFrame.sequence > lastSentSequence) {
+				requestWriteLatestFrame();
+			}
+		}
+	};
+
+	const requestWriteLatestFrame = () => {
+		if (closed || inFlight || scheduledWriteTimer !== null) {
+			return;
+		}
+
+		const delayMs = getNextWriteDelayMs();
+		if (delayMs <= 0) {
+			setImmediate(() => {
+				void writeLatestFrame();
+			});
+			return;
+		}
+
+		scheduledWriteTimer = setTimeout(() => {
+			scheduledWriteTimer = null;
+			void writeLatestFrame();
+		}, delayMs);
+	};
+
+	subscriber = {
+		response,
+		requestWriteLatestFrame,
+		close: () => {
+			cleanup();
+			if (!response.destroyed) {
+				response.end();
+			}
+		},
+	};
+	interval = setInterval(() => {
+		requestWriteLatestFrame();
+	}, mjpegPreviewFallbackPollMs);
+	stream.subscribers.add(subscriber);
+	request.on("close", cleanup);
+	response.on("close", cleanup);
+	requestWriteLatestFrame();
+}
+
+async function handleMjpegPreviewSnapshotRequest(
+	request: IncomingMessage,
+	response: ServerResponse,
+	url: URL,
+): Promise<void> {
+	const corsHeaders = {
+		"Access-Control-Allow-Origin": "*",
+		"Access-Control-Allow-Credentials": "false",
+	};
+
+	if (request.method === "OPTIONS") {
+		response.writeHead(204, {
+			...corsHeaders,
+			"Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+			"Access-Control-Allow-Headers": "Range",
+		});
+		response.end();
+		return;
+	}
+
+	if (request.method !== "GET" && request.method !== "HEAD") {
+		response.writeHead(405, {
+			...corsHeaders,
+			"Content-Type": "text/plain; charset=utf-8",
+		});
+		response.end("Method Not Allowed");
+		return;
+	}
+
+	const requestedSequence = parsePositiveIntegerQueryParam(url.searchParams.get("seq"));
+	if (requestedSequence === null) {
+		response.writeHead(400, { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" });
+		response.end("Missing valid seq parameter");
+		return;
+	}
+
+	const streamId = url.searchParams.get("streamId");
+	const stream = streamId ? mjpegPreviewStreams.get(streamId) : null;
+	const latestFrame = stream?.latestFrame ?? null;
+	if (!stream || !latestFrame) {
+		response.writeHead(404, { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" });
+		response.end("Not Found");
+		return;
+	}
+
+	if (latestFrame.sequence < requestedSequence) {
+		response.writeHead(404, { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" });
+		response.end("Frame Not Ready");
+		return;
+	}
+
+	const requestedFrame = stream.framesBySequence.get(requestedSequence);
+	if (!requestedFrame) {
+		response.writeHead(404, { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" });
+		response.end("Frame Expired");
+		return;
+	}
+
+	response.writeHead(200, {
+		...corsHeaders,
+		"Content-Type": "image/jpeg",
+		"Content-Length": requestedFrame.data.length,
+		"Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+		Pragma: "no-cache",
+		Expires: "0",
+		"X-Recordly-Sequence": requestedFrame.sequence,
+	});
+	if (request.method === "HEAD") {
+		response.end();
+		return;
+	}
+
+	response.end(requestedFrame.data);
+}
+
 async function handleMediaRequest(
 	request: IncomingMessage,
 	response: ServerResponse,
 ): Promise<void> {
 	try {
 		const url = new URL(request.url ?? "/", "http://127.0.0.1");
+
+		if (url.pathname === "/mjpeg-preview") {
+			await handleMjpegPreviewRequest(request, response, url);
+			return;
+		}
+
+		if (url.pathname === "/mjpeg-preview-snapshot") {
+			await handleMjpegPreviewSnapshotRequest(request, response, url);
+			return;
+		}
 
 		if (url.pathname !== "/video") {
 			response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
@@ -234,4 +649,12 @@ export async function ensureMediaServer(): Promise<string> {
 export function buildMediaUrl(baseUrl: string, filePath: string): string {
 	const resolved = path.resolve(filePath);
 	return `${baseUrl}/video?path=${encodeURIComponent(resolved)}`;
+}
+
+export function buildMjpegPreviewStreamUrl(baseUrl: string, streamId: string): string {
+	return `${baseUrl}/mjpeg-preview?streamId=${encodeURIComponent(streamId)}`;
+}
+
+export function buildMjpegPreviewSnapshotUrl(baseUrl: string, streamId: string): string {
+	return `${baseUrl}/mjpeg-preview-snapshot?streamId=${encodeURIComponent(streamId)}`;
 }

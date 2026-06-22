@@ -81,7 +81,10 @@ export function MicPopover({
 					device={device}
 					selected={
 						microphoneEnabled &&
-						(microphoneDeviceId === device.deviceId || selectedDeviceId === device.deviceId)
+						(microphoneDeviceId === device.deviceId ||
+							microphoneDeviceId === device.nativeDeviceId ||
+							selectedDeviceId === device.deviceId ||
+							selectedDeviceId === device.nativeDeviceId)
 					}
 					onSelect={() => onSelectDevice(device.deviceId)}
 				/>

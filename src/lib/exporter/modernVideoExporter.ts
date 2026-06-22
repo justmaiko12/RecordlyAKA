@@ -1,3 +1,4 @@
+import type { FillFrameRegion } from "@/components/video-editor/fillFrameRegions";
 import type {
 	AnnotationRegion,
 	AudioRegion,
@@ -25,7 +26,11 @@ import {
 	SNAP_TO_EDGES_RATIO_AUTO,
 } from "@/components/video-editor/videoPlayback/cursorFollowCamera";
 import { buildNativeCursorAtlas } from "@/components/video-editor/videoPlayback/cursorRenderer";
-import { computePaddedLayout } from "@/components/video-editor/videoPlayback/layoutUtils";
+import {
+	computePaddedLayout,
+	scalePreviewMarginForCanvas,
+	scalePreviewRadiusForCanvas,
+} from "@/components/video-editor/videoPlayback/layoutUtils";
 import {
 	createSpringState,
 	getZoomSpringConfig,
@@ -50,7 +55,11 @@ import {
 	DEFAULT_WALLPAPER_RELATIVE_PATH,
 	isVideoWallpaperSource,
 } from "@/lib/wallpapers";
-import { AudioProcessor, isAacAudioEncodingSupported } from "./audioEncoder";
+import {
+	AudioProcessor,
+	isAacAudioEncodingSupported,
+	shouldTreatCompanionAudioStartDelayAsTimed,
+} from "./audioEncoder";
 import {
 	normalizeLightningRuntimePlatform,
 	shouldPreferNativeAutoBackend,
@@ -128,11 +137,14 @@ interface VideoExporterConfig extends ExportConfig {
 	/** Camera-full rendering style; plumbed in Task 2, consumed by the camera-full layout in Task 3. */
 	webcamLayoutStyle?: "fit" | "fill";
 	webcamUrl?: string | null;
+	fillFrameRegions?: FillFrameRegion[];
+	fillFrameDefault?: boolean;
 	annotationRegions?: AnnotationRegion[];
 	autoCaptions?: CaptionCue[];
 	autoCaptionSettings?: AutoCaptionSettings;
 	cursorTelemetry?: CursorTelemetryPoint[];
 	showCursor?: boolean;
+	hideCursorInFillFrame?: boolean;
 	cursorStyle?: CursorStyle;
 	cursorSize?: number;
 	cursorSmoothing?: number;
@@ -173,6 +185,7 @@ type NativeAudioPlan =
 			audioMode: "copy-source" | "trim-source";
 			audioSourcePath: string;
 			audioSourceCodec?: string;
+			audioSourceDurationSec?: number;
 			trimSegments?: Array<{ startMs: number; endMs: number }>;
 	  }
 	| {
@@ -186,6 +199,7 @@ type NativeAudioPlan =
 			audioSourcePath: string;
 			audioSourceCodec?: string;
 			audioSourceSampleRate: number;
+			audioSourceDurationSec?: number;
 			editedTrackSegments: Array<{
 				startMs: number;
 				endMs: number;
@@ -538,7 +552,11 @@ export class ModernVideoExporter {
 				const shouldUseFfmpegAudioFallback =
 					!useNativeEncoder &&
 					nativeAudioPlan.audioMode !== "none" &&
-					(shouldUsePitchPreservingFfmpegAudio || !(await isAacAudioEncodingSupported()));
+					this.shouldUseRendererFfmpegAudioFallback(
+						nativeAudioPlan,
+						shouldUsePitchPreservingFfmpegAudio,
+						await isAacAudioEncodingSupported(),
+					);
 				const blackGapTimeline = this.isGapsAsBlackExport()
 					? this.buildGapsAsBlackOutputTimeline(videoInfo)
 					: null;
@@ -624,6 +642,8 @@ export class ModernVideoExporter {
 					webcamLayoutRegions: this.config.webcamLayoutRegions,
 					webcamLayoutStyle: this.config.webcamLayoutStyle,
 					webcamUrl: this.config.webcamUrl,
+					fillFrameRegions: this.config.fillFrameRegions,
+					fillFrameDefault: this.config.fillFrameDefault,
 					videoWidth: videoInfo.width,
 					videoHeight: videoInfo.height,
 					annotationRegions: this.config.annotationRegions,
@@ -634,6 +654,7 @@ export class ModernVideoExporter {
 					previewHeight: this.config.previewHeight,
 					cursorTelemetry: this.config.cursorTelemetry,
 					showCursor: this.config.showCursor,
+					hideCursorInFillFrame: this.config.hideCursorInFillFrame,
 					cursorStyle: this.config.cursorStyle,
 					cursorSize: this.config.cursorSize,
 					cursorSmoothing: this.config.cursorSmoothing,
@@ -842,6 +863,7 @@ export class ModernVideoExporter {
 						success: true,
 						tempFilePath: finishResult.tempFilePath,
 						blob: finishResult.blob,
+						expectedAudio: nativeAudioPlan.audioMode !== "none",
 						metrics: this.buildExportMetrics(),
 					};
 				}
@@ -946,6 +968,7 @@ export class ModernVideoExporter {
 						success: true,
 						blob: muxedResult.blob,
 						tempFilePath: muxedResult.tempFilePath,
+						expectedAudio: true,
 						metrics: muxedResult.metrics ?? this.buildExportMetrics(),
 					};
 				}
@@ -955,12 +978,14 @@ export class ModernVideoExporter {
 					return {
 						success: true,
 						tempFilePath: muxerResult.tempFilePath,
+						expectedAudio: nativeAudioPlan.audioMode !== "none",
 						metrics: this.buildExportMetrics(),
 					};
 				}
 				return {
 					success: true,
 					blob: muxerResult.blob,
+					expectedAudio: nativeAudioPlan.audioMode !== "none",
 					metrics: this.buildExportMetrics(),
 				};
 			} catch (error) {
@@ -1377,9 +1402,12 @@ export class ModernVideoExporter {
 		const speedRegions = this.config.speedRegions ?? [];
 		const audioRegions = this.config.audioRegions ?? [];
 		const sourceAudioFallbackPaths = this.getNativeAudioFallbackPaths(videoInfo);
-		const hasTimedSourceAudioFallback = sourceAudioFallbackPaths.some(
-			(audioPath) =>
-				(this.config.sourceAudioFallbackStartDelayMsByPath?.[audioPath] ?? 0) > 0,
+		const hasTimedSourceAudioFallback = sourceAudioFallbackPaths.some((audioPath) =>
+			shouldTreatCompanionAudioStartDelayAsTimed({
+				audioPath,
+				recordedStartDelayMs:
+					this.config.sourceAudioFallbackStartDelayMsByPath?.[audioPath],
+			}),
 		);
 		const localVideoSourcePath = this.getNativeVideoSourcePath();
 		const primaryAudioSourcePath =
@@ -1392,6 +1420,9 @@ export class ModernVideoExporter {
 			? videoInfo.audioSampleRate
 			: FILTERGRAPH_FALLBACK_AUDIO_SAMPLE_RATE;
 		const primaryAudioSourceCodec = usesEmbeddedPrimaryAudio ? videoInfo.audioCodec : undefined;
+		const primaryAudioSourceDurationSec = usesEmbeddedPrimaryAudio
+			? videoInfo.audioDuration
+			: undefined;
 
 		if (
 			!videoInfo.hasAudio &&
@@ -1473,6 +1504,7 @@ export class ModernVideoExporter {
 						audioSourcePath,
 						audioSourceCodec: primaryAudioSourceCodec,
 						audioSourceSampleRate,
+						audioSourceDurationSec: primaryAudioSourceDurationSec,
 						editedTrackSegments,
 					};
 				}
@@ -1512,6 +1544,7 @@ export class ModernVideoExporter {
 				audioMode: "trim-source",
 				audioSourcePath: primaryAudioSourcePath,
 				audioSourceCodec: primaryAudioSourceCodec,
+				audioSourceDurationSec: primaryAudioSourceDurationSec,
 				trimSegments,
 			};
 		}
@@ -1520,7 +1553,32 @@ export class ModernVideoExporter {
 			audioMode: "copy-source",
 			audioSourcePath: primaryAudioSourcePath,
 			audioSourceCodec: primaryAudioSourceCodec,
+			audioSourceDurationSec: primaryAudioSourceDurationSec,
 		};
+	}
+
+	private canUseRendererFfmpegAudioMux() {
+		if (typeof window === "undefined") {
+			return false;
+		}
+		return (
+			typeof window.electronAPI?.muxExportedVideoAudio === "function" ||
+			typeof window.electronAPI?.muxExportedVideoAudioFromPath === "function"
+		);
+	}
+
+	private shouldUseRendererFfmpegAudioFallback(
+		audioPlan: NativeAudioPlan,
+		requiresFfmpegAudio: boolean,
+		browserAacSupported: boolean,
+	) {
+		if (audioPlan.audioMode === "none") {
+			return false;
+		}
+		if (this.canUseRendererFfmpegAudioMux()) {
+			return true;
+		}
+		return requiresFfmpegAudio || !browserAacSupported;
 	}
 
 	private isDefaultCropRegion(): boolean {
@@ -1635,6 +1693,14 @@ export class ModernVideoExporter {
 		}
 		if (hasCursorClickEffect) {
 			reasons.push("unsupported-cursor-click-effect");
+		}
+		if (
+			this.config.showCursor === true &&
+			this.config.hideCursorInFillFrame === true &&
+			this.config.fillFrameDefault !== true &&
+			(this.config.fillFrameRegions ?? []).length > 0
+		) {
+			reasons.push("unsupported-cursor-fill-frame-suppression");
 		}
 
 		const hasZoomRegions = (this.config.zoomRegions ?? []).length > 0;
@@ -2091,6 +2157,7 @@ export class ModernVideoExporter {
 					audioMode: audioPlan.audioMode,
 					audioSourcePath: audioPlan.audioSourcePath,
 					audioSourceCodec: audioPlan.audioSourceCodec,
+					audioSourceDurationSec: audioPlan.audioSourceDurationSec,
 					trimSegments: audioPlan.trimSegments,
 				};
 			case "edited-track": {
@@ -2100,6 +2167,7 @@ export class ModernVideoExporter {
 						audioSourcePath: audioPlan.audioSourcePath,
 						audioSourceCodec: audioPlan.audioSourceCodec,
 						audioSourceSampleRate: audioPlan.audioSourceSampleRate,
+						audioSourceDurationSec: audioPlan.audioSourceDurationSec,
 						editedTrackStrategy: audioPlan.strategy,
 						editedTrackSegments: audioPlan.editedTrackSegments,
 					};
@@ -2132,7 +2200,13 @@ export class ModernVideoExporter {
 			return null;
 		}
 
-		const margin = webcam.margin ?? 24;
+		const margin = scalePreviewMarginForCanvas({
+			width: this.config.width,
+			height: this.config.height,
+			previewWidth: this.config.previewWidth || 1920,
+			previewHeight: this.config.previewHeight || 1080,
+			margin: webcam.margin ?? 24,
+		});
 		const rawSize = getWebcamOverlaySizePx({
 			containerWidth: this.config.width,
 			containerHeight: this.config.height,
@@ -2158,7 +2232,13 @@ export class ModernVideoExporter {
 			left: Math.round(position.x),
 			top: Math.round(position.y),
 			size,
-			radius: Math.max(0, webcam.cornerRadius ?? 18),
+			radius: scalePreviewRadiusForCanvas({
+				width: this.config.width,
+				height: this.config.height,
+				previewWidth: this.config.previewWidth || 1920,
+				previewHeight: this.config.previewHeight || 1080,
+				radius: webcam.cornerRadius ?? 18,
+			}),
 			shadowIntensity: Math.min(1, Math.max(0, webcam.shadow ?? 0)),
 			mirror: webcam.mirror !== false,
 			timeOffsetMs: Number.isFinite(webcam.timeOffsetMs) ? webcam.timeOffsetMs : 0,
@@ -2177,6 +2257,9 @@ export class ModernVideoExporter {
 		| undefined {
 		const telemetry = this.config.cursorTelemetry ?? [];
 		if (this.config.showCursor !== true || telemetry.length === 0) {
+			return undefined;
+		}
+		if (this.config.hideCursorInFillFrame === true && this.config.fillFrameDefault === true) {
 			return undefined;
 		}
 
@@ -2938,6 +3021,13 @@ export class ModernVideoExporter {
 							? audioPlan.editedTrackSegments
 							: undefined,
 					outputDurationSec: this.effectiveDurationSec,
+					audioSourceDurationSec:
+						audioPlan.audioMode === "copy-source" ||
+						audioPlan.audioMode === "trim-source" ||
+						(audioPlan.audioMode === "edited-track" &&
+							audioPlan.strategy === "filtergraph-fast-path")
+							? audioPlan.audioSourceDurationSec
+							: undefined,
 					audioSourceSampleRate:
 						audioPlan.audioMode === "edited-track" &&
 						audioPlan.strategy === "filtergraph-fast-path"
@@ -3027,6 +3117,13 @@ export class ModernVideoExporter {
 					? audioPlan.audioSourceSampleRate
 					: undefined,
 			outputDurationSec: this.effectiveDurationSec,
+			audioSourceDurationSec:
+				audioPlan.audioMode === "copy-source" ||
+				audioPlan.audioMode === "trim-source" ||
+				(audioPlan.audioMode === "edited-track" &&
+					audioPlan.strategy === "filtergraph-fast-path")
+					? audioPlan.audioSourceDurationSec
+					: undefined,
 			editedAudioData: editedAudioBuffer,
 			editedAudioMimeType,
 		};

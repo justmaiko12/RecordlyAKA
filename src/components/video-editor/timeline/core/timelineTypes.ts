@@ -34,6 +34,7 @@ export interface TimelineRenderItem {
 	sourceSpan?: Span;
 	label: string;
 	audioPath?: string;
+	audioSourceStartMs?: number;
 	audioGain?: number;
 	audioNormalize?: boolean;
 	zoomDepth?: number;

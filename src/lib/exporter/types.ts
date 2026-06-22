@@ -147,6 +147,12 @@ export interface ExportMetrics {
 export interface ExportResult {
 	success: boolean;
 	/**
+	 * True when the export plan expected an audio stream in the finished MP4.
+	 * Save/finalize paths use this as a last defense against silently accepting
+	 * a muted file from a fallback path.
+	 */
+	expectedAudio?: boolean;
+	/**
 	 * Absolute path to a main-process temp file containing the finished export.
 	 * Preferred for MP4 output because it avoids loading multi-gigabyte files
 	 * into the renderer's ArrayBuffer heap. The renderer should move the temp

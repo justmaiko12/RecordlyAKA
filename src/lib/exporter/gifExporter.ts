@@ -15,6 +15,7 @@ import type {
 	ZoomRegion,
 	ZoomTransitionEasing,
 } from "@/components/video-editor/types";
+import type { FillFrameRegion } from "@/components/video-editor/fillFrameRegions";
 import { FrameRenderer } from "./frameRenderer";
 import { StreamingVideoDecoder } from "./streamingDecoder";
 import type {
@@ -63,11 +64,14 @@ interface GifExporterConfig {
 	cropRegion: CropRegion;
 	webcam?: WebcamOverlaySettings;
 	webcamUrl?: string | null;
+	fillFrameRegions?: FillFrameRegion[];
+	fillFrameDefault?: boolean;
 	annotationRegions?: AnnotationRegion[];
 	autoCaptions?: CaptionCue[];
 	autoCaptionSettings?: AutoCaptionSettings;
 	cursorTelemetry?: CursorTelemetryPoint[];
 	showCursor?: boolean;
+	hideCursorInFillFrame?: boolean;
 	cursorStyle?: CursorStyle;
 	cursorSize?: number;
 	cursorSmoothing?: number;
@@ -165,6 +169,8 @@ export function buildGifFrameRendererConfig(
 		cropRegion: config.cropRegion,
 		webcam: config.webcam,
 		webcamUrl: config.webcamUrl,
+		fillFrameRegions: config.fillFrameRegions,
+		fillFrameDefault: config.fillFrameDefault,
 		videoWidth: videoInfo.width,
 		videoHeight: videoInfo.height,
 		annotationRegions: config.annotationRegions,
@@ -175,6 +181,7 @@ export function buildGifFrameRendererConfig(
 		previewHeight: config.previewHeight,
 		cursorTelemetry: config.cursorTelemetry,
 		showCursor: config.showCursor,
+		hideCursorInFillFrame: config.hideCursorInFillFrame,
 		cursorStyle: config.cursorStyle,
 		cursorSize: config.cursorSize,
 		cursorSmoothing: config.cursorSmoothing,

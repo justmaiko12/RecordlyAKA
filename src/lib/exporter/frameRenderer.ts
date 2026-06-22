@@ -5,6 +5,7 @@ import {
 	type FillFrameRegion,
 	fillFrameProgressAtMs,
 } from "@/components/video-editor/fillFrameRegions";
+import { shouldShowCursorAtMs } from "@/components/video-editor/cursorVisibility";
 import type {
 	AnnotationRegion,
 	AutoCaptionSettings,
@@ -37,7 +38,11 @@ import {
 	PixiCursorOverlay,
 	preloadCursorAssets,
 } from "@/components/video-editor/videoPlayback/cursorRenderer";
-import { computePaddedLayout } from "@/components/video-editor/videoPlayback/layoutUtils";
+import {
+	computePaddedLayout,
+	scalePreviewMarginForCanvas,
+	scalePreviewRadiusForCanvas,
+} from "@/components/video-editor/videoPlayback/layoutUtils";
 import {
 	createSpringState,
 	getZoomSpringConfig,
@@ -128,6 +133,7 @@ interface FrameRenderConfig {
 	previewHeight?: number;
 	cursorTelemetry?: CursorTelemetryPoint[];
 	showCursor?: boolean;
+	hideCursorInFillFrame?: boolean;
 	cursorStyle?: CursorStyle;
 	cursorSize?: number;
 	cursorSmoothing?: number;
@@ -1689,7 +1695,7 @@ export class FrameRenderer {
 				this.config.cursorTelemetry ?? [],
 				cursorTimeMs,
 				layoutCache.maskRect,
-				this.config.showCursor ?? true,
+				this.shouldShowCursorAtTimeMs(timeMs),
 				false,
 			);
 		}
@@ -1946,6 +1952,16 @@ export class FrameRenderer {
 		);
 	}
 
+	private shouldShowCursorAtTimeMs(timeMs: number): boolean {
+		return shouldShowCursorAtMs({
+			showCursor: this.config.showCursor ?? true,
+			hideCursorInFillFrame: this.config.hideCursorInFillFrame,
+			fillFrameDefault: this.config.fillFrameDefault,
+			fillFrameRegions: this.config.fillFrameRegions,
+			timeMs,
+		});
+	}
+
 	private updateLayout(): void {
 		if (!this.app || !this.videoSprite || !this.maskGraphics || !this.videoContainer) return;
 
@@ -2193,7 +2209,7 @@ export class FrameRenderer {
 				this.config.cursorTelemetry ?? [],
 				cursorTimeMs,
 				layoutCache.maskRect,
-				this.config.showCursor ?? true,
+				this.shouldShowCursorAtTimeMs(timeMs),
 				false,
 			);
 		}
@@ -2467,7 +2483,13 @@ export class FrameRenderer {
 			return;
 		}
 
-		const margin = webcam.margin ?? 24;
+		const margin = scalePreviewMarginForCanvas({
+			width,
+			height,
+			previewWidth: this.config.previewWidth || BASE_PREVIEW_WIDTH,
+			previewHeight: this.config.previewHeight || BASE_PREVIEW_HEIGHT,
+			margin: webcam.margin ?? 24,
+		});
 		const size = getWebcamOverlaySizePx({
 			containerWidth: width,
 			containerHeight: height,
@@ -2486,7 +2508,13 @@ export class FrameRenderer {
 			positionY: webcam.positionY ?? 1,
 			legacyCorner: webcam.corner,
 		});
-		const radius = Math.max(0, webcam.cornerRadius ?? 18);
+		const radius = scalePreviewRadiusForCanvas({
+			width,
+			height,
+			previewWidth: this.config.previewWidth || BASE_PREVIEW_WIDTH,
+			previewHeight: this.config.previewHeight || BASE_PREVIEW_HEIGHT,
+			radius: webcam.cornerRadius ?? 18,
+		});
 
 		const bubbleCanvas = this.webcamBubbleCanvas ?? document.createElement("canvas");
 		const bubbleSize = Math.max(1, Math.ceil(size));

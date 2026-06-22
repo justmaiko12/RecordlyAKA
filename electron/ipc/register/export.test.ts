@@ -29,7 +29,7 @@ vi.mock("../ffmpeg/binary", () => ({
 	getFfmpegBinaryPath: () => "ffmpeg",
 }));
 
-import { moveExportedTempFile } from "./export";
+import { moveExportedTempFile, validateSavedMp4AudioVideoSyncIfPresent } from "./export";
 
 const tempDirs: string[] = [];
 
@@ -55,9 +55,7 @@ describe("moveExportedTempFile", () => {
 
 		await moveExportedTempFile(tempPath, destinationPath);
 
-		await expect(fs.readFile(destinationPath, "utf8")).resolves.toBe(
-			"recordly-export",
-		);
+		await expect(fs.readFile(destinationPath, "utf8")).resolves.toBe("recordly-export");
 		await expect(fs.access(tempPath)).rejects.toThrow();
 	});
 
@@ -84,5 +82,73 @@ describe("moveExportedTempFile", () => {
 
 		await expect(fs.readFile(destinationPath, "utf8")).resolves.toBe("new-export");
 		await expect(fs.access(tempPath)).rejects.toThrow();
+	});
+});
+
+describe("validateSavedMp4AudioVideoSyncIfPresent", () => {
+	it("rejects saved MP4 files when an audio stream drifts from the video stream", async () => {
+		await expect(
+			validateSavedMp4AudioVideoSyncIfPresent("/tmp/export.mp4", async () => ({
+				width: 1920,
+				height: 1080,
+				duration: 600,
+				mediaStartTime: 0,
+				streamStartTime: 0,
+				streamDuration: 600,
+				frameRate: 30,
+				codec: "h264",
+				hasAudio: true,
+				audioCodec: "aac",
+				audioSampleRate: 48_000,
+				audioDuration: 598.75,
+			})),
+		).rejects.toThrow(
+			/Saved MP4 audio\/video duration mismatch: video=600\.000s audio=598\.750s drift=1\.250s/,
+		);
+	});
+
+	it("accepts silent MP4 files because audio is optional for screen-only exports", async () => {
+		await expect(
+			validateSavedMp4AudioVideoSyncIfPresent("/tmp/export.mp4", async () => ({
+				width: 1920,
+				height: 1080,
+				duration: 120,
+				mediaStartTime: 0,
+				streamStartTime: 0,
+				streamDuration: 120,
+				frameRate: 30,
+				codec: "h264",
+				hasAudio: false,
+			})),
+		).resolves.toBeUndefined();
+	});
+
+	it("rejects silent MP4 files when the export expected audio", async () => {
+		await expect(
+			validateSavedMp4AudioVideoSyncIfPresent(
+				"/tmp/export.mp4",
+				async () => ({
+					width: 1920,
+					height: 1080,
+					duration: 120,
+					mediaStartTime: 0,
+					streamStartTime: 0,
+					streamDuration: 120,
+					frameRate: 30,
+					codec: "h264",
+					hasAudio: false,
+				}),
+				{ expectedAudio: true },
+			),
+		).rejects.toThrow(/Saved MP4 is missing expected audio stream: path=\/tmp\/export\.mp4/);
+	});
+
+	it("skips non-MP4 exports", async () => {
+		const probe = vi.fn();
+
+		await expect(
+			validateSavedMp4AudioVideoSyncIfPresent("/tmp/export.gif", probe),
+		).resolves.toBeUndefined();
+		expect(probe).not.toHaveBeenCalled();
 	});
 });

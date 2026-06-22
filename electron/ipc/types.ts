@@ -9,10 +9,17 @@ export type SelectedSource = {
 };
 
 export type NativeMacRecordingOptions = {
+	sessionId?: string;
 	capturesSystemAudio?: boolean;
 	capturesMicrophone?: boolean;
 	microphoneDeviceId?: string;
 	microphoneLabel?: string;
+	capturesWebcam?: boolean;
+	webcamDeviceId?: string;
+	webcamLabel?: string;
+	webcamWidth?: number;
+	webcamHeight?: number;
+	webcamFPS?: number;
 };
 
 export type WindowBounds = {
@@ -39,6 +46,7 @@ export type NativeCaptureDiagnostics = {
 	supported?: boolean;
 	helperExists?: boolean;
 	fileSizeBytes?: number | null;
+	expectedDurationMs?: number | null;
 	processOutput?: string;
 	error?: string;
 };

@@ -17,6 +17,7 @@ export function getHudOverlayWindowBounds(
 	workArea: HudOverlayWorkArea,
 	mousePassthroughSupported: boolean,
 	fallbackExpanded = false,
+	bottomSafeAreaDip = 0,
 ): HudOverlayWorkArea {
 	if (mousePassthroughSupported) {
 		return { ...workArea };
@@ -30,9 +31,11 @@ export function getHudOverlayWindowBounds(
 			: NON_PASSTHROUGH_HUD_COMPACT_HEIGHT_DIP,
 	);
 
+	const bottomSafeArea = clamp(bottomSafeAreaDip, 0, Math.max(0, workArea.height - height));
+
 	return {
 		x: Math.round(workArea.x + (workArea.width - width) / 2),
-		y: Math.round(workArea.y + workArea.height - height),
+		y: Math.round(workArea.y + workArea.height - height - bottomSafeArea),
 		width,
 		height,
 	};
@@ -41,10 +44,20 @@ export function resizeHudOverlayFallbackBounds(
 	workArea: HudOverlayWorkArea,
 	currentBounds: HudOverlayWorkArea,
 	fallbackExpanded: boolean,
+	bottomSafeAreaDip = 0,
 ): HudOverlayWorkArea {
-	const nextBounds = getHudOverlayWindowBounds(workArea, false, fallbackExpanded);
+	const nextBounds = getHudOverlayWindowBounds(
+		workArea,
+		false,
+		fallbackExpanded,
+		bottomSafeAreaDip,
+	);
 	const maxX = workArea.x + workArea.width - nextBounds.width;
-	const maxY = workArea.y + workArea.height - nextBounds.height;
+	const maxY =
+		workArea.y +
+		workArea.height -
+		nextBounds.height -
+		clamp(bottomSafeAreaDip, 0, Math.max(0, workArea.height - nextBounds.height));
 
 	return {
 		...nextBounds,

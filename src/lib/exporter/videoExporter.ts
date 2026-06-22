@@ -1,3 +1,4 @@
+import type { FillFrameRegion } from "@/components/video-editor/fillFrameRegions";
 import type {
 	AnnotationRegion,
 	AudioRegion,
@@ -8,8 +9,8 @@ import type {
 	CursorStyle,
 	CursorTelemetryPoint,
 	Padding,
-	SpeedRegion,
 	SourceAudioTrackSettings,
+	SpeedRegion,
 	TrimRegion,
 	WebcamOverlaySettings,
 	ZoomMotionBlurTuning,
@@ -17,7 +18,11 @@ import type {
 	ZoomTransitionEasing,
 } from "@/components/video-editor/types";
 import { getEffectiveVideoStreamDurationSeconds } from "@/lib/mediaTiming";
-import { AudioProcessor, isAacAudioEncodingSupported } from "./audioEncoder";
+import {
+	AudioProcessor,
+	isAacAudioEncodingSupported,
+	shouldTreatCompanionAudioStartDelayAsTimed,
+} from "./audioEncoder";
 import { buildEditedTrackSourceSegments, classifyEditedTrackStrategy } from "./editedTrackStrategy";
 import {
 	advanceFinalizationProgress,
@@ -30,6 +35,7 @@ import { FrameRenderer } from "./frameRenderer";
 import { getLocalFilePath } from "./localMediaSource";
 import type { SupportedMp4EncoderPath } from "./mp4Support";
 import { VideoMuxer } from "./muxer";
+import { resolveSourceAudioFallbackPaths } from "./sourceAudioFallback";
 import { type DecodedVideoInfo, StreamingVideoDecoder } from "./streamingDecoder";
 import type {
 	ExportConfig,
@@ -71,11 +77,14 @@ interface VideoExporterConfig extends ExportConfig {
 	cropRegion: CropRegion;
 	webcam?: WebcamOverlaySettings;
 	webcamUrl?: string | null;
+	fillFrameRegions?: FillFrameRegion[];
+	fillFrameDefault?: boolean;
 	annotationRegions?: AnnotationRegion[];
 	autoCaptions?: CaptionCue[];
 	autoCaptionSettings?: AutoCaptionSettings;
 	cursorTelemetry?: CursorTelemetryPoint[];
 	showCursor?: boolean;
+	hideCursorInFillFrame?: boolean;
 	cursorStyle?: CursorStyle;
 	cursorSize?: number;
 	cursorSmoothing?: number;
@@ -109,6 +118,8 @@ type NativeAudioPlan =
 	| {
 			audioMode: "copy-source" | "trim-source";
 			audioSourcePath: string;
+			audioSourceCodec?: string;
+			audioSourceDurationSec?: number;
 			trimSegments?: Array<{ startMs: number; endMs: number }>;
 	  }
 	| {
@@ -119,7 +130,9 @@ type NativeAudioPlan =
 			audioMode: "edited-track";
 			strategy: "filtergraph-fast-path";
 			audioSourcePath: string;
+			audioSourceCodec?: string;
 			audioSourceSampleRate: number;
+			audioSourceDurationSec?: number;
 			editedTrackSegments: Array<{ startMs: number; endMs: number; speed: number }>;
 	  };
 
@@ -206,7 +219,11 @@ export class VideoExporter {
 			const shouldUseFfmpegAudioFallback =
 				!useNativeEncoder &&
 				audioPlan.audioMode !== "none" &&
-				(shouldUsePitchPreservingFfmpegAudio || !(await isAacAudioEncodingSupported()));
+				this.shouldUseRendererFfmpegAudioFallback(
+					audioPlan,
+					shouldUsePitchPreservingFfmpegAudio,
+					await isAacAudioEncodingSupported(),
+				);
 
 			if (!useNativeEncoder) {
 				await this.initializeEncoder();
@@ -241,6 +258,8 @@ export class VideoExporter {
 				cropRegion: this.config.cropRegion,
 				webcam: this.config.webcam,
 				webcamUrl: this.config.webcamUrl,
+				fillFrameRegions: this.config.fillFrameRegions,
+				fillFrameDefault: this.config.fillFrameDefault,
 				videoWidth: videoInfo.width,
 				videoHeight: videoInfo.height,
 				annotationRegions: this.config.annotationRegions,
@@ -251,6 +270,7 @@ export class VideoExporter {
 				previewHeight: this.config.previewHeight,
 				cursorTelemetry: this.config.cursorTelemetry,
 				showCursor: this.config.showCursor,
+				hideCursorInFillFrame: this.config.hideCursorInFillFrame,
 				cursorStyle: this.config.cursorStyle,
 				cursorSize: this.config.cursorSize,
 				cursorSmoothing: this.config.cursorSmoothing,
@@ -366,6 +386,7 @@ export class VideoExporter {
 				this.finalizationTimeMs = this.getNowMs() - finalizationStartedAt;
 				return {
 					...result,
+					expectedAudio: nativeAudioPlan.audioMode !== "none",
 					metrics: this.buildExportMetrics(),
 				};
 			}
@@ -446,6 +467,7 @@ export class VideoExporter {
 				this.finalizationTimeMs = this.getNowMs() - finalizationStartedAt;
 				return {
 					...result,
+					expectedAudio: true,
 					metrics: this.buildExportMetrics(),
 				};
 			}
@@ -455,10 +477,16 @@ export class VideoExporter {
 				return {
 					success: true,
 					tempFilePath: muxerResult.tempFilePath,
+					expectedAudio: audioPlan.audioMode !== "none",
 					metrics: this.buildExportMetrics(),
 				};
 			}
-			return { success: true, blob: muxerResult.blob, metrics: this.buildExportMetrics() };
+			return {
+				success: true,
+				blob: muxerResult.blob,
+				expectedAudio: audioPlan.audioMode !== "none",
+				metrics: this.buildExportMetrics(),
+			};
 		} catch (error) {
 			if (this.cancelled && !this.encoderError) {
 				return {
@@ -548,9 +576,12 @@ export class VideoExporter {
 		const sourceAudioFallbackPaths = (this.config.sourceAudioFallbackPaths ?? []).filter(
 			(audioPath) => typeof audioPath === "string" && audioPath.trim().length > 0,
 		);
-		const hasTimedSourceAudioFallback = sourceAudioFallbackPaths.some(
-			(audioPath) =>
-				(this.config.sourceAudioFallbackStartDelayMsByPath?.[audioPath] ?? 0) > 0,
+		const hasTimedSourceAudioFallback = sourceAudioFallbackPaths.some((audioPath) =>
+			shouldTreatCompanionAudioStartDelayAsTimed({
+				audioPath,
+				recordedStartDelayMs:
+					this.config.sourceAudioFallbackStartDelayMsByPath?.[audioPath],
+			}),
 		);
 		const localVideoSourcePath = this.getNativeVideoSourcePath();
 		const primaryAudioSourcePath =
@@ -559,9 +590,17 @@ export class VideoExporter {
 			null;
 		const usesEmbeddedPrimaryAudio =
 			Boolean(videoInfo.hasAudio) && primaryAudioSourcePath === localVideoSourcePath;
+		const hasExternalCompanionAudio =
+			Boolean(videoInfo.hasAudio && localVideoSourcePath) &&
+			resolveSourceAudioFallbackPaths(localVideoSourcePath, sourceAudioFallbackPaths)
+				.externalAudioPaths.length > 0;
 		const primaryAudioSourceSampleRate = usesEmbeddedPrimaryAudio
 			? videoInfo.audioSampleRate
 			: FILTERGRAPH_FALLBACK_AUDIO_SAMPLE_RATE;
+		const primaryAudioSourceCodec = usesEmbeddedPrimaryAudio ? videoInfo.audioCodec : undefined;
+		const primaryAudioSourceDurationSec = usesEmbeddedPrimaryAudio
+			? videoInfo.audioDuration
+			: undefined;
 
 		if (
 			!videoInfo.hasAudio &&
@@ -569,6 +608,13 @@ export class VideoExporter {
 			audioRegions.length === 0
 		) {
 			return { audioMode: "none" };
+		}
+
+		if (hasExternalCompanionAudio) {
+			return {
+				audioMode: "edited-track",
+				strategy: "offline-render-fallback",
+			};
 		}
 
 		if (
@@ -625,7 +671,9 @@ export class VideoExporter {
 						audioMode: "edited-track",
 						strategy,
 						audioSourcePath,
+						audioSourceCodec: primaryAudioSourceCodec,
 						audioSourceSampleRate,
+						audioSourceDurationSec: primaryAudioSourceDurationSec,
 						editedTrackSegments,
 					};
 				}
@@ -662,6 +710,8 @@ export class VideoExporter {
 			return {
 				audioMode: "trim-source",
 				audioSourcePath: primaryAudioSourcePath,
+				audioSourceCodec: primaryAudioSourceCodec,
+				audioSourceDurationSec: primaryAudioSourceDurationSec,
 				trimSegments,
 			};
 		}
@@ -669,7 +719,33 @@ export class VideoExporter {
 		return {
 			audioMode: "copy-source",
 			audioSourcePath: primaryAudioSourcePath,
+			audioSourceCodec: primaryAudioSourceCodec,
+			audioSourceDurationSec: primaryAudioSourceDurationSec,
 		};
+	}
+
+	private canUseRendererFfmpegAudioMux() {
+		if (typeof window === "undefined") {
+			return false;
+		}
+		return (
+			typeof window.electronAPI?.muxExportedVideoAudio === "function" ||
+			typeof window.electronAPI?.muxExportedVideoAudioFromPath === "function"
+		);
+	}
+
+	private shouldUseRendererFfmpegAudioFallback(
+		audioPlan: NativeAudioPlan,
+		requiresFfmpegAudio: boolean,
+		browserAacSupported: boolean,
+	) {
+		if (audioPlan.audioMode === "none") {
+			return false;
+		}
+		if (this.canUseRendererFfmpegAudioMux()) {
+			return true;
+		}
+		return requiresFfmpegAudio || !browserAacSupported;
 	}
 
 	private async tryStartNativeVideoExport(): Promise<boolean> {
@@ -904,6 +980,14 @@ export class VideoExporter {
 						audioPlan.strategy === "filtergraph-fast-path"
 							? audioPlan.audioSourceSampleRate
 							: undefined,
+					outputDurationSec: this.effectiveDurationSec,
+					audioSourceDurationSec:
+						audioPlan.audioMode === "copy-source" ||
+						audioPlan.audioMode === "trim-source" ||
+						(audioPlan.audioMode === "edited-track" &&
+							audioPlan.strategy === "filtergraph-fast-path")
+							? audioPlan.audioSourceDurationSec
+							: undefined,
 					editedAudioData: editedAudioBuffer,
 					editedAudioMimeType,
 				}),
@@ -998,6 +1082,13 @@ export class VideoExporter {
 					? audioPlan.audioSourceSampleRate
 					: undefined,
 			outputDurationSec: this.effectiveDurationSec,
+			audioSourceDurationSec:
+				audioPlan.audioMode === "copy-source" ||
+				audioPlan.audioMode === "trim-source" ||
+				(audioPlan.audioMode === "edited-track" &&
+					audioPlan.strategy === "filtergraph-fast-path")
+					? audioPlan.audioSourceDurationSec
+					: undefined,
 			editedAudioData: editedAudioBuffer,
 			editedAudioMimeType,
 		};
