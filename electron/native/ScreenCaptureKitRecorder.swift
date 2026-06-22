@@ -657,13 +657,20 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 
 		do {
 			try device.lockForConfiguration()
-			let frameDuration = CMTime(value: 1, timescale: CMTimeScale(webcamTargetFPS))
-			device.activeVideoMinFrameDuration = frameDuration
-			device.activeVideoMaxFrameDuration = frameDuration
-			device.unlockForConfiguration()
+			defer { device.unlockForConfiguration() }
+
+			if let frameDuration = Self.supportedExactFrameDuration(for: device, targetFPS: webcamTargetFPS) {
+				device.activeVideoMinFrameDuration = frameDuration
+				device.activeVideoMaxFrameDuration = frameDuration
+				fputs("WEBCAM_FRAME_DURATION_SELECTED fps=\(webcamTargetFPS) duration=\(CMTimeGetSeconds(frameDuration)) ranges=\"\(Self.sanitizeLogValue(Self.frameRateRangeSummary(device.activeFormat.videoSupportedFrameRateRanges)))\"\n", stderr)
+				fflush(stderr)
+			} else {
+				fputs("WEBCAM_FRAME_DURATION_UNCHANGED fps=\(webcamTargetFPS) reason=no-exact-supported-endpoint ranges=\"\(Self.sanitizeLogValue(Self.frameRateRangeSummary(device.activeFormat.videoSupportedFrameRateRanges)))\"\n", stderr)
+				fflush(stderr)
+			}
 		} catch {
-			// Not every camera lets us force its frame duration; keep recording
-			// with the selected session preset instead of failing startup.
+			fputs("WEBCAM_FRAME_DURATION_UNCHANGED fps=\(webcamTargetFPS) reason=\"\(Self.sanitizeLogValue(error.localizedDescription))\"\n", stderr)
+			fflush(stderr)
 		}
 
 		let deviceInput = try AVCaptureDeviceInput(device: device)
@@ -2103,6 +2110,49 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 			.replacingOccurrences(of: "\"", with: "'")
 			.replacingOccurrences(of: "\r", with: " ")
 			.replacingOccurrences(of: "\n", with: " ")
+	}
+
+	private static func supportedExactFrameDuration(for device: AVCaptureDevice, targetFPS: Int) -> CMTime? {
+		let targetFrameRate = Double(targetFPS)
+		let tolerance = 0.1
+		let ranges = device.activeFormat.videoSupportedFrameRateRanges
+		guard !ranges.isEmpty else {
+			return nil
+		}
+
+		if let fixedRange = ranges.first(where: {
+			abs($0.minFrameRate - targetFrameRate) <= tolerance && abs($0.maxFrameRate - targetFrameRate) <= tolerance
+		}) {
+			return validFrameDuration(fixedRange.minFrameDuration) ?? validFrameDuration(fixedRange.maxFrameDuration)
+		}
+
+		if let maxEndpointRange = ranges.first(where: { abs($0.maxFrameRate - targetFrameRate) <= tolerance }) {
+			return validFrameDuration(maxEndpointRange.minFrameDuration)
+		}
+
+		if let minEndpointRange = ranges.first(where: { abs($0.minFrameRate - targetFrameRate) <= tolerance }) {
+			return validFrameDuration(minEndpointRange.maxFrameDuration)
+		}
+
+		return nil
+	}
+
+	private static func validFrameDuration(_ duration: CMTime) -> CMTime? {
+		duration.isValid && duration > .zero ? duration : nil
+	}
+
+	private static func frameRateRangeSummary(_ ranges: [AVFrameRateRange]) -> String {
+		ranges
+			.map { range in
+				return String(
+					format: "%.2f-%.2f minDuration=%.9f maxDuration=%.9f",
+					range.minFrameRate,
+					range.maxFrameRate,
+					CMTimeGetSeconds(range.minFrameDuration),
+					CMTimeGetSeconds(range.maxFrameDuration)
+				)
+			}
+			.joined(separator: "; ")
 	}
 
 	private static func webcamPreviewFrameURLs(for baseURL: URL) -> [URL] {
