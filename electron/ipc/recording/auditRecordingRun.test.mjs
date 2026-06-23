@@ -232,7 +232,7 @@ describe("auditRecordingRun", () => {
 		});
 	});
 
-	it("warns when native audio continuity needed inserted silence", async () => {
+	it("fails when native audio continuity needed inserted silence", async () => {
 		const videoPath = await writeRun([
 			...healthyEvents(),
 			{
@@ -249,11 +249,11 @@ describe("auditRecordingRun", () => {
 		]);
 		const result = await auditRunWithHealthySourceMedia(videoPath);
 
-		expect(result.status).toBe("warning");
-		expect(result.issues).toEqual([]);
-		expect(result.warnings).toEqual([
+		expect(result.status).toBe("fail");
+		expect(result.issues).toEqual([
 			expect.objectContaining({ code: "native-audio-continuity-repaired" }),
 		]);
+		expect(result.warnings).toEqual([]);
 		expect(result.summary.audioContinuityRepairs).toMatchObject({
 			count: 1,
 			totalBuffers: 12,
@@ -263,7 +263,7 @@ describe("auditRecordingRun", () => {
 		});
 	});
 
-	it("warns when native webcam continuity needed held frames", async () => {
+	it("fails when native webcam continuity needed held frames", async () => {
 		const videoPath = await writeRun([
 			...healthyEvents(),
 			{
@@ -280,11 +280,11 @@ describe("auditRecordingRun", () => {
 		]);
 		const result = await auditRunWithHealthySourceMedia(videoPath);
 
-		expect(result.status).toBe("warning");
-		expect(result.issues).toEqual([]);
-		expect(result.warnings).toEqual([
+		expect(result.status).toBe("fail");
+		expect(result.issues).toEqual([
 			expect.objectContaining({ code: "native-webcam-continuity-held-frames" }),
 		]);
+		expect(result.warnings).toEqual([]);
 		expect(result.summary.webcamContinuityRepairs).toMatchObject({
 			count: 1,
 			totalFrames: 9,
@@ -294,7 +294,7 @@ describe("auditRecordingRun", () => {
 		});
 	});
 
-	it("warns when native webcam looked visually frozen long enough to review", async () => {
+	it("fails when native webcam looked visually frozen long enough to review", async () => {
 		const videoPath = await writeRun([
 			...healthyEvents(),
 			{
@@ -310,11 +310,11 @@ describe("auditRecordingRun", () => {
 		]);
 		const result = await auditRunWithHealthySourceMedia(videoPath);
 
-		expect(result.status).toBe("warning");
-		expect(result.issues).toEqual([]);
-		expect(result.warnings).toEqual([
+		expect(result.status).toBe("fail");
+		expect(result.issues).toEqual([
 			expect.objectContaining({ code: "native-webcam-visual-freeze-review" }),
 		]);
+		expect(result.warnings).toEqual([]);
 		expect(result.summary.webcamVisualFreezeReviews).toMatchObject({
 			count: 1,
 			totalDurationSeconds: 4.2,

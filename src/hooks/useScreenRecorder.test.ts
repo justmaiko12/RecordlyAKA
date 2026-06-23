@@ -462,6 +462,40 @@ describe("native recording audit finalization", () => {
     );
   });
 
+  it("fails with the first affected timestamp when native audio gaps were corrected", () => {
+    const failedContinuityAudit: RendererRecordingRunAudit = {
+      ...failedAudit,
+      status: "fail",
+      issues: [
+        {
+          code: "native-audio-continuity-repaired",
+          message:
+            "The native recorder inserted silence after audio callback gaps.",
+        },
+      ],
+      warnings: [],
+      summary: {
+        ...failedAudit.summary,
+        audioContinuityRepairs: {
+          count: 2,
+          totalBuffers: 28,
+          totalDurationSeconds: 0.597,
+          firstTargetPtsSeconds: 14.2,
+          lastTargetPtsSeconds: 92.4,
+        },
+      },
+    };
+
+    expect(
+      getNativeRecordingAuditFailureMessage({
+        path: "/tmp/recording-1.mp4",
+        recordingAudit: failedContinuityAudit,
+      }),
+    ).toContain(
+      "microphone audio had callback gaps, so Recordly refused to save a take that could drift in the middle. First affected point: 0:14.2.",
+    );
+  });
+
   it("warns with review timestamps when native webcam motion looked briefly frozen", () => {
     const warningAudit: RendererRecordingRunAudit = {
       ...failedAudit,

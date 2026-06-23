@@ -779,6 +779,22 @@ export function getNativeRecordingAuditFailureMessage(result: {
   }
 
   const primaryIssue = result.recordingAudit.issues[0];
+  const audioContinuityRepairs =
+    result.recordingAudit.summary.audioContinuityRepairs;
+  const webcamContinuityRepairs =
+    result.recordingAudit.summary.webcamContinuityRepairs;
+  const webcamVisualFreezeReviews =
+    result.recordingAudit.summary.webcamVisualFreezeReviews;
+  const firstAuditReviewSeconds = [
+    audioContinuityRepairs?.firstTargetPtsSeconds,
+    webcamContinuityRepairs?.firstTargetPtsSeconds,
+    webcamVisualFreezeReviews?.firstStartPtsSeconds,
+  ]
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+    .sort((left, right) => left - right)[0];
+  const firstAuditReviewTimestamp = formatAuditReviewTimestamp(
+    firstAuditReviewSeconds,
+  );
   const primaryMessage = (() => {
     switch (primaryIssue?.code) {
       case "preview-handoff-device-mismatch":
@@ -798,6 +814,12 @@ export function getNativeRecordingAuditFailureMessage(result: {
       case "preview-handoff-without-visible-video":
       case "preview-handoff-visible-video-started-too-late":
         return "Recording failed safety verification: after switching from preview into recording, the native recorder did not quickly prove visible webcam video.";
+      case "native-audio-continuity-repaired":
+        return `Recording failed native integrity audit: microphone audio had callback gaps, so Recordly refused to save a take that could drift in the middle.${firstAuditReviewTimestamp ? ` First affected point: ${firstAuditReviewTimestamp}.` : ""}`;
+      case "native-webcam-continuity-held-frames":
+        return `Recording failed native integrity audit: the webcam had callback gaps, so Recordly refused to save frozen facecam sections.${firstAuditReviewTimestamp ? ` First affected point: ${firstAuditReviewTimestamp}.` : ""}`;
+      case "native-webcam-visual-freeze-review":
+        return `Recording failed native integrity audit: Recordly detected a visually frozen webcam segment.${firstAuditReviewTimestamp ? ` First affected point: ${firstAuditReviewTimestamp}.` : ""}`;
       default:
         return (
           primaryIssue?.message ??
