@@ -396,6 +396,40 @@ function getErrorMessage(error: unknown): string {
 	return "Something went wrong";
 }
 
+async function resolveSourceAudioFallbackForExport({
+	sourcePath,
+	currentPaths,
+	currentStartDelayMsByPath,
+}: {
+	sourcePath: string | null;
+	currentPaths: string[];
+	currentStartDelayMsByPath: Record<string, number>;
+}) {
+	if (!sourcePath || !window.electronAPI?.getVideoAudioFallbackPaths) {
+		return {
+			paths: currentPaths,
+			startDelayMsByPath: currentStartDelayMsByPath,
+		};
+	}
+
+	try {
+		const result = await window.electronAPI.getVideoAudioFallbackPaths(sourcePath);
+		if (result.success && Array.isArray(result.paths) && result.paths.length > 0) {
+			return {
+				paths: result.paths,
+				startDelayMsByPath: result.startDelayMsByPath ?? {},
+			};
+		}
+	} catch (error) {
+		console.warn("[VideoEditor] Failed to refresh companion audio before export:", error);
+	}
+
+	return {
+		paths: currentPaths,
+		startDelayMsByPath: currentStartDelayMsByPath,
+	};
+}
+
 export default function VideoEditor() {
 	const { t } = useI18n();
 	const smokeExportConfig = useMemo(
@@ -5092,6 +5126,13 @@ export default function VideoEditor() {
 						selectedClipId !== null
 							? audio.selectedClipSourceAudioTrackSettings
 							: audio.activeSourceAudioTrackSettings;
+					const sourceAudioFallbackForExport =
+						await resolveSourceAudioFallbackForExport({
+							sourcePath: currentSourcePath,
+							currentPaths: audio.sourceAudioFallbackPaths,
+							currentStartDelayMsByPath:
+								audio.sourceAudioFallbackStartDelayMsByPath,
+						});
 
 					const exporterConfig = {
 						videoUrl: videoPath,
@@ -5170,9 +5211,9 @@ export default function VideoEditor() {
 						frame,
 						audioRegions,
 						clipRegions,
-						sourceAudioFallbackPaths: audio.sourceAudioFallbackPaths,
+						sourceAudioFallbackPaths: sourceAudioFallbackForExport.paths,
 						sourceAudioFallbackStartDelayMsByPath:
-							audio.sourceAudioFallbackStartDelayMsByPath,
+							sourceAudioFallbackForExport.startDelayMsByPath,
 						sourceAudioTrackSettings: sourceAudioTrackSettingsForExport,
 						previewWidth,
 						previewHeight,
@@ -5390,6 +5431,7 @@ export default function VideoEditor() {
 		[
 			clearPendingExportSave,
 			videoPath,
+			currentSourcePath,
 			wallpaper,
 			trimRegions,
 			shadowIntensity,
