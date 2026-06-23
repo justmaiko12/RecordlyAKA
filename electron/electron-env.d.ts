@@ -90,19 +90,26 @@ interface RendererRecordingRunAudit {
       preferredAudioSource?: "embedded" | "mic-companion";
       preferredAudioPaths?: string[];
     } | null;
-    companionAudioDurations: Array<{
-      trackKind: "mic";
-      audioPath: string;
+	    companionAudioDurations: Array<{
+	      trackKind: "mic";
+	      audioPath: string;
       videoDurationSeconds: number | null;
       audioDurationSeconds: number | null;
       driftSeconds: number | null;
       planAction: string;
       planReason: string;
       tempoRatio: number;
-      toleranceSeconds: number;
-    }>;
-    webcamVisualFreezeReviews: {
-      count: number;
+	      toleranceSeconds: number;
+	    }>;
+	    webcamCadence: {
+	      statsCount: number;
+	      targetFps: number | null;
+	      maxRecentFps: number | null;
+	      maxTotalFps: number | null;
+	      throttledFrames: number;
+	    };
+	    webcamVisualFreezeReviews: {
+	      count: number;
       totalDurationSeconds: number;
       firstStartPtsSeconds?: number;
       firstEndPtsSeconds?: number;

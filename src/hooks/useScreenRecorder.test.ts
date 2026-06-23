@@ -280,6 +280,13 @@ describe("native recording audit finalization", () => {
       webcamWriterStatus: "completed",
       webcamDuration: 15,
       webcamFrames: 453,
+      webcamCadence: {
+        statsCount: 0,
+        targetFps: null,
+        maxRecentFps: null,
+        maxTotalFps: null,
+        throttledFrames: 0,
+      },
       webcamVisualFreezeReviews: {
         count: 0,
         totalDurationSeconds: 0,

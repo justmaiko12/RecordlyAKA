@@ -631,6 +631,55 @@ function getReviewSegmentSummary(entries, eventName) {
   };
 }
 
+function getWebcamCadenceSummary(entries) {
+  const statsEntries = entries.filter((entry) => entry.event === "native-webcam-capture-stats");
+  const first = statsEntries[0] ? getDetails(statsEntries[0]) : null;
+  const last = statsEntries.at(-1) ? getDetails(statsEntries.at(-1)) : null;
+  const settings = getDetails(findLast(entries, "native-webcam-capture-settings-resolved"));
+  const targetFps =
+    getNumber(last?.targetFps) ??
+    getNumber(first?.targetFps) ??
+    getNumber(settings.effectiveFrameRate) ??
+    getNumber(settings.requestedFrameRate);
+  let maxRecentFps = null;
+  let maxTotalFps = null;
+  let throttledFrames = 0;
+
+  for (const entry of statsEntries) {
+    const details = getDetails(entry);
+    const recentFps = getNumber(details.recentFps);
+    const totalFps = getNumber(details.totalFps);
+    maxRecentFps =
+      recentFps === null ? maxRecentFps : Math.max(maxRecentFps ?? recentFps, recentFps);
+    maxTotalFps =
+      totalFps === null ? maxTotalFps : Math.max(maxTotalFps ?? totalFps, totalFps);
+    throttledFrames = Math.max(throttledFrames, getNumber(details.throttledFrames) ?? 0);
+  }
+
+  return {
+    statsCount: statsEntries.length,
+    targetFps: targetFps ?? null,
+    maxRecentFps,
+    maxTotalFps,
+    throttledFrames,
+    first,
+    last,
+  };
+}
+
+function webcamCadenceExceededTarget(cadence) {
+  if (
+    cadence.statsCount === 0 ||
+    cadence.targetFps === null ||
+    cadence.targetFps <= 0 ||
+    cadence.maxTotalFps === null
+  ) {
+    return false;
+  }
+
+  return cadence.maxTotalFps > cadence.targetFps * 1.2;
+}
+
 function pushIssue(issues, code, message, details = {}) {
   issues.push({ code, message, details });
 }
@@ -674,6 +723,7 @@ export async function auditRecordingRun(inputPath, options = {}) {
     WEBCAM_EVIDENCE_EVENTS.has(entry.event),
   );
   const proof = getProofSummary(entries);
+  const webcamCadence = getWebcamCadenceSummary(entries);
   const webcamVisualFreezeReviews = getReviewSegmentSummary(
     entries,
     "native-webcam-visual-freeze-review",
@@ -870,6 +920,15 @@ export async function auditRecordingRun(inputPath, options = {}) {
       "native-webcam-visual-freeze-review",
       "The native recorder saw a short visually frozen webcam segment. The recording was saved, but this timestamp should be reviewed.",
       webcamVisualFreezeReviews,
+    );
+  }
+
+  if (webcamCadenceExceededTarget(webcamCadence)) {
+    pushIssue(
+      warnings,
+      "native-webcam-cadence-exceeded-target",
+      "Native webcam output cadence exceeded the requested target frame rate. This can increase encoding load and cause intermittent camera glitches.",
+      webcamCadence,
     );
   }
 
@@ -1071,6 +1130,7 @@ export async function auditRecordingRun(inputPath, options = {}) {
         : null,
     },
     proof,
+    webcamCadence,
     webcamVisualFreezeReviews,
     audioContinuityRepairs,
     webcamContinuityRepairs,
@@ -1133,6 +1193,11 @@ function formatHuman(result) {
         : "";
     lines.push(
       `Webcam visual freeze reviews: events=${result.summary.webcamVisualFreezeReviews.count} duration=${result.summary.webcamVisualFreezeReviews.totalDurationSeconds}s${firstAt}`,
+    );
+  }
+  if ((result.summary.webcamCadence?.statsCount ?? 0) > 0) {
+    lines.push(
+      `Webcam cadence: target=${result.summary.webcamCadence.targetFps ?? "unknown"}fps maxTotal=${result.summary.webcamCadence.maxTotalFps ?? "unknown"}fps throttled=${result.summary.webcamCadence.throttledFrames ?? 0}`,
     );
   }
   if ((result.summary.audioContinuityRepairs?.count ?? 0) > 0) {

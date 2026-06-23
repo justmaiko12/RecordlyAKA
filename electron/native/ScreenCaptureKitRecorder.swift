@@ -155,6 +155,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 	private var webcamTargetFPS = 30
 	private var webcamFrameCount = 0
 	private var webcamHoldFrameCount = 0
+	private var webcamThrottledFrameCount = 0
 	private var loggedFirstWebcamFrame = false
 	private var loggedFirstVisibleWebcamFrame = false
 	private var lastWebcamStatsHostTime: CMTime?
@@ -453,6 +454,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		webcamPipelineFailureTriggered = false
 		lastWebcamPixelBuffer = nil
 		webcamHoldFrameCount = 0
+		webcamThrottledFrameCount = 0
 		inlineAudioBufferCount = 0
 		microphoneAudioBufferCount = 0
 		lastAudioStatsHostTime = nil
@@ -555,6 +557,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		webcamPipelineFailureTriggered = false
 		lastWebcamPixelBuffer = nil
 		webcamHoldFrameCount = 0
+		webcamThrottledFrameCount = 0
 		inlineAudioBufferCount = 0
 		microphoneAudioBufferCount = 0
 		lastAudioStatsHostTime = nil
@@ -733,6 +736,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		webcamInputNotReadySinceHostTime = nil
 		webcamFrameCount = 0
 		webcamHoldFrameCount = 0
+		webcamThrottledFrameCount = 0
 		loggedFirstWebcamFrame = false
 		loggedFirstVisibleWebcamFrame = false
 		lastWebcamStatsHostTime = CMClockGetTime(CMClockGetHostTimeClock())
@@ -960,10 +964,15 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 
 		let duration = webcamFrameDuration(for: sampleBuffer)
 		let relativePresentationTime = max(.zero, sampleTime - firstWebcamSampleTime - accumulatedPausedDuration)
-		var presentationTime =
-			lastWebcamPresentationTime == .zero
-				? relativePresentationTime
-				: CMTimeMaximum(relativePresentationTime, lastWebcamPresentationTime + duration)
+		if shouldThrottleOversuppliedWebcamFrame(
+			relativePresentationTime: relativePresentationTime,
+			frameDuration: duration
+		) {
+			webcamThrottledFrameCount += 1
+			return
+		}
+		let hasWrittenWebcamFrame = webcamFrameCount > 0
+		var presentationTime = relativePresentationTime
 
 		guard webcamInput.isReadyForMoreMediaData else {
 			let now = CMClockGetTime(CMClockGetHostTimeClock())
@@ -999,7 +1008,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 			return
 		}
 
-		if lastWebcamPresentationTime != .zero {
+		if hasWrittenWebcamFrame {
 			guard fillWebcamContinuityGapIfNeeded(
 				until: presentationTime,
 				frameDuration: duration,
@@ -1012,7 +1021,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 				)
 				return
 			}
-			presentationTime = CMTimeMaximum(presentationTime, lastWebcamPresentationTime + duration)
+			presentationTime = lastWebcamPresentationTime + duration
 		}
 
 		if webcamPixelBufferAdaptor.append(appendPixelBuffer, withPresentationTime: presentationTime) {
@@ -1252,6 +1261,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		lastWebcamFrameHostTime = nil
 		webcamInputNotReadySinceHostTime = nil
 		webcamFrameCount = 0
+		webcamHoldFrameCount = 0
+		webcamThrottledFrameCount = 0
 		loggedFirstWebcamFrame = false
 		loggedFirstVisibleWebcamFrame = false
 		lastWebcamStatsHostTime = nil
@@ -1858,7 +1869,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		let realFrames = max(0, webcamFrameCount - webcamHoldFrameCount)
 
 		fputs(
-			"WEBCAM_CAPTURE_STATS frames=\(webcamFrameCount) realFrames=\(realFrames) holdFrames=\(webcamHoldFrameCount) elapsed=\(elapsedSeconds) recentFps=\(recentFps) totalFps=\(totalFps) lastPts=\(CMTimeGetSeconds(lastWebcamPresentationTime))\n",
+			"WEBCAM_CAPTURE_STATS frames=\(webcamFrameCount) realFrames=\(realFrames) holdFrames=\(webcamHoldFrameCount) throttledFrames=\(webcamThrottledFrameCount) targetFps=\(webcamTargetFPS) elapsed=\(elapsedSeconds) recentFps=\(recentFps) totalFps=\(totalFps) lastPts=\(CMTimeGetSeconds(lastWebcamPresentationTime))\n",
 			stderr
 		)
 		fflush(stderr)
@@ -1867,15 +1878,25 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 	}
 
 	private func webcamFrameDuration(for sampleBuffer: CMSampleBuffer) -> CMTime {
-		if sampleBuffer.duration.isValid && sampleBuffer.duration > .zero {
-			return sampleBuffer.duration
-		}
-
-		if lastWebcamDuration.isValid && lastWebcamDuration > .zero {
-			return lastWebcamDuration
-		}
-
 		return CMTime(value: 1, timescale: CMTimeScale(webcamTargetFPS))
+	}
+
+	private func shouldThrottleOversuppliedWebcamFrame(
+		relativePresentationTime: CMTime,
+		frameDuration: CMTime
+	) -> Bool {
+		guard
+			webcamFrameCount > 0,
+			relativePresentationTime.isValid,
+			frameDuration.isValid,
+			frameDuration > .zero
+		else {
+			return false
+		}
+
+		let nextPresentationTime = lastWebcamPresentationTime + frameDuration
+		let earlyTolerance = CMTimeMultiplyByFloat64(frameDuration, multiplier: 0.35)
+		return relativePresentationTime + earlyTolerance < nextPresentationTime
 	}
 
 	private func fillWebcamContinuityGapIfNeeded(

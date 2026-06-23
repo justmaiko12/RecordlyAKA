@@ -101,6 +101,15 @@ describe("auditFinalizedRecordingForRenderer", () => {
             toleranceSeconds: 0.05,
           },
         ],
+        webcamCadence: {
+          statsCount: 2,
+          targetFps: 30,
+          maxRecentFps: 60.3,
+          maxTotalFps: 60.1,
+          throttledFrames: 310,
+          first: { targetFps: 30, totalFps: 59.9 },
+          last: { targetFps: 30, totalFps: 60.1 },
+        },
         webcamVisualFreezeReviews: {
           count: 1,
           totalDurationSeconds: 4.2,
@@ -154,6 +163,12 @@ describe("auditFinalizedRecordingForRenderer", () => {
       requested: true,
       firstBufferWritten: false,
       unavailable: false,
+    });
+    expect(result.summary.webcamCadence).toMatchObject({
+      statsCount: 2,
+      targetFps: 30,
+      maxTotalFps: 60.1,
+      throttledFrames: 310,
     });
     expect(result.summary.webcamVisualFreezeReviews).toMatchObject({
       count: 1,

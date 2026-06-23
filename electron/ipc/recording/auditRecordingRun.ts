@@ -141,6 +141,7 @@ export type RecordingRunAuditSummary = {
 		first: Record<string, unknown> | null;
 		last: Record<string, unknown> | null;
 	};
+	webcamCadence?: WebcamCadenceSummary;
 	webcamVisualFreezeReviews?: ReviewSegmentSummary;
 	audioContinuityRepairs?: ContinuityRepairSummary;
 	webcamContinuityRepairs?: ContinuityRepairSummary;
@@ -176,6 +177,16 @@ type ReviewSegmentSummary = {
 	firstEndPtsSeconds?: number;
 	lastStartPtsSeconds?: number;
 	lastEndPtsSeconds?: number;
+	first: Record<string, unknown> | null;
+	last: Record<string, unknown> | null;
+};
+
+type WebcamCadenceSummary = {
+	statsCount: number;
+	targetFps: number | null;
+	maxRecentFps: number | null;
+	maxTotalFps: number | null;
+	throttledFrames: number;
 	first: Record<string, unknown> | null;
 	last: Record<string, unknown> | null;
 };
@@ -506,6 +517,55 @@ function getReviewSegmentSummary(
 	};
 }
 
+function getWebcamCadenceSummary(entries: EventLogEntry[]): WebcamCadenceSummary {
+	const statsEntries = entries.filter((entry) => entry.event === "native-webcam-capture-stats");
+	const first = statsEntries[0] ? getDetails(statsEntries[0]) : null;
+	const last = statsEntries.length > 0 ? getDetails(statsEntries[statsEntries.length - 1]) : null;
+	const settings = getDetails(findLast(entries, "native-webcam-capture-settings-resolved"));
+	const targetFps =
+		getNumber(last?.targetFps) ??
+		getNumber(first?.targetFps) ??
+		getNumber(settings.effectiveFrameRate) ??
+		getNumber(settings.requestedFrameRate);
+	let maxRecentFps: number | null = null;
+	let maxTotalFps: number | null = null;
+	let throttledFrames = 0;
+
+	for (const entry of statsEntries) {
+		const details = getDetails(entry);
+		const recentFps = getNumber(details.recentFps);
+		const totalFps = getNumber(details.totalFps);
+		maxRecentFps =
+			recentFps === null ? maxRecentFps : Math.max(maxRecentFps ?? recentFps, recentFps);
+		maxTotalFps =
+			totalFps === null ? maxTotalFps : Math.max(maxTotalFps ?? totalFps, totalFps);
+		throttledFrames = Math.max(throttledFrames, getNumber(details.throttledFrames) ?? 0);
+	}
+
+	return {
+		statsCount: statsEntries.length,
+		targetFps: targetFps ?? null,
+		maxRecentFps,
+		maxTotalFps,
+		throttledFrames,
+		first,
+		last,
+	};
+}
+
+function webcamCadenceExceededTarget(cadence: WebcamCadenceSummary) {
+	if (
+		cadence.statsCount === 0 ||
+		cadence.targetFps === null ||
+		cadence.targetFps <= 0 ||
+		cadence.maxTotalFps === null
+	) {
+		return false;
+	}
+
+	return cadence.maxTotalFps > cadence.targetFps * 1.2;
+}
+
 function pushIssue(
 	issues: RecordingRunAuditIssue[],
 	code: string,
@@ -689,6 +749,7 @@ export async function auditRecordingRun(
 	const sawWebcamEvidence = entries.some((entry) => WEBCAM_EVIDENCE_EVENTS.has(entry.event));
 	const proof = getProofSummary(entries);
 	const rendererPreviewIssues = getRendererPreviewIssueSummary(entries);
+	const webcamCadence = getWebcamCadenceSummary(entries);
 	const webcamVisualFreezeReviews = getReviewSegmentSummary(
 		entries,
 		"native-webcam-visual-freeze-review",
@@ -928,6 +989,15 @@ export async function auditRecordingRun(
 			"native-webcam-visual-freeze-review",
 			"The native recorder saw a short visually frozen webcam segment. The recording was saved, but this timestamp should be reviewed.",
 			webcamVisualFreezeReviews as unknown as Record<string, unknown>,
+		);
+	}
+
+	if (webcamCadenceExceededTarget(webcamCadence)) {
+		pushIssue(
+			warnings,
+			"native-webcam-cadence-exceeded-target",
+			"Native webcam output cadence exceeded the requested target frame rate. This can increase encoding load and cause intermittent camera glitches.",
+			webcamCadence as unknown as Record<string, unknown>,
 		);
 	}
 
@@ -1291,6 +1361,7 @@ export async function auditRecordingRun(
 			resolvedLabel: getNonEmptyString(getDetails(recordingWebcamSelection).resolvedLabel),
 			captureLabel: getNonEmptyString(getDetails(recordingWebcamCaptureStarted).label),
 		},
+		webcamCadence,
 		webcamVisualFreezeReviews,
 		audioContinuityRepairs,
 		webcamContinuityRepairs,

@@ -292,13 +292,17 @@ describe("parseNativeHelperOutputLine", () => {
   it("parses healthy native webcam capture cadence stats", () => {
     expect(
       parseNativeHelperOutputLine(
-        "WEBCAM_CAPTURE_STATS frames=150 elapsed=5.0 recentFps=29.9 totalFps=30.0 lastPts=4.96",
+        "WEBCAM_CAPTURE_STATS frames=150 realFrames=150 holdFrames=0 throttledFrames=149 targetFps=30 elapsed=5.0 recentFps=29.9 totalFps=30.0 lastPts=4.96",
       ),
     ).toEqual({
       event: "native-webcam-capture-stats",
       severity: "info",
       details: {
         frames: 150,
+        realFrames: 150,
+        holdFrames: 0,
+        throttledFrames: 149,
+        targetFps: 30,
         elapsed: 5,
         recentFps: 29.9,
         totalFps: 30,

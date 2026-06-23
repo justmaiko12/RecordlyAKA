@@ -268,6 +268,44 @@ describe("auditRecordingRun", () => {
 		});
 	});
 
+	it("warns when native webcam cadence exceeds the requested target fps", async () => {
+		const videoPath = await writeRun([
+			{
+				event: "native-webcam-capture-settings-resolved",
+				details: {
+					requestedFrameRate: 30,
+					effectiveFrameRate: 30,
+				},
+			},
+			...healthyEvents(),
+			{
+				event: "native-webcam-capture-stats",
+				details: {
+					frames: 302,
+					realFrames: 302,
+					holdFrames: 0,
+					elapsed: 5,
+					recentFps: 60.36,
+					totalFps: 60.36,
+					lastPts: 5.01,
+				},
+			},
+		]);
+		const result = await auditRunWithHealthySourceMedia(videoPath);
+
+		expect(result.status).toBe("warning");
+		expect(result.issues).toEqual([]);
+		expect(result.warnings).toEqual([
+			expect.objectContaining({ code: "native-webcam-cadence-exceeded-target" }),
+		]);
+		expect(result.summary.webcamCadence).toMatchObject({
+			statsCount: 1,
+			targetFps: 30,
+			maxRecentFps: 60.36,
+			maxTotalFps: 60.36,
+		});
+	});
+
 	it("fails when source audio/video sync repair rejects the recording", async () => {
 		const videoPath = await writeRun([
 			...healthyEvents(),
