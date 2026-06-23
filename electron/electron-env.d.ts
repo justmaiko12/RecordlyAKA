@@ -101,6 +101,18 @@ interface RendererRecordingRunAudit {
       tempoRatio: number;
       toleranceSeconds: number;
     }>;
+    audioContinuityRepairs: {
+      count: number;
+      totalFrames?: number;
+      totalBuffers?: number;
+      totalDurationSeconds: number;
+    };
+    webcamContinuityRepairs: {
+      count: number;
+      totalFrames?: number;
+      totalBuffers?: number;
+      totalDurationSeconds: number;
+    };
     nativeMicrophone: {
       requested: boolean;
       firstBufferWritten: boolean;

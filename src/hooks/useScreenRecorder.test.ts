@@ -280,6 +280,14 @@ describe("native recording audit finalization", () => {
       webcamWriterStatus: "completed",
       webcamDuration: 15,
       webcamFrames: 453,
+      audioContinuityRepairs: {
+        count: 0,
+        totalDurationSeconds: 0,
+      },
+      webcamContinuityRepairs: {
+        count: 0,
+        totalDurationSeconds: 0,
+      },
     },
   };
 
@@ -392,6 +400,49 @@ describe("native recording audit finalization", () => {
       }),
     ).toContain(
       "Recording saved, but the live webcam preview was not trustworthy during capture (2 preview issues reported).",
+    );
+  });
+
+  it("warns with continuity repair details when audio or webcam gaps were corrected", () => {
+    const warningAudit: RendererRecordingRunAudit = {
+      ...failedAudit,
+      status: "warning",
+      issues: [],
+      warnings: [
+        {
+          code: "native-audio-continuity-repaired",
+          message:
+            "The native recorder inserted silence to keep audio sample time continuous after device callback gaps.",
+        },
+        {
+          code: "native-webcam-continuity-held-frames",
+          message:
+            "The native recorder held the last good webcam frame to keep the camera track continuous after device callback gaps.",
+        },
+      ],
+      summary: {
+        ...failedAudit.summary,
+        screenWriterStatus: "completed",
+        audioContinuityRepairs: {
+          count: 2,
+          totalBuffers: 28,
+          totalDurationSeconds: 0.597,
+        },
+        webcamContinuityRepairs: {
+          count: 1,
+          totalFrames: 9,
+          totalDurationSeconds: 0.3,
+        },
+      },
+    };
+
+    expect(
+      getNativeRecordingAuditWarningMessage({
+        path: "/tmp/recording-1.mp4",
+        recordingAudit: warningAudit,
+      }),
+    ).toContain(
+      "Recordly kept the timeline continuous by applying 0.597s of audio silence across 2 events and 9 held webcam frames across 1 event after device callback gaps.",
     );
   });
 

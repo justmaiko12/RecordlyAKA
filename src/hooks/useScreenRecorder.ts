@@ -824,9 +824,23 @@ export function getNativeRecordingAuditWarningMessage(result: {
   const primaryWarning = result.recordingAudit.warnings[0];
   const rendererPreviewIssueCount =
     result.recordingAudit.summary.rendererPreviewIssueCount ?? 0;
+  const audioContinuityRepairs =
+    result.recordingAudit.summary.audioContinuityRepairs;
+  const webcamContinuityRepairs =
+    result.recordingAudit.summary.webcamContinuityRepairs;
+  const continuityWarningParts = [
+    audioContinuityRepairs && audioContinuityRepairs.count > 0
+      ? `${audioContinuityRepairs.totalDurationSeconds.toFixed(3)}s of audio silence across ${audioContinuityRepairs.count} event${audioContinuityRepairs.count === 1 ? "" : "s"}`
+      : null,
+    webcamContinuityRepairs && webcamContinuityRepairs.count > 0
+      ? `${webcamContinuityRepairs.totalFrames ?? 0} held webcam frame${(webcamContinuityRepairs.totalFrames ?? 0) === 1 ? "" : "s"} across ${webcamContinuityRepairs.count} event${webcamContinuityRepairs.count === 1 ? "" : "s"}`
+      : null,
+  ].filter(Boolean);
   const warningMessage =
     rendererPreviewIssueCount > 0
       ? `Recording saved, but the live webcam preview was not trustworthy during capture (${rendererPreviewIssueCount} preview issue${rendererPreviewIssueCount === 1 ? "" : "s"} reported). The native recorder kept proof evidence and did not find blocking media corruption.`
+      : continuityWarningParts.length > 0
+        ? `Recording saved. Recordly kept the timeline continuous by applying ${continuityWarningParts.join(" and ")} after device callback gaps.`
       : (primaryWarning?.message ??
         "Recording completed with native audit warnings.");
 

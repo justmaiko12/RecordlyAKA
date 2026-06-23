@@ -327,6 +327,28 @@ export function summarizeRecordingAuditForIpc(audit: RecordingRunAuditResult) {
       webcamFrames: audit.summary.webcamFinalization?.frames ?? null,
       sourceMediaDurations: audit.summary.sourceMediaDurations ?? null,
       companionAudioDurations: audit.summary.companionAudioDurations ?? [],
+      audioContinuityRepairs: {
+        count: audit.summary.audioContinuityRepairs?.count ?? 0,
+        ...(audit.summary.audioContinuityRepairs?.totalFrames
+          ? { totalFrames: audit.summary.audioContinuityRepairs.totalFrames }
+          : {}),
+        ...(audit.summary.audioContinuityRepairs?.totalBuffers
+          ? { totalBuffers: audit.summary.audioContinuityRepairs.totalBuffers }
+          : {}),
+        totalDurationSeconds:
+          audit.summary.audioContinuityRepairs?.totalDurationSeconds ?? 0,
+      },
+      webcamContinuityRepairs: {
+        count: audit.summary.webcamContinuityRepairs?.count ?? 0,
+        ...(audit.summary.webcamContinuityRepairs?.totalFrames
+          ? { totalFrames: audit.summary.webcamContinuityRepairs.totalFrames }
+          : {}),
+        ...(audit.summary.webcamContinuityRepairs?.totalBuffers
+          ? { totalBuffers: audit.summary.webcamContinuityRepairs.totalBuffers }
+          : {}),
+        totalDurationSeconds:
+          audit.summary.webcamContinuityRepairs?.totalDurationSeconds ?? 0,
+      },
       nativeMicrophone: audit.summary.nativeMicrophone ?? {
         requested: false,
         firstBufferWritten: false,
