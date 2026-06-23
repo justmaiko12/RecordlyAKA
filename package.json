@@ -44,7 +44,8 @@
 		"release:create": "node scripts/create-release.mjs",
 		"test": "vitest --run",
 		"test:watch": "vitest",
-		"audit:recording": "node scripts/audit-recording-run.mjs"
+		"audit:recording": "node scripts/audit-recording-run.mjs",
+		"audit:latest-recording": "node scripts/audit-latest-recording.mjs"
 	},
 	"dependencies": {
 		"@phosphor-icons/react": "^2.1.10",
