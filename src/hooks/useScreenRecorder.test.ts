@@ -160,13 +160,13 @@ describe("createProcessedMicrophoneConstraints", () => {
 });
 
 describe("shouldUseBrowserMicrophoneSidecarForNativeMac", () => {
-  it("forces browser microphone sidecar capture when mac native screen capture needs a mic", () => {
+  it("does not force browser microphone sidecar capture when mac native screen capture needs a mic", () => {
     expect(
       shouldUseBrowserMicrophoneSidecarForNativeMac({
         useNativeMacScreenCapture: true,
         microphoneEnabled: true,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("does not force a browser microphone sidecar when native mac capture or microphone is disabled", () => {

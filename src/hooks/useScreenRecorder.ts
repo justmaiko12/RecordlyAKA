@@ -80,13 +80,16 @@ function isContinuityOrIPhoneCameraLabel(label: string | null | undefined) {
 }
 
 export function shouldUseBrowserMicrophoneSidecarForNativeMac({
-  useNativeMacScreenCapture,
-  microphoneEnabled,
+  useNativeMacScreenCapture: _useNativeMacScreenCapture,
+  microphoneEnabled: _microphoneEnabled,
 }: {
   useNativeMacScreenCapture: boolean;
   microphoneEnabled: boolean;
 }) {
-  return useNativeMacScreenCapture && microphoneEnabled;
+  // Keep screen, webcam, and microphone on the native ScreenCaptureKit clock
+  // whenever possible. Browser microphone fallback is only used when the native
+  // helper reports that native mic capture is unavailable.
+  return false;
 }
 
 export type BrowserMicrophoneProfile =
