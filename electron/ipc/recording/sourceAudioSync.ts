@@ -4,7 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { getFfmpegBinaryPath, getFfprobeBinaryPath } from "../ffmpeg/binary";
 import { buildAtempoFilters, formatFfmpegSeconds, getAudioSyncAdjustment } from "../ffmpeg/filters";
-import { appendRecordingEventLogEntry } from "./recordingEventLog";
+import { appendRecordingEventLogEntry, getRecordingEventLogPath } from "./recordingEventLog";
 
 const execFileAsync = promisify(execFile);
 
@@ -49,6 +49,7 @@ export type NativeCompanionAudioSyncTelemetry = {
 	videoWriterStatus: string;
 	audioWriterStatus: string;
 	trackKind: "mic" | "system";
+	source?: "native-output" | "event-log";
 };
 
 function finitePositive(value: unknown) {
@@ -153,6 +154,97 @@ export function getTrustedNativeCompanionAudioSyncTelemetry({
 		videoWriterStatus,
 		audioWriterStatus,
 		trackKind,
+		source: "native-output",
+	};
+}
+
+function getDetailsFromEventLogEntry(entry: unknown) {
+	if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+		return null;
+	}
+	const details = (entry as { details?: unknown }).details;
+	return details && typeof details === "object" && !Array.isArray(details)
+		? (details as Record<string, unknown>)
+		: null;
+}
+
+function getLastEventDetails(entries: unknown[], eventName: string) {
+	let lastDetails: Record<string, unknown> | null = null;
+	for (const entry of entries) {
+		if (
+			!entry ||
+			typeof entry !== "object" ||
+			Array.isArray(entry) ||
+			(entry as { event?: unknown }).event !== eventName
+		) {
+			continue;
+		}
+		lastDetails = getDetailsFromEventLogEntry(entry);
+	}
+	return lastDetails;
+}
+
+export async function getTrustedNativeCompanionAudioSyncTelemetryFromEventLog({
+	videoPath,
+	trackKind,
+}: {
+	videoPath: string;
+	trackKind: "mic" | "system";
+}): Promise<NativeCompanionAudioSyncTelemetry | null> {
+	if (trackKind !== "mic") {
+		return null;
+	}
+
+	const eventLogPath = getRecordingEventLogPath(
+		path.dirname(videoPath),
+		recordingSessionIdForVideoPath(videoPath),
+	);
+	let lines: string[];
+	try {
+		lines = (await fs.readFile(eventLogPath, "utf8")).split(/\r?\n/u);
+	} catch {
+		return null;
+	}
+
+	const entries: unknown[] = [];
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (!trimmed) {
+			continue;
+		}
+		try {
+			entries.push(JSON.parse(trimmed) as unknown);
+		} catch {
+			// Ignore partial/corrupt event-log lines; missing telemetry simply falls
+			// back to the normal ffprobe-based safety plan.
+		}
+	}
+
+	const videoDetails = getLastEventDetails(entries, "native-video-recording-finalized");
+	const audioDetails = getLastEventDetails(entries, "native-microphone-recording-finalized");
+	if (!videoDetails || !audioDetails) {
+		return null;
+	}
+
+	const videoWriterStatus = typeof videoDetails.writerStatus === "string" ? videoDetails.writerStatus : "";
+	const audioWriterStatus = typeof audioDetails.writerStatus === "string" ? audioDetails.writerStatus : "";
+	if (videoWriterStatus !== "completed" || audioWriterStatus !== "completed") {
+		return null;
+	}
+
+	const videoDurationSeconds = finitePositive(videoDetails.duration);
+	const audioDurationSeconds = finitePositive(audioDetails.duration);
+	if (videoDurationSeconds === null || audioDurationSeconds === null) {
+		return null;
+	}
+
+	return {
+		videoDurationSeconds,
+		audioDurationSeconds,
+		videoWriterStatus,
+		audioWriterStatus,
+		trackKind,
+		source: "event-log",
 	};
 }
 
@@ -383,10 +475,15 @@ export async function repairRecordingCompanionAudioSyncIfNeeded({
 	]);
 	const before = { videoDurationSeconds, audioDurationSeconds };
 	const plan = getRecordingSourceAudioSyncPlan(before);
-	const trustedNativeTelemetry = getTrustedNativeCompanionAudioSyncTelemetry({
-		nativeCaptureOutput,
-		trackKind,
-	});
+	const trustedNativeTelemetry =
+		getTrustedNativeCompanionAudioSyncTelemetry({
+			nativeCaptureOutput,
+			trackKind,
+		}) ??
+		(await getTrustedNativeCompanionAudioSyncTelemetryFromEventLog({
+			videoPath,
+			trackKind,
+		}));
 	const trustedNativePlan = trustedNativeTelemetry
 		? getRecordingSourceAudioSyncPlan(trustedNativeTelemetry)
 		: null;

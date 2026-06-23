@@ -1,9 +1,14 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { getRecordingEventLogPath } from "./recordingEventLog";
 import {
 	buildRecordingAudioOnlySyncArgs,
 	buildRecordingSourceAudioSyncFilter,
 	getRecordingSourceAudioSyncPlan,
 	getTrustedNativeCompanionAudioSyncTelemetry,
+	getTrustedNativeCompanionAudioSyncTelemetryFromEventLog,
 } from "./sourceAudioSync";
 
 describe("getRecordingSourceAudioSyncPlan", () => {
@@ -100,6 +105,58 @@ describe("getTrustedNativeCompanionAudioSyncTelemetry", () => {
 					"MICROPHONE_RECORDING_FINALIZED writerStatus=completed duration=10",
 			}),
 		).toBeNull();
+	});
+
+	it("can recover trusted native mic finalization durations from the event log", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "recordly-sync-"));
+		try {
+			const videoPath = path.join(tempDir, "recording-123.mp4");
+			const eventLogPath = getRecordingEventLogPath(tempDir, "123");
+			await fs.writeFile(
+				eventLogPath,
+				[
+					{
+						timestamp: "2026-06-23T00:00:00.000Z",
+						sessionId: "123",
+						event: "native-video-recording-finalized",
+						details: {
+							writerStatus: "completed",
+							duration: 2017.82559383,
+						},
+					},
+					{
+						timestamp: "2026-06-23T00:00:00.000Z",
+						sessionId: "123",
+						event: "native-microphone-recording-finalized",
+						details: {
+							writerStatus: "completed",
+							buffers: 188229,
+							duration: 2017.801342292,
+						},
+					},
+				]
+					.map((entry) => JSON.stringify(entry))
+					.join("\n"),
+				"utf8",
+			);
+
+			const telemetry =
+				await getTrustedNativeCompanionAudioSyncTelemetryFromEventLog({
+					videoPath,
+					trackKind: "mic",
+				});
+
+			expect(telemetry).toMatchObject({
+				trackKind: "mic",
+				source: "event-log",
+				videoDurationSeconds: 2017.82559383,
+				audioDurationSeconds: 2017.801342292,
+				videoWriterStatus: "completed",
+				audioWriterStatus: "completed",
+			});
+		} finally {
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
 	});
 });
 

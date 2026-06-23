@@ -2153,13 +2153,14 @@ export function registerRecordingHandlers(
           );
           setNativeCaptureStopRequested(true);
           process.stdin.write("stop\n");
-          const tempVideoPath = await waitForNativeCaptureStop(process);
-          console.log(
-            "[stop-native] Helper stopped, tempVideoPath:",
-            tempVideoPath,
-          );
-          setNativeCaptureProcess(null);
-          setNativeScreenRecordingActive(false);
+	          const tempVideoPath = await waitForNativeCaptureStop(process);
+	          console.log(
+	            "[stop-native] Helper stopped, tempVideoPath:",
+	            tempVideoPath,
+	          );
+	          await drainNativeEventLogWrites();
+	          setNativeCaptureProcess(null);
+	          setNativeScreenRecordingActive(false);
           setNativeCaptureTargetPath(null);
           setNativeCaptureSystemAudioPath(null);
           setNativeCaptureMicrophonePath(null);
@@ -2319,11 +2320,12 @@ export function registerRecordingHandlers(
           if (fallbackPath) {
             try {
               await fs.access(fallbackPath);
-              console.log(
-                "[stop-native-screen-recording] Recovering with fallback path:",
-                fallbackPath,
-              );
-              if (fallbackSystemAudioPath || fallbackMicrophonePath) {
+	              console.log(
+	                "[stop-native-screen-recording] Recovering with fallback path:",
+	                fallbackPath,
+	              );
+	              await drainNativeEventLogWrites();
+	              if (fallbackSystemAudioPath || fallbackMicrophonePath) {
                 try {
                   await muxNativeMacRecordingWithAudio(
                     fallbackPath,
