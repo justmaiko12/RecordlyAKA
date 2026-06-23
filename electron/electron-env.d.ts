@@ -93,12 +93,12 @@ interface RendererRecordingRunAudit {
 	    companionAudioDurations: Array<{
 	      trackKind: "mic";
 	      audioPath: string;
-      videoDurationSeconds: number | null;
-      audioDurationSeconds: number | null;
-      driftSeconds: number | null;
-      planAction: string;
-      planReason: string;
-      tempoRatio: number;
+	      videoDurationSeconds: number | null;
+	      audioDurationSeconds: number | null;
+	      driftSeconds: number | null;
+	      planAction: string;
+	      planReason: string;
+	      tempoRatio: number;
 	      toleranceSeconds: number;
 	    }>;
 	    webcamCadence: {
@@ -106,11 +106,12 @@ interface RendererRecordingRunAudit {
 	      targetFps: number | null;
 	      maxRecentFps: number | null;
 	      maxTotalFps: number | null;
+	      finalizationFps: number | null;
 	      throttledFrames: number;
 	    };
 	    webcamVisualFreezeReviews: {
 	      count: number;
-      totalDurationSeconds: number;
+	      totalDurationSeconds: number;
       firstStartPtsSeconds?: number;
       firstEndPtsSeconds?: number;
       lastStartPtsSeconds?: number;

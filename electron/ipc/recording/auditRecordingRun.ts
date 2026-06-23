@@ -186,9 +186,11 @@ type WebcamCadenceSummary = {
 	targetFps: number | null;
 	maxRecentFps: number | null;
 	maxTotalFps: number | null;
+	finalizationFps: number | null;
 	throttledFrames: number;
 	first: Record<string, unknown> | null;
 	last: Record<string, unknown> | null;
+	finalization: Record<string, unknown> | null;
 };
 
 const WEBCAM_CADENCE_WARNING_MULTIPLIER = 1.2;
@@ -525,6 +527,7 @@ function getWebcamCadenceSummary(entries: EventLogEntry[]): WebcamCadenceSummary
 	const first = statsEntries[0] ? getDetails(statsEntries[0]) : null;
 	const last = statsEntries.length > 0 ? getDetails(statsEntries[statsEntries.length - 1]) : null;
 	const settings = getDetails(findLast(entries, "native-webcam-capture-settings-resolved"));
+	const finalization = getDetails(findLast(entries, "native-webcam-recording-finalized"));
 	const targetFps =
 		getNumber(last?.targetFps) ??
 		getNumber(first?.targetFps) ??
@@ -545,20 +548,31 @@ function getWebcamCadenceSummary(entries: EventLogEntry[]): WebcamCadenceSummary
 		throttledFrames = Math.max(throttledFrames, getNumber(details.throttledFrames) ?? 0);
 	}
 
+	const finalizationFrames = getNumber(finalization.frames);
+	const finalizationDuration = getNumber(finalization.duration);
+	const finalizationFps =
+		finalizationFrames !== null && finalizationDuration !== null && finalizationDuration > 0
+			? finalizationFrames / finalizationDuration
+			: null;
+	if (finalizationFps !== null) {
+		maxTotalFps = Math.max(maxTotalFps ?? finalizationFps, finalizationFps);
+	}
+
 	return {
 		statsCount: statsEntries.length,
 		targetFps: targetFps ?? null,
 		maxRecentFps,
 		maxTotalFps,
+		finalizationFps,
 		throttledFrames,
 		first,
 		last,
+		finalization: Object.keys(finalization).length > 0 ? finalization : null,
 	};
 }
 
 function webcamCadenceExceededTarget(cadence: WebcamCadenceSummary) {
 	if (
-		cadence.statsCount === 0 ||
 		cadence.targetFps === null ||
 		cadence.targetFps <= 0 ||
 		cadence.maxTotalFps === null
@@ -571,7 +585,6 @@ function webcamCadenceExceededTarget(cadence: WebcamCadenceSummary) {
 
 function webcamCadenceSeverelyExceededTarget(cadence: WebcamCadenceSummary) {
 	if (
-		cadence.statsCount === 0 ||
 		cadence.targetFps === null ||
 		cadence.targetFps <= 0 ||
 		cadence.maxTotalFps === null

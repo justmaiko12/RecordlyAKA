@@ -641,6 +641,7 @@ function getWebcamCadenceSummary(entries) {
   const first = statsEntries[0] ? getDetails(statsEntries[0]) : null;
   const last = statsEntries.at(-1) ? getDetails(statsEntries.at(-1)) : null;
   const settings = getDetails(findLast(entries, "native-webcam-capture-settings-resolved"));
+  const finalization = getDetails(findLast(entries, "native-webcam-recording-finalized"));
   const targetFps =
     getNumber(last?.targetFps) ??
     getNumber(first?.targetFps) ??
@@ -661,20 +662,31 @@ function getWebcamCadenceSummary(entries) {
     throttledFrames = Math.max(throttledFrames, getNumber(details.throttledFrames) ?? 0);
   }
 
+  const finalizationFrames = getNumber(finalization.frames);
+  const finalizationDuration = getNumber(finalization.duration);
+  const finalizationFps =
+    finalizationFrames !== null && finalizationDuration !== null && finalizationDuration > 0
+      ? finalizationFrames / finalizationDuration
+      : null;
+  if (finalizationFps !== null) {
+    maxTotalFps = Math.max(maxTotalFps ?? finalizationFps, finalizationFps);
+  }
+
   return {
     statsCount: statsEntries.length,
     targetFps: targetFps ?? null,
     maxRecentFps,
     maxTotalFps,
+    finalizationFps,
     throttledFrames,
     first,
     last,
+    finalization: Object.keys(finalization).length > 0 ? finalization : null,
   };
 }
 
 function webcamCadenceExceededTarget(cadence) {
   if (
-    cadence.statsCount === 0 ||
     cadence.targetFps === null ||
     cadence.targetFps <= 0 ||
     cadence.maxTotalFps === null
@@ -687,7 +699,6 @@ function webcamCadenceExceededTarget(cadence) {
 
 function webcamCadenceSeverelyExceededTarget(cadence) {
   if (
-    cadence.statsCount === 0 ||
     cadence.targetFps === null ||
     cadence.targetFps <= 0 ||
     cadence.maxTotalFps === null
@@ -1220,9 +1231,12 @@ function formatHuman(result) {
       `Webcam visual freeze reviews: events=${result.summary.webcamVisualFreezeReviews.count} duration=${result.summary.webcamVisualFreezeReviews.totalDurationSeconds}s${firstAt}`,
     );
   }
-  if ((result.summary.webcamCadence?.statsCount ?? 0) > 0) {
+  if (
+    (result.summary.webcamCadence?.statsCount ?? 0) > 0 ||
+    typeof result.summary.webcamCadence?.finalizationFps === "number"
+  ) {
     lines.push(
-      `Webcam cadence: target=${result.summary.webcamCadence.targetFps ?? "unknown"}fps maxTotal=${result.summary.webcamCadence.maxTotalFps ?? "unknown"}fps throttled=${result.summary.webcamCadence.throttledFrames ?? 0}`,
+      `Webcam cadence: target=${result.summary.webcamCadence.targetFps ?? "unknown"}fps maxTotal=${result.summary.webcamCadence.maxTotalFps ?? "unknown"}fps finalization=${result.summary.webcamCadence.finalizationFps ?? "unknown"}fps throttled=${result.summary.webcamCadence.throttledFrames ?? 0}`,
     );
   }
   if ((result.summary.audioContinuityRepairs?.count ?? 0) > 0) {

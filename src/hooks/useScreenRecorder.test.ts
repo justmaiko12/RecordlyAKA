@@ -285,6 +285,7 @@ describe("native recording audit finalization", () => {
         targetFps: null,
         maxRecentFps: null,
         maxTotalFps: null,
+        finalizationFps: null,
         throttledFrames: 0,
       },
       webcamVisualFreezeReviews: {

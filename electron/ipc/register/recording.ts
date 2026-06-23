@@ -332,6 +332,7 @@ export function summarizeRecordingAuditForIpc(audit: RecordingRunAuditResult) {
         targetFps: audit.summary.webcamCadence?.targetFps ?? null,
         maxRecentFps: audit.summary.webcamCadence?.maxRecentFps ?? null,
         maxTotalFps: audit.summary.webcamCadence?.maxTotalFps ?? null,
+        finalizationFps: audit.summary.webcamCadence?.finalizationFps ?? null,
         throttledFrames: audit.summary.webcamCadence?.throttledFrames ?? 0,
       },
       webcamVisualFreezeReviews: {

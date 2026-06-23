@@ -106,6 +106,7 @@ describe("auditFinalizedRecordingForRenderer", () => {
           targetFps: 30,
           maxRecentFps: 60.3,
           maxTotalFps: 60.1,
+          finalizationFps: 60.1,
           throttledFrames: 310,
           first: { targetFps: 30, totalFps: 59.9 },
           last: { targetFps: 30, totalFps: 60.1 },
@@ -168,6 +169,7 @@ describe("auditFinalizedRecordingForRenderer", () => {
       statsCount: 2,
       targetFps: 30,
       maxTotalFps: 60.1,
+      finalizationFps: 60.1,
       throttledFrames: 310,
     });
     expect(result.summary.webcamVisualFreezeReviews).toMatchObject({
