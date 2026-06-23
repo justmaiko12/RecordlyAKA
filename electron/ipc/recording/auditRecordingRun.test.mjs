@@ -618,6 +618,51 @@ describe("auditRecordingRun", () => {
 		).toBe(true);
 	});
 
+	it("fails when companion mic audio was globally stretched beyond current safety limits", async () => {
+		const videoPath = await writeRun([
+			...healthyEvents({ screenDuration: 2017.775, webcamDuration: 2017.775 }),
+			{
+				event: "recording-companion-audio-sync-repaired",
+				details: {
+					action: "repair",
+					reason: "tempo",
+					trackKind: "mic",
+					audioPath: "/tmp/recording-123.mic.m4a",
+					videoDurationSeconds: 2017.775,
+					audioDurationSeconds: 2006.592,
+					driftSeconds: 11.183,
+					tempoRatio: 0.9944577566874404,
+					after: {
+						videoDurationSeconds: 2017.775,
+						audioDurationSeconds: 2017.775,
+					},
+				},
+			},
+		]);
+		const result = await auditRunWithHealthySourceAndCompanionAudio(videoPath);
+
+		expect(result.status).toBe("fail");
+		expect(
+			result.issues.some(
+				(issue) => issue.code === "recording-companion-audio-sync-unsafe-repair",
+			),
+		).toBe(true);
+		expect(
+			result.issues.find(
+				(issue) => issue.code === "recording-companion-audio-sync-unsafe-repair",
+			)?.details,
+		).toMatchObject({
+			trackKind: "mic",
+			videoDurationSeconds: 2017.775,
+			audioDurationSeconds: 2006.592,
+			currentSafetyPlan: {
+				action: "reject",
+				reason: "unsafe-short-audio-mismatch",
+				driftSeconds: 11.183,
+			},
+		});
+	});
+
 	it("fails when an expected companion mic file was missing during finalization", async () => {
 		const videoPath = await writeRun([
 			...healthyEvents(),

@@ -720,6 +720,24 @@ function getMinimumAcceptedProofCount(durationSeconds) {
   );
 }
 
+function getUnsafeCompanionAudioRepair(details) {
+  const videoDurationSeconds = getNumber(details.videoDurationSeconds);
+  const audioDurationSeconds = getNumber(details.audioDurationSeconds);
+  const safetyPlan = getRecordingSourceAudioSyncPlan({
+    videoDurationSeconds,
+    audioDurationSeconds,
+  });
+
+  if (safetyPlan.action !== "reject") {
+    return null;
+  }
+
+  return {
+    ...details,
+    currentSafetyPlan: safetyPlan,
+  };
+}
+
 export async function auditRecordingRun(inputPath, options = {}) {
   const artifacts = getArtifactsForInput(inputPath);
   const issues = [];
@@ -916,6 +934,22 @@ export async function auditRecordingRun(inputPath, options = {}) {
       entry.event,
       `Failure event recorded: ${entry.event}`,
       details,
+    );
+  }
+
+  for (const entry of entries) {
+    if (entry.event !== "recording-companion-audio-sync-repaired") {
+      continue;
+    }
+    const unsafeRepair = getUnsafeCompanionAudioRepair(getDetails(entry));
+    if (!unsafeRepair) {
+      continue;
+    }
+    pushIssue(
+      issues,
+      "recording-companion-audio-sync-unsafe-repair",
+      "Companion audio was globally stretched beyond the current safe repair limit; start/end sync can hide middle-of-recording drift.",
+      unsafeRepair,
     );
   }
 
