@@ -2255,6 +2255,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       const result = await window.electronAPI.recoverNativeScreenRecording({
         includeDiagnosticsCandidate:
           options?.includeDiagnosticsCandidate !== false,
+        deferAudioValidationUntilMicrophoneSidecar:
+          options?.requireMicrophoneSidecar === true,
       });
       if (!result.success || !result.path) {
         return null;
@@ -2668,6 +2670,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         console.log("[PERF:RENDERER] IPC: stopNativeScreenRecording: STARTED");
         const result = await window.electronAPI.stopNativeScreenRecording({
           expectedDurationMs,
+          deferAudioValidationUntilMicrophoneSidecar:
+            requiresMicFallbackSidecarBeforeEditor,
         });
         console.log(
           `[PERF:RENDERER] IPC: stopNativeScreenRecording: COMPLETED in ${(performance.now() - ipcStopStart).toFixed(2)}ms`,

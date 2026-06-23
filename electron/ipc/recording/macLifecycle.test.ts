@@ -50,8 +50,14 @@ describe("mac native capture lifecycle", () => {
     vi.doUnmock("electron");
     vi.doUnmock("./diagnostics");
     vi.doUnmock("./events");
+    vi.doUnmock("./macRecoveryManifest");
+    vi.doUnmock("./nativeIntegrity");
+    vi.doUnmock("./prune");
     vi.doUnmock("./recordingEventLog");
+    vi.doUnmock("./sceneStyleEvents");
     vi.doUnmock("./sourceAudioSync");
+    vi.doUnmock("./webcamLayoutEvents");
+    vi.doUnmock("../cursor/telemetry");
   });
 
   function createNativeProcessStub() {
@@ -143,6 +149,84 @@ describe("mac native capture lifecycle", () => {
         audioPath: micPath,
         trackKind: "mic",
         reason: "missing-file",
+      },
+    });
+
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("defers source audio repair and audit during recovery when browser mic sidecar is pending", async () => {
+    const tempDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "recordly-mac-recovery-"),
+    );
+    const videoPath = path.join(tempDir, "recording-123.mp4");
+    const repairSourceMock = vi.fn(async () => {
+      throw new Error("source repair should be deferred");
+    });
+    const auditMock = vi.fn(async () => {
+      throw new Error("audit should be deferred");
+    });
+
+    vi.doMock("./macRecoveryManifest", () => ({
+      findMacRecoveryCandidates: vi.fn(async () => [
+        {
+          videoPath,
+          systemAudioPath: null,
+          microphonePath: null,
+          webcamPath: null,
+          manifestPath: null,
+        },
+      ]),
+      markMacRecoveryManifestFailed: vi.fn(async () => undefined),
+      markMacRecoveryManifestFinalized: vi.fn(async () => undefined),
+    }));
+    vi.doMock("./nativeIntegrity", () => ({
+      resolveValidatedNativeWebcamPath: vi.fn(async () => null),
+      validateNativeScreenRecordingIntegrity: vi.fn(async () => ({
+        fileSizeBytes: 1024,
+        durationSeconds: 10,
+      })),
+    }));
+    vi.doMock("./prune", () => ({
+      pruneAutoRecordings: vi.fn(async () => undefined),
+    }));
+    vi.doMock("./sceneStyleEvents", () => ({
+      persistSceneStyleEvents: vi.fn(async () => undefined),
+    }));
+    vi.doMock("./sourceAudioSync", () => ({
+      repairRecordingCompanionAudioSyncIfNeeded: vi.fn(async () => undefined),
+      repairRecordingSourceAudioSyncIfNeeded: repairSourceMock,
+    }));
+    vi.doMock("./webcamLayoutEvents", () => ({
+      persistWebcamLayoutEvents: vi.fn(async () => undefined),
+    }));
+    vi.doMock("../cursor/telemetry", () => ({
+      persistPendingCursorTelemetry: vi.fn(async () => undefined),
+      snapshotCursorTelemetryForPersistence: vi.fn(),
+    }));
+
+    await fs.writeFile(videoPath, "video");
+    const { recoverNativeMacCaptureOutput } = await import("./mac");
+
+    const result = await recoverNativeMacCaptureOutput({
+      deferAudioValidationUntilMicrophoneSidecar: true,
+      auditFinalizedRecording: auditMock,
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      path: videoPath,
+      webcamPath: null,
+    });
+    expect(repairSourceMock).not.toHaveBeenCalled();
+    expect(auditMock).not.toHaveBeenCalled();
+    expect(appendRecordingEventLogEntryMock).toHaveBeenCalledWith({
+      recordingsDir: tempDir,
+      sessionId: "123",
+      event: "recording-source-audio-sync-skipped",
+      details: {
+        reason: "pending-mic-companion-audio",
+        videoPath,
       },
     });
 

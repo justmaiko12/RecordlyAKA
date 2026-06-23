@@ -491,6 +491,7 @@ interface Window {
     }>;
     stopNativeScreenRecording: (options?: {
       expectedDurationMs?: number | null;
+      deferAudioValidationUntilMicrophoneSidecar?: boolean;
     }) => Promise<{
       success: boolean;
       path?: string;
@@ -501,6 +502,7 @@ interface Window {
     }>;
     recoverNativeScreenRecording: (options?: {
       includeDiagnosticsCandidate?: boolean;
+      deferAudioValidationUntilMicrophoneSidecar?: boolean;
     }) => Promise<{
       success: boolean;
       path?: string;

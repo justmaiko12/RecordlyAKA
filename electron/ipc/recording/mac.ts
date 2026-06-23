@@ -940,9 +940,11 @@ export async function finalizeStoredVideo(videoPath: string) {
 
 export async function recoverNativeMacCaptureOutput({
   includeDiagnosticsCandidate = true,
+  deferAudioValidationUntilMicrophoneSidecar = false,
   auditFinalizedRecording,
 }: {
   includeDiagnosticsCandidate?: boolean;
+  deferAudioValidationUntilMicrophoneSidecar?: boolean;
   auditFinalizedRecording?: NativeRecordingRecoveryAudit;
 } = {}) {
   const macDiagnostics =
@@ -978,7 +980,19 @@ export async function recoverNativeMacCaptureOutput({
         }
       }
 
-      await repairRecordingSourceAudioSyncIfNeeded(candidate.videoPath);
+      if (deferAudioValidationUntilMicrophoneSidecar) {
+        await appendRecordingEventLogEntry({
+          recordingsDir: path.dirname(candidate.videoPath),
+          sessionId: getRecordingSessionIdForVideoPath(candidate.videoPath),
+          event: "recording-source-audio-sync-skipped",
+          details: {
+            reason: "pending-mic-companion-audio",
+            videoPath: candidate.videoPath,
+          },
+        });
+      } else {
+        await repairRecordingSourceAudioSyncIfNeeded(candidate.videoPath);
+      }
 
       await validateNativeScreenRecordingIntegrity({
         screenPath: candidate.videoPath,
@@ -989,7 +1003,8 @@ export async function recoverNativeMacCaptureOutput({
         webcamPath: candidate.webcamPath,
         processOutput: nativeCaptureOutputBuffer,
       });
-      const recordingAudit = auditFinalizedRecording
+      const recordingAudit =
+        !deferAudioValidationUntilMicrophoneSidecar && auditFinalizedRecording
         ? await auditFinalizedRecording(candidate.videoPath)
         : undefined;
       return {

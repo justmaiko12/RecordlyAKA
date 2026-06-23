@@ -1881,13 +1881,22 @@ export function registerRecordingHandlers(
 
   ipcMain.handle(
     "stop-native-screen-recording",
-    async (_, options?: { expectedDurationMs?: number | null }) => {
+    async (
+      _,
+      options?: {
+        expectedDurationMs?: number | null;
+        deferAudioValidationUntilMicrophoneSidecar?: boolean;
+      },
+    ) => {
       const start = Date.now();
       const expectedDurationMs =
         typeof options?.expectedDurationMs === "number" &&
         Number.isFinite(options.expectedDurationMs)
           ? Math.max(0, Math.round(options.expectedDurationMs))
           : null;
+      const deferAudioValidationUntilMicrophoneSidecar = Boolean(
+        options?.deferAudioValidationUntilMicrophoneSidecar,
+      );
       console.log("[PERF:MAIN] Handler: stop-native-screen-recording: STARTED");
       try {
         // Windows native capture stop path
@@ -2112,6 +2121,7 @@ export function registerRecordingHandlers(
 
         if (!nativeScreenRecordingActive) {
           const recovered = await recoverNativeMacCaptureOutput({
+            deferAudioValidationUntilMicrophoneSidecar,
             auditFinalizedRecording: auditAndSummarizeFinalizedRecording,
           });
           if (recovered) {
@@ -2185,9 +2195,21 @@ export function registerRecordingHandlers(
             console.log("[stop-native] No separate audio tracks to mux");
           }
 
-          await repairRecordingSourceAudioUnlessMicCompanionPreferred(
-            finalVideoPath,
-          );
+          if (deferAudioValidationUntilMicrophoneSidecar) {
+            await appendRecordingEventLogEntry({
+              recordingsDir: path.dirname(finalVideoPath),
+              sessionId: getRecordingSessionIdForVideoPath(finalVideoPath),
+              event: "recording-source-audio-sync-skipped",
+              details: {
+                reason: "pending-mic-companion-audio",
+                videoPath: finalVideoPath,
+              },
+            });
+          } else {
+            await repairRecordingSourceAudioUnlessMicCompanionPreferred(
+              finalVideoPath,
+            );
+          }
 
           const screenValidation = await validateNativeScreenRecordingIntegrity(
             {
@@ -2238,13 +2260,18 @@ export function registerRecordingHandlers(
             },
           });
           await drainNativeEventLogWrites();
-          const recordingAudit =
-            await auditAndRecordFinalizedRecording(finalVideoPath);
-          assertRecordingRunAuditPassed(recordingAudit, finalVideoPath);
+          const recordingAudit = deferAudioValidationUntilMicrophoneSidecar
+            ? null
+            : await auditAndRecordFinalizedRecording(finalVideoPath);
+          if (recordingAudit) {
+            assertRecordingRunAuditPassed(recordingAudit, finalVideoPath);
+          }
           return {
             ...(await finalizeStoredVideo(finalVideoPath)),
             webcamPath: finalWebcamPath,
-            recordingAudit: summarizeRecordingAuditForIpc(recordingAudit),
+            ...(recordingAudit
+              ? { recordingAudit: summarizeRecordingAuditForIpc(recordingAudit) }
+              : {}),
           };
         } catch (error) {
           console.error(
@@ -2311,7 +2338,19 @@ export function registerRecordingHandlers(
                   throw muxError;
                 }
               }
-              await repairRecordingSourceAudioSyncIfNeeded(fallbackPath);
+              if (deferAudioValidationUntilMicrophoneSidecar) {
+                await appendRecordingEventLogEntry({
+                  recordingsDir: path.dirname(fallbackPath),
+                  sessionId: getRecordingSessionIdForVideoPath(fallbackPath),
+                  event: "recording-source-audio-sync-skipped",
+                  details: {
+                    reason: "pending-mic-companion-audio",
+                    videoPath: fallbackPath,
+                  },
+                });
+              } else {
+                await repairRecordingSourceAudioSyncIfNeeded(fallbackPath);
+              }
               await validateNativeScreenRecordingIntegrity({
                 screenPath: fallbackPath,
                 processOutput: nativeCaptureOutputBuffer,
@@ -2342,12 +2381,21 @@ export function registerRecordingHandlers(
               });
               await drainNativeEventLogWrites();
               const recordingAudit =
-                await auditAndRecordFinalizedRecording(fallbackPath);
-              assertRecordingRunAuditPassed(recordingAudit, fallbackPath);
+                deferAudioValidationUntilMicrophoneSidecar
+                  ? null
+                  : await auditAndRecordFinalizedRecording(fallbackPath);
+              if (recordingAudit) {
+                assertRecordingRunAuditPassed(recordingAudit, fallbackPath);
+              }
               return {
                 ...(await finalizeStoredVideo(fallbackPath)),
                 webcamPath: recoveredWebcamPath,
-                recordingAudit: summarizeRecordingAuditForIpc(recordingAudit),
+                ...(recordingAudit
+                  ? {
+                      recordingAudit:
+                        summarizeRecordingAuditForIpc(recordingAudit),
+                    }
+                  : {}),
               };
             } catch {
               // File doesn't exist or isn't accessible
@@ -2355,6 +2403,7 @@ export function registerRecordingHandlers(
           }
 
           const recovered = await recoverNativeMacCaptureOutput({
+            deferAudioValidationUntilMicrophoneSidecar,
             auditFinalizedRecording: auditAndSummarizeFinalizedRecording,
           });
           if (recovered) {
@@ -2381,6 +2430,7 @@ export function registerRecordingHandlers(
       _,
       options?: {
         includeDiagnosticsCandidate?: boolean;
+        deferAudioValidationUntilMicrophoneSidecar?: boolean;
       },
     ) => {
       if (process.platform !== "darwin") {
@@ -2394,6 +2444,9 @@ export function registerRecordingHandlers(
       const recovered = await recoverNativeMacCaptureOutput({
         includeDiagnosticsCandidate:
           options?.includeDiagnosticsCandidate !== false,
+        deferAudioValidationUntilMicrophoneSidecar: Boolean(
+          options?.deferAudioValidationUntilMicrophoneSidecar,
+        ),
         auditFinalizedRecording: auditAndSummarizeFinalizedRecording,
       });
       if (recovered) {

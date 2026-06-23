@@ -749,11 +749,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   stopNativeScreenRecording: (options?: {
     expectedDurationMs?: number | null;
+    deferAudioValidationUntilMicrophoneSidecar?: boolean;
   }) => {
     return ipcRenderer.invoke("stop-native-screen-recording", options);
   },
   recoverNativeScreenRecording: (options?: {
     includeDiagnosticsCandidate?: boolean;
+    deferAudioValidationUntilMicrophoneSidecar?: boolean;
   }) => {
     return ipcRenderer.invoke("recover-native-screen-recording", options);
   },
