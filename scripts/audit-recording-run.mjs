@@ -20,6 +20,8 @@ const MAX_SECONDS_PER_ACCEPTED_PROOF_SAMPLE = 3;
 const RECORDING_SOURCE_AUDIO_SYNC_TOLERANCE_SECONDS = 0.05;
 const RECORDING_SOURCE_AUDIO_MAX_TEMPO_DRIFT_SECONDS = 1.5;
 const RECORDING_SOURCE_AUDIO_MAX_TEMPO_DRIFT_RATIO = 0.0015;
+const WEBCAM_CADENCE_WARNING_MULTIPLIER = 1.2;
+const WEBCAM_CADENCE_FAILURE_MULTIPLIER = 1.5;
 
 const FAILURE_EVENTS = new Set([
   "native-helper-exited-unexpectedly",
@@ -476,6 +478,9 @@ async function readEventLog(filePath) {
 }
 
 function getDetails(entry) {
+  if (!entry) {
+    return {};
+  }
   return isRecord(entry.details) ? entry.details : {};
 }
 
@@ -677,7 +682,20 @@ function webcamCadenceExceededTarget(cadence) {
     return false;
   }
 
-  return cadence.maxTotalFps > cadence.targetFps * 1.2;
+  return cadence.maxTotalFps > cadence.targetFps * WEBCAM_CADENCE_WARNING_MULTIPLIER;
+}
+
+function webcamCadenceSeverelyExceededTarget(cadence) {
+  if (
+    cadence.statsCount === 0 ||
+    cadence.targetFps === null ||
+    cadence.targetFps <= 0 ||
+    cadence.maxTotalFps === null
+  ) {
+    return false;
+  }
+
+  return cadence.maxTotalFps > cadence.targetFps * WEBCAM_CADENCE_FAILURE_MULTIPLIER;
 }
 
 function pushIssue(issues, code, message, details = {}) {
@@ -923,7 +941,14 @@ export async function auditRecordingRun(inputPath, options = {}) {
     );
   }
 
-  if (webcamCadenceExceededTarget(webcamCadence)) {
+  if (webcamCadenceSeverelyExceededTarget(webcamCadence)) {
+    pushIssue(
+      issues,
+      "native-webcam-cadence-severely-exceeded-target",
+      "Native webcam output cadence was far above the requested target frame rate. The recording may contain intermittent camera glitches.",
+      webcamCadence,
+    );
+  } else if (webcamCadenceExceededTarget(webcamCadence)) {
     pushIssue(
       warnings,
       "native-webcam-cadence-exceeded-target",

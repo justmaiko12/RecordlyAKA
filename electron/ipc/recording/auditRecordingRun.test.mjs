@@ -268,7 +268,7 @@ describe("auditRecordingRun", () => {
 		});
 	});
 
-	it("warns when native webcam cadence exceeds the requested target fps", async () => {
+	it("fails when native webcam cadence severely exceeds the requested target fps", async () => {
 		const videoPath = await writeRun([
 			{
 				event: "native-webcam-capture-settings-resolved",
@@ -293,6 +293,44 @@ describe("auditRecordingRun", () => {
 		]);
 		const result = await auditRunWithHealthySourceMedia(videoPath);
 
+		expect(result.status).toBe("fail");
+		expect(result.issues).toEqual([
+			expect.objectContaining({ code: "native-webcam-cadence-severely-exceeded-target" }),
+		]);
+		expect(result.warnings).toEqual([]);
+		expect(result.summary.webcamCadence).toMatchObject({
+			statsCount: 1,
+			targetFps: 30,
+			maxRecentFps: 60.36,
+			maxTotalFps: 60.36,
+		});
+	});
+
+	it("warns when native webcam cadence moderately exceeds the requested target fps", async () => {
+		const videoPath = await writeRun([
+			{
+				event: "native-webcam-capture-settings-resolved",
+				details: {
+					requestedFrameRate: 30,
+					effectiveFrameRate: 30,
+				},
+			},
+			...healthyEvents(),
+			{
+				event: "native-webcam-capture-stats",
+				details: {
+					frames: 190,
+					realFrames: 190,
+					holdFrames: 0,
+					elapsed: 5,
+					recentFps: 38,
+					totalFps: 38,
+					lastPts: 5.01,
+				},
+			},
+		]);
+		const result = await auditRunWithHealthySourceMedia(videoPath);
+
 		expect(result.status).toBe("warning");
 		expect(result.issues).toEqual([]);
 		expect(result.warnings).toEqual([
@@ -301,8 +339,8 @@ describe("auditRecordingRun", () => {
 		expect(result.summary.webcamCadence).toMatchObject({
 			statsCount: 1,
 			targetFps: 30,
-			maxRecentFps: 60.36,
-			maxTotalFps: 60.36,
+			maxRecentFps: 38,
+			maxTotalFps: 38,
 		});
 	});
 

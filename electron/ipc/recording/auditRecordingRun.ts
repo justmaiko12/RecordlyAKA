@@ -191,6 +191,9 @@ type WebcamCadenceSummary = {
 	last: Record<string, unknown> | null;
 };
 
+const WEBCAM_CADENCE_WARNING_MULTIPLIER = 1.2;
+const WEBCAM_CADENCE_FAILURE_MULTIPLIER = 1.5;
+
 export type RecordingRunAuditResult = {
 	status: RecordingRunAuditStatus;
 	paths: RecordingRunAuditPaths;
@@ -563,7 +566,20 @@ function webcamCadenceExceededTarget(cadence: WebcamCadenceSummary) {
 		return false;
 	}
 
-	return cadence.maxTotalFps > cadence.targetFps * 1.2;
+	return cadence.maxTotalFps > cadence.targetFps * WEBCAM_CADENCE_WARNING_MULTIPLIER;
+}
+
+function webcamCadenceSeverelyExceededTarget(cadence: WebcamCadenceSummary) {
+	if (
+		cadence.statsCount === 0 ||
+		cadence.targetFps === null ||
+		cadence.targetFps <= 0 ||
+		cadence.maxTotalFps === null
+	) {
+		return false;
+	}
+
+	return cadence.maxTotalFps > cadence.targetFps * WEBCAM_CADENCE_FAILURE_MULTIPLIER;
 }
 
 function pushIssue(
@@ -992,7 +1008,14 @@ export async function auditRecordingRun(
 		);
 	}
 
-	if (webcamCadenceExceededTarget(webcamCadence)) {
+	if (webcamCadenceSeverelyExceededTarget(webcamCadence)) {
+		pushIssue(
+			issues,
+			"native-webcam-cadence-severely-exceeded-target",
+			"Native webcam output cadence was far above the requested target frame rate. The recording may contain intermittent camera glitches.",
+			webcamCadence as unknown as Record<string, unknown>,
+		);
+	} else if (webcamCadenceExceededTarget(webcamCadence)) {
 		pushIssue(
 			warnings,
 			"native-webcam-cadence-exceeded-target",
