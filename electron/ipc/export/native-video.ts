@@ -57,6 +57,7 @@ const NATIVE_STATIC_LAYOUT_SOURCE_PROXY_1080P30_BITRATE = 24_000_000;
 const NATIVE_STATIC_LAYOUT_SOURCE_PROXY_MAX_BITRATE = 80_000_000;
 const NATIVE_STATIC_LAYOUT_SOURCE_PROXY_CONTAINERS = new Set([".mp4", ".m4v", ".mov"]);
 export const NATIVE_VIDEO_AUDIO_MUX_SYNC_TOLERANCE_SECONDS = 0.05;
+const NATIVE_VIDEO_COPY_SOURCE_MAX_PAD_SECONDS = 1.5;
 
 type ElectronGpuDeviceLike = {
 	vendorId?: number | string;
@@ -4189,7 +4190,10 @@ export function getCopySourceAudioSyncFailureMessage(
 	}
 
 	const adjustment = getAudioSyncAdjustment(outputDurationSec, audioDurationSec);
-	if (adjustment.mode === "tempo") {
+	if (
+		adjustment.mode === "pad" &&
+		adjustment.durationDeltaMs <= NATIVE_VIDEO_COPY_SOURCE_MAX_PAD_SECONDS * 1000
+	) {
 		return null;
 	}
 
@@ -4417,8 +4421,9 @@ export function getCopySourceAudioSyncTempoRatio(
 	outputDurationSec: number,
 	audioDurationSec: number | null | undefined,
 ) {
-	const adjustment = getAudioSyncAdjustment(outputDurationSec, audioDurationSec ?? 0);
-	return adjustment.mode === "tempo" ? adjustment.tempoRatio : 1;
+	void outputDurationSec;
+	void audioDurationSec;
+	return 1;
 }
 
 function roundNativeMuxSyncSeconds(value: number) {

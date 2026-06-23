@@ -12,7 +12,7 @@ import {
 } from "./sourceAudioSync";
 
 describe("getRecordingSourceAudioSyncPlan", () => {
-	it("repairs tiny shorter embedded source audio instead of accepting duration drift", () => {
+	it("pads tiny shorter embedded source audio instead of changing speech speed", () => {
 		const plan = getRecordingSourceAudioSyncPlan({
 			videoDurationSeconds: 563.546667,
 			audioDurationSeconds: 563.146667,
@@ -20,9 +20,9 @@ describe("getRecordingSourceAudioSyncPlan", () => {
 
 		expect(plan).toMatchObject({
 			action: "repair",
-			reason: "tempo",
+			reason: "pad",
 			driftSeconds: 0.4,
-			tempoRatio: expect.closeTo(0.99929, 5),
+			tempoRatio: 1,
 		});
 	});
 
@@ -164,11 +164,11 @@ describe("buildRecordingSourceAudioSyncFilter", () => {
 	it("builds an audio filter that produces exactly the video duration", () => {
 		const filter = buildRecordingSourceAudioSyncFilter({
 			videoDurationSeconds: 563.546667,
-			tempoRatio: 0.99929,
+			tempoRatio: 1,
 		});
 
 		expect(filter).toBe(
-			"[0:a]atempo=0.999290,apad,atrim=duration=563.547,aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[aout_sync]",
+			"[0:a]apad,atrim=duration=563.547,aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[aout_sync]",
 		);
 	});
 });
@@ -179,7 +179,7 @@ describe("buildRecordingAudioOnlySyncArgs", () => {
 			inputPath: "input.mic.m4a",
 			outputPath: "output.mic.m4a",
 			videoDurationSeconds: 120.25,
-			tempoRatio: 0.998,
+			tempoRatio: 1,
 		});
 
 		expect(args).toEqual([
@@ -190,7 +190,7 @@ describe("buildRecordingAudioOnlySyncArgs", () => {
 			"-i",
 			"input.mic.m4a",
 			"-filter_complex",
-			"[0:a]atempo=0.998000,apad,atrim=duration=120.250,aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[aout_sync]",
+			"[0:a]apad,atrim=duration=120.250,aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[aout_sync]",
 			"-map",
 			"[aout_sync]",
 			"-c:a",

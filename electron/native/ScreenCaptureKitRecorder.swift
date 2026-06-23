@@ -34,6 +34,11 @@ struct ListedAudioDevice: Codable {
 	let connected: Bool
 }
 
+struct AudioAppendResult {
+	let presentationTime: CMTime
+	let duration: CMTime
+}
+
 let targetCaptureFPS = 30
 let maxInlineAudioTailExtension = CMTime(seconds: 2.0, preferredTimescale: 600)
 let crashRecoveryFragmentInterval = CMTime(seconds: 5.0, preferredTimescale: 600)
@@ -194,7 +199,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		capturesSystemAudio = config.capturesSystemAudio ?? false
 		capturesMicrophone = config.capturesMicrophone ?? false
 		capturesWebcam = config.capturesWebcam ?? false
-		webcamTargetFPS = max(1, min(60, config.webcamFPS ?? 30))
+		webcamTargetFPS = max(1, min(30, config.webcamFPS ?? 30))
 		if capturesMicrophone && !supportsNativeMicrophoneCapture(streamConfig: streamConfig) {
 			fputs("MICROPHONE_CAPTURE_UNAVAILABLE\n", stderr)
 			fflush(stderr)
@@ -543,7 +548,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		writesMicrophoneToSeparateTrack = false
 		capturesWebcam = true
 		webcamPreviewOnly = true
-		webcamTargetFPS = max(1, min(60, config.webcamFPS ?? 30))
+		webcamTargetFPS = max(1, min(30, config.webcamFPS ?? 30))
 		isPaused = false
 		pauseStartedHostTime = nil
 		pendingResumeAdjustment = false
@@ -886,10 +891,11 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 				nextPresentationTime: &nextSystemAudioPresentationTime,
 				insertedSilenceDuration: &systemAudioInsertedSilenceDuration,
 				presentationTime: presentationTime,
-				trackName: "system"
+				trackName: "system",
+				fatalOnFailure: true
 			)
 			// Also write system audio to the inline video track
-			if let inlineAudioInput, inlineAudioInput.isReadyForMoreMediaData {
+			if let inlineAudioInput {
 				_ = appendAudioSampleBuffer(
 					sampleBuffer,
 					to: inlineAudioInput,
@@ -897,42 +903,45 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 					nextPresentationTime: &nextInlineAudioPresentationTime,
 					insertedSilenceDuration: &inlineAudioInsertedSilenceDuration,
 					presentationTime: presentationTime,
-					trackName: "inline"
+					trackName: "inline",
+					fatalOnFailure: false
 				)
 			}
 			return
 		}
 
 		if outputType.rawValue == microphoneOutputTypeRawValue {
-			var wroteMicrophoneBuffer = false
+			var microphoneAppendResult: AudioAppendResult?
 			if let microphoneOnlyInput {
-				wroteMicrophoneBuffer = appendAudioSampleBuffer(
+				microphoneAppendResult = appendAudioSampleBuffer(
 					sampleBuffer,
 					to: microphoneOnlyInput,
 					firstSampleTime: &firstMicrophoneSampleTime,
 					nextPresentationTime: &nextMicrophoneAudioPresentationTime,
 					insertedSilenceDuration: &microphoneAudioInsertedSilenceDuration,
 					presentationTime: presentationTime,
-					trackName: "mic"
+					trackName: "mic",
+					fatalOnFailure: true
 				)
 			}
 			// Write mic to inline video track only if there's no system audio (avoids double-writing)
-			if !capturesSystemAudio, let inlineAudioInput, inlineAudioInput.isReadyForMoreMediaData {
-				let wroteInlineMicrophoneBuffer = appendAudioSampleBuffer(
+			if !capturesSystemAudio, let inlineAudioInput {
+				let inlineMicrophoneAppendResult = appendAudioSampleBuffer(
 					sampleBuffer,
 					to: inlineAudioInput,
 					firstSampleTime: &firstInlineAudioSampleTime,
 					nextPresentationTime: &nextInlineAudioPresentationTime,
 					insertedSilenceDuration: &inlineAudioInsertedSilenceDuration,
 					presentationTime: presentationTime,
-					trackName: "inline"
+					trackName: "inline",
+					fatalOnFailure: microphoneOnlyInput == nil
 				)
-				if !wroteMicrophoneBuffer && wroteInlineMicrophoneBuffer {
-					noteMicrophoneAudioBufferWritten(sampleBuffer: sampleBuffer, presentationTime: presentationTime)
+				if microphoneOnlyInput == nil, let inlineMicrophoneAppendResult {
+					noteMicrophoneAudioBufferWritten(appendResult: inlineMicrophoneAppendResult)
 				}
 			}
-			if wroteMicrophoneBuffer {
-				noteMicrophoneAudioBufferWritten(sampleBuffer: sampleBuffer, presentationTime: presentationTime)
+			if let microphoneAppendResult {
+				noteMicrophoneAudioBufferWritten(appendResult: microphoneAppendResult)
 			}
 			return
 		}
@@ -1780,15 +1789,15 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		return Double(total) / Double(lhs.count)
 	}
 
-	private func noteMicrophoneAudioBufferWritten(sampleBuffer: CMSampleBuffer, presentationTime: CMTime) {
+	private func noteMicrophoneAudioBufferWritten(appendResult: AudioAppendResult) {
 		let now = CMClockGetTime(CMClockGetHostTimeClock())
 		microphoneAudioBufferCount += 1
-		lastMicrophoneAudioPresentationTime = presentationTime
-		lastMicrophoneAudioDuration = sampleBuffer.duration
+		lastMicrophoneAudioPresentationTime = appendResult.presentationTime
+		lastMicrophoneAudioDuration = appendResult.duration
 		lastMicrophoneAudioHostTime = now
 		if microphoneAudioBufferCount == 1 {
 			fputs(
-				"MICROPHONE_AUDIO_FIRST_BUFFER_WRITTEN buffers=1 pts=\(CMTimeGetSeconds(presentationTime)) duration=\(CMTimeGetSeconds(sampleBuffer.duration))\n",
+				"MICROPHONE_AUDIO_FIRST_BUFFER_WRITTEN buffers=1 pts=\(CMTimeGetSeconds(appendResult.presentationTime)) duration=\(CMTimeGetSeconds(appendResult.duration))\n",
 				stderr
 			)
 			fflush(stderr)
@@ -2073,6 +2082,28 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 				exit(2)
 			}
 		}
+	}
+
+	private func currentAudioVideoDriftForFailure() -> CMTime {
+		let audioEnd = latestMicrophoneAudioEndTime()
+		let videoEnd = lastVideoPresentationTime + lastVideoFrameDuration()
+		guard audioEnd.isValid, videoEnd.isValid else {
+			return .zero
+		}
+		return CMTimeMaximum(.zero, videoEnd - audioEnd)
+	}
+
+	private func failRequiredAudioAppend(trackName: String, reason: String, presentationTime: CMTime) {
+		fputs(
+			"AUDIO_APPEND_FAILED track=\(trackName) reason=\(reason) pts=\(CMTimeGetSeconds(presentationTime)) action=stop-recording\n",
+			stderr
+		)
+		fflush(stderr)
+		triggerAudioPipelineFailure(
+			reason: "\(trackName)-audio-\(reason)",
+			stalledFor: .zero,
+			audioVideoDrift: currentAudioVideoDriftForFailure()
+		)
 	}
 
 	private func appendVideoPixelBuffer(
@@ -2428,9 +2459,19 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		nextPresentationTime: inout CMTime?,
 		insertedSilenceDuration: inout CMTime,
 		presentationTime: CMTime,
-		trackName: String
-	) -> Bool {
-		guard input.isReadyForMoreMediaData else { return false }
+		trackName: String,
+		fatalOnFailure: Bool
+	) -> AudioAppendResult? {
+		guard input.isReadyForMoreMediaData else {
+			if fatalOnFailure {
+				failRequiredAudioAppend(
+					trackName: trackName,
+					reason: "input-not-ready",
+					presentationTime: presentationTime
+				)
+			}
+			return nil
+		}
 
 		if firstSampleTime == nil {
 			firstSampleTime = presentationTime
@@ -2448,7 +2489,14 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 			nextPresentationTime: &nextPresentationTime,
 			insertedSilenceDuration: &insertedSilenceDuration
 		) else {
-			return false
+			if fatalOnFailure {
+				failRequiredAudioAppend(
+					trackName: trackName,
+					reason: "silence-fill-failed",
+					presentationTime: presentationTime
+				)
+			}
+			return nil
 		}
 
 		let appendPresentationTime = nextPresentationTime ?? presentationTime
@@ -2462,16 +2510,34 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 			let appended = input.append(retimedSampleBuffer)
 			if appended {
 				nextPresentationTime = appendPresentationTime + sampleDuration
+				if input === inlineAudioInput {
+					lastInlineAudioPresentationTime = appendPresentationTime
+					lastInlineAudioDuration = sampleDuration
+					lastInlineAudioHostTime = CMClockGetTime(CMClockGetHostTimeClock())
+					inlineAudioBufferCount += 1
+				}
+				return AudioAppendResult(
+					presentationTime: appendPresentationTime,
+					duration: sampleDuration
+				)
 			}
-			if appended, input === inlineAudioInput {
-				lastInlineAudioPresentationTime = appendPresentationTime
-				lastInlineAudioDuration = sampleDuration
-				lastInlineAudioHostTime = CMClockGetTime(CMClockGetHostTimeClock())
-				inlineAudioBufferCount += 1
+			if fatalOnFailure {
+				failRequiredAudioAppend(
+					trackName: trackName,
+					reason: "append-failed",
+					presentationTime: presentationTime
+				)
 			}
-			return appended
+			return nil
 		}
-		return false
+		if fatalOnFailure {
+			failRequiredAudioAppend(
+				trackName: trackName,
+				reason: "retime-failed",
+				presentationTime: presentationTime
+			)
+		}
+		return nil
 	}
 
 	private func fillAudioContinuityGapIfNeeded(

@@ -16,19 +16,19 @@ describe("getAudioSyncAdjustment", () => {
 		});
 	});
 
-	it("still stretches slightly shorter audio tracks to match the video", () => {
+	it("pads slightly shorter audio tracks without changing speech speed", () => {
 		expect(getAudioSyncAdjustment(120, 117)).toEqual({
-			mode: "tempo",
+			mode: "pad",
 			delayMs: 0,
-			tempoRatio: 0.975,
+			tempoRatio: 1,
 			durationDeltaMs: 3000,
 		});
 	});
 
-	it("still delays much shorter audio tracks instead of extreme tempo correction", () => {
+	it("pads much shorter audio tracks instead of delaying or changing speed", () => {
 		expect(getAudioSyncAdjustment(120, 110)).toEqual({
-			mode: "delay",
-			delayMs: 10000,
+			mode: "pad",
+			delayMs: 0,
 			tempoRatio: 1,
 			durationDeltaMs: 10000,
 		});
@@ -52,12 +52,12 @@ describe("getAudioSyncAdjustment", () => {
 		]);
 	});
 
-	it("still injects atempo for slightly shorter audio tracks", () => {
+	it("pads slightly shorter audio tracks without injecting atempo", () => {
 		const filterParts: string[] = [];
 		appendSyncedAudioFilter(filterParts, "[1:a]", "aout", getAudioSyncAdjustment(120, 117));
 
 		expect(filterParts).toEqual([
-			"[1:a]atempo=0.975000,aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[aout]",
+			"[1:a]apad=pad_dur=3.000,aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[aout]",
 		]);
 	});
 
@@ -153,11 +153,11 @@ describe("applyRecordedAudioStartDelay", () => {
 		});
 	});
 
-	it("leaves tempo correction alone when recorded metadata says there was no late start", () => {
+	it("keeps padding when recorded metadata says there was no late start", () => {
 		expect(applyRecordedAudioStartDelay(getAudioSyncAdjustment(120, 117), 0)).toEqual({
-			mode: "tempo",
+			mode: "pad",
 			delayMs: 0,
-			tempoRatio: 0.975,
+			tempoRatio: 1,
 			durationDeltaMs: 3000,
 		});
 	});

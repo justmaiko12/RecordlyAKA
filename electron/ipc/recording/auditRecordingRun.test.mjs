@@ -712,12 +712,11 @@ describe("auditRecordingRun", () => {
 			trackKind: "mic",
 			videoDurationSeconds: 2017.775,
 			audioDurationSeconds: 2006.592,
-			currentSafetyPlan: {
-				action: "reject",
-				reason: "unsafe-short-audio-mismatch",
-				driftSeconds: 11.183,
-			},
-		});
+				currentSafetyPlan: {
+					action: "reject",
+					reason: "global-tempo-repair-disallowed",
+				},
+			});
 	});
 
 	it("fails when an expected companion mic file was missing during finalization", async () => {

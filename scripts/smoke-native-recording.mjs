@@ -411,13 +411,11 @@ export function getMicrophoneAudioSyncPlan({
   if (relativeDelta <= 0.03 || Math.abs(durationDeltaMs) <= 1500) {
     return {
       action: "repair",
-      reason: "tempo",
+      reason: "pad",
       videoDurationSeconds,
       audioDurationSeconds,
       driftSeconds,
-      tempoRatio: Number(
-        (audioDurationSeconds / videoDurationSeconds).toFixed(6),
-      ),
+      tempoRatio: 1,
     };
   }
 

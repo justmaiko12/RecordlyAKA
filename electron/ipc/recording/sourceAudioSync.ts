@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { getFfmpegBinaryPath, getFfprobeBinaryPath } from "../ffmpeg/binary";
-import { buildAtempoFilters, formatFfmpegSeconds, getAudioSyncAdjustment } from "../ffmpeg/filters";
+import { buildAtempoFilters, formatFfmpegSeconds } from "../ffmpeg/filters";
 import { appendRecordingEventLogEntry, getRecordingEventLogPath } from "./recordingEventLog";
 
 const execFileAsync = promisify(execFile);
@@ -23,7 +23,7 @@ export type RecordingSourceAudioSyncPlan =
 	  }
 	| {
 			action: "repair";
-			reason: "tempo" | "trim";
+			reason: "pad" | "trim";
 			videoDurationSeconds: number;
 			audioDurationSeconds: number;
 			driftSeconds: number;
@@ -317,21 +317,9 @@ export function getRecordingSourceAudioSyncPlan({
 		};
 	}
 
-	const adjustment = getAudioSyncAdjustment(videoDurationSeconds, audioDurationSeconds);
-	if (adjustment.mode === "tempo") {
-		return {
-			action: "repair",
-			reason: "tempo",
-			videoDurationSeconds,
-			audioDurationSeconds,
-			driftSeconds,
-			tempoRatio: adjustment.tempoRatio,
-		};
-	}
-
 	return {
-		action: "reject",
-		reason: "unsafe-short-audio-mismatch",
+		action: "repair",
+		reason: "pad",
 		videoDurationSeconds,
 		audioDurationSeconds,
 		driftSeconds,

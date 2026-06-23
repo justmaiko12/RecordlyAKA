@@ -1,6 +1,5 @@
 import type { AudioSyncAdjustment, PauseSegment } from "../types";
 
-const MAX_AUDIO_SYNC_DELAY_MS = 15000;
 export const ATEMPO_FILTER_EPSILON = 0.0005;
 
 export function buildAtempoFilters(tempoRatio: number): string[] {
@@ -54,18 +53,7 @@ export function getAudioSyncAdjustment(
 		return { mode: "none", delayMs: 0, tempoRatio: 1, durationDeltaMs };
 	}
 
-	const tempoRatio = Math.max(0.5, Math.min(2, audioDuration / videoDuration));
-	const relativeDelta = absDeltaMs / Math.max(videoDuration * 1000, 1);
-
-	if (relativeDelta <= 0.03 || absDeltaMs <= 1500) {
-		return { mode: "tempo", delayMs: 0, tempoRatio, durationDeltaMs };
-	}
-
-	if (durationDeltaMs > MAX_AUDIO_SYNC_DELAY_MS) {
-		return { mode: "pad", delayMs: 0, tempoRatio: 1, durationDeltaMs };
-	}
-
-	return { mode: "delay", delayMs: durationDeltaMs, tempoRatio: 1, durationDeltaMs };
+	return { mode: "pad", delayMs: 0, tempoRatio: 1, durationDeltaMs };
 }
 
 export function applyRecordedAudioStartDelay(

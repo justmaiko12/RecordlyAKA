@@ -927,11 +927,11 @@ describe("buildNativeVideoAudioMuxArgs", () => {
 		expect(args).not.toContain("-shortest");
 	});
 
-	it("stretches slightly shorter copy-source audio before padding to the rendered video duration", () => {
+	it("pads slightly shorter copy-source audio without changing speech speed", () => {
 		const args = buildNativeVideoAudioMuxArgs("video.mp4", "source.mp4", "out.mp4", {
 			audioMode: "copy-source",
 			audioSourceCodec: "aac (LC) (mp4a / 0x6134706D)",
-			audioSourceDurationSec: 561.450667,
+			audioSourceDurationSec: 563.146667,
 			outputDurationSec: 563.546667,
 		});
 
@@ -939,7 +939,7 @@ describe("buildNativeVideoAudioMuxArgs", () => {
 		expect(args).toEqual(expect.arrayContaining(["-map", "[aout_sync]"]));
 		expect(args).toEqual(expect.arrayContaining(["-c:a", "aac", "-b:a", "192k"]));
 		expect(args.join(";")).toContain(
-			"[1:a]atempo=0.996281,apad,atrim=duration=563.547,aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[aout_sync]",
+			"[1:a]apad,atrim=duration=563.547,aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[aout_sync]",
 		);
 		expect(args.join(";")).not.toContain("-c:a;copy");
 	});
@@ -952,7 +952,7 @@ describe("buildNativeVideoAudioMuxArgs", () => {
 				outputDurationSec: 563.546667,
 			},
 			"recording.mic.m4a",
-			async () => 561.450667,
+			async () => 563.146667,
 		);
 
 		const args = buildNativeVideoAudioMuxArgs(
@@ -962,8 +962,8 @@ describe("buildNativeVideoAudioMuxArgs", () => {
 			options,
 		);
 
-		expect(options.audioSourceDurationSec).toBe(561.450667);
-		expect(args.join(";")).toContain("atempo=0.996281");
+		expect(options.audioSourceDurationSec).toBe(563.146667);
+		expect(args.join(";")).not.toContain("atempo=");
 		expect(args.join(";")).toContain("atrim=duration=563.547");
 	});
 
@@ -1020,9 +1020,9 @@ describe("buildNativeVideoAudioMuxArgs", () => {
 		);
 	});
 
-	it("tempo-corrects small shorter-audio drift but leaves long mismatches anchored", () => {
-		expect(getCopySourceAudioSyncTempoRatio(1038.661667, 1038.112)).toBeCloseTo(0.999471, 6);
-		expect(getCopySourceAudioSyncTempoRatio(563.546667, 561.450667)).toBeCloseTo(0.996281, 6);
+	it("never tempo-corrects copy-source audio drift", () => {
+		expect(getCopySourceAudioSyncTempoRatio(1038.661667, 1038.112)).toBe(1);
+		expect(getCopySourceAudioSyncTempoRatio(563.546667, 561.450667)).toBe(1);
 		expect(getCopySourceAudioSyncTempoRatio(120, 120.5)).toBe(1);
 		expect(getCopySourceAudioSyncTempoRatio(600, 480)).toBe(1);
 	});

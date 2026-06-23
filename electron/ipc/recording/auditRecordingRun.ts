@@ -779,6 +779,21 @@ function getMinimumBrowserMicChunkTimingEventCount(durationSeconds: number | nul
 }
 
 function getUnsafeCompanionAudioRepair(details: Record<string, unknown>) {
+	const repairReason = typeof details.reason === "string" ? details.reason : "";
+	const tempoRatio = getNumber(details.tempoRatio);
+	if (
+		repairReason === "tempo" ||
+		(tempoRatio !== null && Math.abs(tempoRatio - 1) > 0.0005)
+	) {
+		return {
+			...details,
+			currentSafetyPlan: {
+				action: "reject",
+				reason: "global-tempo-repair-disallowed",
+			},
+		};
+	}
+
 	const videoDurationSeconds = getNumber(details.videoDurationSeconds);
 	const audioDurationSeconds = getNumber(details.audioDurationSeconds);
 	const safetyPlan = getRecordingSourceAudioSyncPlan({

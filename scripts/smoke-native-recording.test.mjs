@@ -165,7 +165,7 @@ describe("native recording smoke microphone gate", () => {
     );
   });
 
-  it("plans a tempo repair for the observed long-run microphone drift", () => {
+  it("plans a pad repair for the observed long-run microphone shortage", () => {
     expect(
       getMicrophoneAudioSyncPlan({
         videoDurationSeconds: 960.02,
@@ -173,9 +173,9 @@ describe("native recording smoke microphone gate", () => {
       }),
     ).toMatchObject({
       action: "repair",
-      reason: "tempo",
+      reason: "pad",
       driftSeconds: 3.391,
-      tempoRatio: 0.996468,
+      tempoRatio: 1,
     });
   });
 
@@ -185,7 +185,7 @@ describe("native recording smoke microphone gate", () => {
         inputPath: "microphone.m4a",
         outputPath: "microphone.finalized.m4a",
         videoDurationSeconds: 960.02,
-        tempoRatio: 0.996468,
+        tempoRatio: 1,
       }),
     ).toEqual([
       "-y",
@@ -195,7 +195,7 @@ describe("native recording smoke microphone gate", () => {
       "-i",
       "microphone.m4a",
       "-filter_complex",
-      "[0:a]atempo=0.996468,apad,atrim=duration=960.020,aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[aout_sync]",
+      "[0:a]apad,atrim=duration=960.020,aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[aout_sync]",
       "-map",
       "[aout_sync]",
       "-c:a",

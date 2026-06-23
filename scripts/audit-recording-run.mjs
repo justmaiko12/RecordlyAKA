@@ -269,13 +269,11 @@ function getRecordingSourceAudioSyncPlan({
   if (relativeDelta <= 0.03 || Math.abs(durationDeltaMs) <= 1500) {
     return {
       action: "repair",
-      reason: "tempo",
+      reason: "pad",
       videoDurationSeconds,
       audioDurationSeconds,
       driftSeconds,
-      tempoRatio: Number(
-        (audioDurationSeconds / videoDurationSeconds).toFixed(6),
-      ),
+      tempoRatio: 1,
     };
   }
 
@@ -765,6 +763,21 @@ function getMinimumAcceptedProofCount(durationSeconds) {
 }
 
 function getUnsafeCompanionAudioRepair(details) {
+  const repairReason = typeof details.reason === "string" ? details.reason : "";
+  const tempoRatio = getNumber(details.tempoRatio);
+  if (
+    repairReason === "tempo" ||
+    (tempoRatio !== null && Math.abs(tempoRatio - 1) > 0.0005)
+  ) {
+    return {
+      ...details,
+      currentSafetyPlan: {
+        action: "reject",
+        reason: "global-tempo-repair-disallowed",
+      },
+    };
+  }
+
   const videoDurationSeconds = getNumber(details.videoDurationSeconds);
   const audioDurationSeconds = getNumber(details.audioDurationSeconds);
   const safetyPlan = getRecordingSourceAudioSyncPlan({
