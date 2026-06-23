@@ -207,6 +207,10 @@ export class VideoExporter {
 				maxPendingFrames: this.config.maxPendingFrames,
 			});
 			const videoInfo = await this.streamingDecoder.loadMetadata(this.config.videoUrl);
+			const sourceTimelineDurationSeconds = getEffectiveVideoStreamDurationSeconds({
+				duration: videoInfo.duration,
+				streamDuration: videoInfo.streamDuration,
+			});
 			const shouldUseExperimentalNativeExport = this.shouldUseExperimentalNativeExport();
 			const audioPlan = this.buildNativeAudioPlan(videoInfo);
 			const nativeAudioPlan = shouldUseExperimentalNativeExport ? audioPlan : null;
@@ -258,6 +262,7 @@ export class VideoExporter {
 				cropRegion: this.config.cropRegion,
 				webcam: this.config.webcam,
 				webcamUrl: this.config.webcamUrl,
+				sourceTimelineDurationSeconds,
 				fillFrameRegions: this.config.fillFrameRegions,
 				fillFrameDefault: this.config.fillFrameDefault,
 				videoWidth: videoInfo.width,

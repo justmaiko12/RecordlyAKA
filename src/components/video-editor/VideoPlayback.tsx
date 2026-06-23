@@ -2105,11 +2105,16 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			const webcamDuration = Number.isFinite(webcamVideo.duration)
 				? webcamVideo.duration
 				: null;
+			const sourceVideo = videoRef.current;
+			const timelineDuration = Number.isFinite(sourceVideo?.duration)
+				? sourceVideo?.duration
+				: null;
 			const timelineTime = currentTimeRef.current / 1000;
 			const targetTime = getWebcamMediaTargetTimeSeconds({
 				currentTime: timelineTime,
 				webcamDuration,
 				timeOffsetMs: webcamTimeOffsetMs,
+				timelineDuration,
 			});
 			const mediaTargetTime =
 				targetTime <= 0 && webcamDuration !== null && webcamDuration > 0

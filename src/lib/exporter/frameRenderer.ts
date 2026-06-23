@@ -123,6 +123,7 @@ interface FrameRenderConfig {
 	cropRegion: CropRegion;
 	webcam?: WebcamOverlaySettings;
 	webcamUrl?: string | null;
+	sourceTimelineDurationSeconds?: number | null;
 	videoWidth: number;
 	videoHeight: number;
 	annotationRegions?: AnnotationRegion[];
@@ -1325,6 +1326,7 @@ export class FrameRenderer {
 				? this.webcamVideoElement?.duration
 				: null,
 			timeOffsetMs: this.config.webcam?.timeOffsetMs,
+			timelineDuration: this.config.sourceTimelineDurationSeconds,
 		});
 
 		if (this.webcamForwardFrameSource) {
@@ -2537,6 +2539,7 @@ export class FrameRenderer {
 			currentTime: this.currentVideoTime,
 			webcamDuration: Number.isFinite(webcamVideo?.duration) ? webcamVideo?.duration : null,
 			timeOffsetMs: webcam.timeOffsetMs,
+			timelineDuration: this.config.sourceTimelineDurationSeconds,
 		});
 
 		const canRefreshCache =

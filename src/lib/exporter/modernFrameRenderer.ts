@@ -151,6 +151,7 @@ interface FrameRenderConfig {
 	/** Camera-full rendering style: "fit" letterboxes the webcam, "fill" covers the frame. */
 	webcamLayoutStyle?: "fit" | "fill";
 	webcamUrl?: string | null;
+	sourceTimelineDurationSeconds?: number | null;
 	videoWidth: number;
 	videoHeight: number;
 	annotationRegions?: AnnotationRegion[];
@@ -2790,6 +2791,7 @@ export class FrameRenderer {
 				? this.webcamVideoElement?.duration
 				: null,
 			timeOffsetMs: this.config.webcam?.timeOffsetMs,
+			timelineDuration: this.config.sourceTimelineDurationSeconds,
 		});
 	}
 

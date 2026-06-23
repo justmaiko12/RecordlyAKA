@@ -69,6 +69,48 @@ describe("getWebcamMediaTargetTimeSeconds", () => {
 			}),
 		).toBeCloseTo(10.0416667, 6);
 	});
+
+	it("normalizes small webcam duration drift to the screen timeline", () => {
+		expect(
+			getWebcamMediaTargetTimeSeconds({
+				currentTime: 903.095,
+				timelineDuration: 903.095,
+				webcamDuration: 903.3,
+				timeOffsetMs: 0,
+			}),
+		).toBeCloseTo(903.3, 6);
+
+		expect(
+			getWebcamMediaTargetTimeSeconds({
+				currentTime: 451.5475,
+				timelineDuration: 903.095,
+				webcamDuration: 903.3,
+				timeOffsetMs: 0,
+			}),
+		).toBeCloseTo(451.65, 6);
+	});
+
+	it("normalizes small drift after a positive webcam start offset", () => {
+		expect(
+			getWebcamMediaTargetTimeSeconds({
+				currentTime: 10,
+				timelineDuration: 10,
+				webcamDuration: 9.83,
+				timeOffsetMs: 200,
+			}),
+		).toBeCloseTo(9.83, 6);
+	});
+
+	it("keeps raw offset mapping when the duration mismatch is too large", () => {
+		expect(
+			getWebcamMediaTargetTimeSeconds({
+				currentTime: 300,
+				timelineDuration: 600,
+				webcamDuration: 480,
+				timeOffsetMs: 0,
+			}),
+		).toBe(300);
+	});
 });
 
 describe("shouldSeekWebcamMedia", () => {

@@ -544,6 +544,10 @@ export class ModernVideoExporter {
 				const videoInfo = await this.streamingDecoder.loadMetadata(this.config.videoUrl, {
 					forceReadableFileSource: preferReadableFileSource,
 				});
+				const sourceTimelineDurationSeconds = getEffectiveVideoStreamDurationSeconds({
+					duration: videoInfo.duration,
+					streamDuration: videoInfo.streamDuration,
+				});
 				this.metadataLoadTimeMs = this.getNowMs() - stageStartedAt;
 				const nativeAudioPlan = this.buildNativeAudioPlan(videoInfo);
 				const shouldUsePitchPreservingFfmpegAudio =
@@ -642,6 +646,7 @@ export class ModernVideoExporter {
 					webcamLayoutRegions: this.config.webcamLayoutRegions,
 					webcamLayoutStyle: this.config.webcamLayoutStyle,
 					webcamUrl: this.config.webcamUrl,
+					sourceTimelineDurationSeconds,
 					fillFrameRegions: this.config.fillFrameRegions,
 					fillFrameDefault: this.config.fillFrameDefault,
 					videoWidth: videoInfo.width,
