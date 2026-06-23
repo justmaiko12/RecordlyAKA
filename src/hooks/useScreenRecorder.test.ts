@@ -427,11 +427,15 @@ describe("native recording audit finalization", () => {
           count: 2,
           totalBuffers: 28,
           totalDurationSeconds: 0.597,
+          firstTargetPtsSeconds: 14.2,
+          lastTargetPtsSeconds: 92.4,
         },
         webcamContinuityRepairs: {
           count: 1,
           totalFrames: 9,
           totalDurationSeconds: 0.3,
+          firstTargetPtsSeconds: 5.3,
+          lastTargetPtsSeconds: 5.3,
         },
       },
     };
@@ -442,7 +446,7 @@ describe("native recording audit finalization", () => {
         recordingAudit: warningAudit,
       }),
     ).toContain(
-      "Recordly kept the timeline continuous by applying 0.597s of audio silence across 2 events and 9 held webcam frames across 1 event after device callback gaps.",
+      "Recordly kept the timeline continuous by applying 0.597s of audio silence across 2 events and 9 held webcam frames across 1 event after device callback gaps. First affected point: 0:05.3.",
     );
   });
 

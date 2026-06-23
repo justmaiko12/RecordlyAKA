@@ -337,6 +337,20 @@ export function summarizeRecordingAuditForIpc(audit: RecordingRunAuditResult) {
           : {}),
         totalDurationSeconds:
           audit.summary.audioContinuityRepairs?.totalDurationSeconds ?? 0,
+        ...(typeof audit.summary.audioContinuityRepairs
+          ?.firstTargetPtsSeconds === "number"
+          ? {
+              firstTargetPtsSeconds:
+                audit.summary.audioContinuityRepairs.firstTargetPtsSeconds,
+            }
+          : {}),
+        ...(typeof audit.summary.audioContinuityRepairs
+          ?.lastTargetPtsSeconds === "number"
+          ? {
+              lastTargetPtsSeconds:
+                audit.summary.audioContinuityRepairs.lastTargetPtsSeconds,
+            }
+          : {}),
       },
       webcamContinuityRepairs: {
         count: audit.summary.webcamContinuityRepairs?.count ?? 0,
@@ -348,6 +362,20 @@ export function summarizeRecordingAuditForIpc(audit: RecordingRunAuditResult) {
           : {}),
         totalDurationSeconds:
           audit.summary.webcamContinuityRepairs?.totalDurationSeconds ?? 0,
+        ...(typeof audit.summary.webcamContinuityRepairs
+          ?.firstTargetPtsSeconds === "number"
+          ? {
+              firstTargetPtsSeconds:
+                audit.summary.webcamContinuityRepairs.firstTargetPtsSeconds,
+            }
+          : {}),
+        ...(typeof audit.summary.webcamContinuityRepairs
+          ?.lastTargetPtsSeconds === "number"
+          ? {
+              lastTargetPtsSeconds:
+                audit.summary.webcamContinuityRepairs.lastTargetPtsSeconds,
+            }
+          : {}),
       },
       nativeMicrophone: audit.summary.nativeMicrophone ?? {
         requested: false,

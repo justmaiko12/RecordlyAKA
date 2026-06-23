@@ -813,6 +813,16 @@ export function getNativeRecordingAuditFailureMessage(result: {
     .join(" ");
 }
 
+function formatAuditReviewTimestamp(seconds: number | undefined) {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) {
+    return null;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds - minutes * 60;
+  return `${minutes}:${remainingSeconds.toFixed(1).padStart(4, "0")}`;
+}
+
 export function getNativeRecordingAuditWarningMessage(result: {
   path?: string;
   recordingAudit?: RendererRecordingRunAudit | null;
@@ -836,11 +846,20 @@ export function getNativeRecordingAuditWarningMessage(result: {
       ? `${webcamContinuityRepairs.totalFrames ?? 0} held webcam frame${(webcamContinuityRepairs.totalFrames ?? 0) === 1 ? "" : "s"} across ${webcamContinuityRepairs.count} event${webcamContinuityRepairs.count === 1 ? "" : "s"}`
       : null,
   ].filter(Boolean);
+  const firstContinuityRepairSeconds = [
+    audioContinuityRepairs?.firstTargetPtsSeconds,
+    webcamContinuityRepairs?.firstTargetPtsSeconds,
+  ]
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+    .sort((left, right) => left - right)[0];
+  const firstContinuityRepairTimestamp = formatAuditReviewTimestamp(
+    firstContinuityRepairSeconds,
+  );
   const warningMessage =
     rendererPreviewIssueCount > 0
       ? `Recording saved, but the live webcam preview was not trustworthy during capture (${rendererPreviewIssueCount} preview issue${rendererPreviewIssueCount === 1 ? "" : "s"} reported). The native recorder kept proof evidence and did not find blocking media corruption.`
       : continuityWarningParts.length > 0
-        ? `Recording saved. Recordly kept the timeline continuous by applying ${continuityWarningParts.join(" and ")} after device callback gaps.`
+        ? `Recording saved. Recordly kept the timeline continuous by applying ${continuityWarningParts.join(" and ")} after device callback gaps.${firstContinuityRepairTimestamp ? ` First affected point: ${firstContinuityRepairTimestamp}.` : ""}`
       : (primaryWarning?.message ??
         "Recording completed with native audit warnings.");
 

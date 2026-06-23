@@ -201,6 +201,8 @@ describe("auditRecordingRun", () => {
 			count: 1,
 			totalBuffers: 12,
 			totalDurationSeconds: 0.256,
+			firstTargetPtsSeconds: 14.2,
+			lastTargetPtsSeconds: 14.2,
 		});
 	});
 
@@ -230,6 +232,8 @@ describe("auditRecordingRun", () => {
 			count: 1,
 			totalFrames: 9,
 			totalDurationSeconds: 0.3,
+			firstTargetPtsSeconds: 5.3,
+			lastTargetPtsSeconds: 5.3,
 		});
 	});
 

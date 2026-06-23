@@ -101,6 +101,24 @@ describe("auditFinalizedRecordingForRenderer", () => {
             toleranceSeconds: 0.05,
           },
         ],
+        audioContinuityRepairs: {
+          count: 1,
+          totalBuffers: 12,
+          totalDurationSeconds: 0.256,
+          firstTargetPtsSeconds: 14.2,
+          lastTargetPtsSeconds: 14.2,
+          first: { targetPts: 14.2 },
+          last: { targetPts: 14.2 },
+        },
+        webcamContinuityRepairs: {
+          count: 1,
+          totalFrames: 9,
+          totalDurationSeconds: 0.3,
+          firstTargetPtsSeconds: 5.3,
+          lastTargetPtsSeconds: 5.3,
+          first: { targetPts: 5.3 },
+          last: { targetPts: 5.3 },
+        },
         nativeMicrophone: {
           requested: true,
           firstBufferWritten: false,
@@ -128,6 +146,18 @@ describe("auditFinalizedRecordingForRenderer", () => {
       requested: true,
       firstBufferWritten: false,
       unavailable: false,
+    });
+    expect(result.summary.audioContinuityRepairs).toMatchObject({
+      count: 1,
+      totalBuffers: 12,
+      totalDurationSeconds: 0.256,
+      firstTargetPtsSeconds: 14.2,
+    });
+    expect(result.summary.webcamContinuityRepairs).toMatchObject({
+      count: 1,
+      totalFrames: 9,
+      totalDurationSeconds: 0.3,
+      firstTargetPtsSeconds: 5.3,
     });
   });
 

@@ -586,6 +586,14 @@ function getContinuityRepairSummary(entries, eventName) {
     ...(totalFrames > 0 ? { totalFrames } : {}),
     ...(totalBuffers > 0 ? { totalBuffers } : {}),
     totalDurationSeconds: Math.round(totalDurationSeconds * 1000) / 1000,
+    ...(issueEntries[0] && getNumber(getDetails(issueEntries[0]).targetPts) !== null
+      ? { firstTargetPtsSeconds: getNumber(getDetails(issueEntries[0]).targetPts) }
+      : {}),
+    ...(issueEntries.at(-1) && getNumber(getDetails(issueEntries.at(-1)).targetPts) !== null
+      ? {
+          lastTargetPtsSeconds: getNumber(getDetails(issueEntries.at(-1)).targetPts),
+        }
+      : {}),
     first: issueEntries[0] ? getDetails(issueEntries[0]) : null,
     last: issueEntries.at(-1) ? getDetails(issueEntries.at(-1)) : null,
   };
@@ -1073,13 +1081,21 @@ function formatHuman(result) {
     );
   }
   if ((result.summary.audioContinuityRepairs?.count ?? 0) > 0) {
+    const firstAt =
+      typeof result.summary.audioContinuityRepairs.firstTargetPtsSeconds === "number"
+        ? ` firstAt=${result.summary.audioContinuityRepairs.firstTargetPtsSeconds}s`
+        : "";
     lines.push(
-      `Audio continuity repairs: events=${result.summary.audioContinuityRepairs.count} duration=${result.summary.audioContinuityRepairs.totalDurationSeconds}s`,
+      `Audio continuity repairs: events=${result.summary.audioContinuityRepairs.count} duration=${result.summary.audioContinuityRepairs.totalDurationSeconds}s${firstAt}`,
     );
   }
   if ((result.summary.webcamContinuityRepairs?.count ?? 0) > 0) {
+    const firstAt =
+      typeof result.summary.webcamContinuityRepairs.firstTargetPtsSeconds === "number"
+        ? ` firstAt=${result.summary.webcamContinuityRepairs.firstTargetPtsSeconds}s`
+        : "";
     lines.push(
-      `Webcam continuity repairs: events=${result.summary.webcamContinuityRepairs.count} heldFrames=${result.summary.webcamContinuityRepairs.totalFrames ?? 0} duration=${result.summary.webcamContinuityRepairs.totalDurationSeconds}s`,
+      `Webcam continuity repairs: events=${result.summary.webcamContinuityRepairs.count} heldFrames=${result.summary.webcamContinuityRepairs.totalFrames ?? 0} duration=${result.summary.webcamContinuityRepairs.totalDurationSeconds}s${firstAt}`,
     );
   }
   for (const issue of result.issues) {

@@ -161,6 +161,8 @@ type ContinuityRepairSummary = {
 	totalFrames?: number;
 	totalBuffers?: number;
 	totalDurationSeconds: number;
+	firstTargetPtsSeconds?: number;
+	lastTargetPtsSeconds?: number;
 	first: Record<string, unknown> | null;
 	last: Record<string, unknown> | null;
 };
@@ -443,6 +445,17 @@ function getContinuityRepairSummary(
 		...(totalFrames > 0 ? { totalFrames } : {}),
 		...(totalBuffers > 0 ? { totalBuffers } : {}),
 		totalDurationSeconds: Math.round(totalDurationSeconds * 1000) / 1000,
+		...(issueEntries[0] && getNumber(getDetails(issueEntries[0]).targetPts) !== null
+			? { firstTargetPtsSeconds: getNumber(getDetails(issueEntries[0]).targetPts)! }
+			: {}),
+		...(issueEntries.length > 0 &&
+		getNumber(getDetails(issueEntries[issueEntries.length - 1]).targetPts) !== null
+			? {
+					lastTargetPtsSeconds: getNumber(
+						getDetails(issueEntries[issueEntries.length - 1]).targetPts,
+					)!,
+				}
+			: {}),
 		first: issueEntries[0] ? getDetails(issueEntries[0]) : null,
 		last: issueEntries.length > 0 ? getDetails(issueEntries[issueEntries.length - 1]) : null,
 	};

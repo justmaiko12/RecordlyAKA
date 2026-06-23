@@ -106,12 +106,16 @@ interface RendererRecordingRunAudit {
       totalFrames?: number;
       totalBuffers?: number;
       totalDurationSeconds: number;
+      firstTargetPtsSeconds?: number;
+      lastTargetPtsSeconds?: number;
     };
     webcamContinuityRepairs: {
       count: number;
       totalFrames?: number;
       totalBuffers?: number;
       totalDurationSeconds: number;
+      firstTargetPtsSeconds?: number;
+      lastTargetPtsSeconds?: number;
     };
     nativeMicrophone: {
       requested: boolean;
