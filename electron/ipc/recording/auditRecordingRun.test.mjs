@@ -237,6 +237,37 @@ describe("auditRecordingRun", () => {
 		});
 	});
 
+	it("warns when native webcam looked visually frozen long enough to review", async () => {
+		const videoPath = await writeRun([
+			...healthyEvents(),
+			{
+				event: "native-webcam-visual-freeze-review",
+				details: {
+					reason: "recovered",
+					stalledFor: 4.2,
+					startPts: 86.5,
+					endPts: 90.7,
+					meanDiff: 3.9,
+				},
+			},
+		]);
+		const result = await auditRunWithHealthySourceMedia(videoPath);
+
+		expect(result.status).toBe("warning");
+		expect(result.issues).toEqual([]);
+		expect(result.warnings).toEqual([
+			expect.objectContaining({ code: "native-webcam-visual-freeze-review" }),
+		]);
+		expect(result.summary.webcamVisualFreezeReviews).toMatchObject({
+			count: 1,
+			totalDurationSeconds: 4.2,
+			firstStartPtsSeconds: 86.5,
+			firstEndPtsSeconds: 90.7,
+			lastStartPtsSeconds: 86.5,
+			lastEndPtsSeconds: 90.7,
+		});
+	});
+
 	it("fails when source audio/video sync repair rejects the recording", async () => {
 		const videoPath = await writeRun([
 			...healthyEvents(),

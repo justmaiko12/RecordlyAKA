@@ -101,6 +101,14 @@ describe("auditFinalizedRecordingForRenderer", () => {
             toleranceSeconds: 0.05,
           },
         ],
+        webcamVisualFreezeReviews: {
+          count: 1,
+          totalDurationSeconds: 4.2,
+          firstStartPtsSeconds: 86.5,
+          firstEndPtsSeconds: 90.7,
+          lastStartPtsSeconds: 86.5,
+          lastEndPtsSeconds: 90.7,
+        },
         audioContinuityRepairs: {
           count: 1,
           totalBuffers: 12,
@@ -146,6 +154,12 @@ describe("auditFinalizedRecordingForRenderer", () => {
       requested: true,
       firstBufferWritten: false,
       unavailable: false,
+    });
+    expect(result.summary.webcamVisualFreezeReviews).toMatchObject({
+      count: 1,
+      totalDurationSeconds: 4.2,
+      firstStartPtsSeconds: 86.5,
+      lastEndPtsSeconds: 90.7,
     });
     expect(result.summary.audioContinuityRepairs).toMatchObject({
       count: 1,

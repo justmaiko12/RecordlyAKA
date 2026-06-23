@@ -646,6 +646,7 @@ export async function muxNativeMacRecordingWithAudio(
   videoPath: string,
   systemAudioPath?: string | null,
   microphonePath?: string | null,
+  nativeCaptureOutput?: string | null,
 ) {
   console.log("[mac-mux] Optimization active: keeping tracks separate.");
 
@@ -672,12 +673,14 @@ export async function muxNativeMacRecordingWithAudio(
           videoPath,
           audioPath: finalSystemPath,
           trackKind: "system",
+          ...(nativeCaptureOutput ? { nativeCaptureOutput } : {}),
         });
       } else {
         await repairRecordingCompanionAudioSyncIfNeeded({
           videoPath,
           audioPath: finalSystemPath,
           trackKind: "system",
+          ...(nativeCaptureOutput ? { nativeCaptureOutput } : {}),
         });
       }
     } catch (err) {
@@ -718,6 +721,7 @@ export async function muxNativeMacRecordingWithAudio(
         videoPath,
         audioPath: finalMicPath,
         trackKind: "mic",
+        ...(nativeCaptureOutput ? { nativeCaptureOutput } : {}),
       });
     } catch (err) {
       if (isMissingFileError(err)) {
@@ -966,6 +970,7 @@ export async function recoverNativeMacCaptureOutput({
             candidate.videoPath,
             candidate.systemAudioPath,
             candidate.microphonePath,
+            nativeCaptureOutputBuffer,
           );
         } catch (muxError) {
           console.warn("Failed to mux audio during recovery:", muxError);

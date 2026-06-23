@@ -51,6 +51,7 @@ let nativeCaptureStatsInterval = CMTime(seconds: 5.0, preferredTimescale: 600)
 let webcamWatchdogIntervalNanoseconds: UInt64 = 500_000_000
 let maxWebcamFrameGapBeforeFailure = CMTime(seconds: 5.0, preferredTimescale: 600)
 let webcamVisualSampleInterval = CMTime(seconds: 1.0, preferredTimescale: 600)
+let webcamVisualFreezeReviewThreshold = CMTime(seconds: 3.0, preferredTimescale: 600)
 let webcamVisualStallLogThreshold = CMTime(seconds: 20.0, preferredTimescale: 600)
 let webcamVisualStallFailureThreshold = CMTime(seconds: 60.0, preferredTimescale: 600)
 let webcamVisualSignatureDiffThreshold = 0.25
@@ -97,6 +98,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 	private var lastWebcamVisualSignature: [UInt8]?
 	private var webcamVisualStableSinceHostTime: CMTime?
 	private var webcamVisualStallLogged = false
+	private var webcamVisualFreezeReviewLogged = false
 	private var webcamPreflightAcceptingFrames = false
 	private var webcamPreflightVisibleFrameReady = false
 	private var webcamPreflightFrameCount = 0
@@ -739,6 +741,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		lastWebcamVisualSignature = nil
 		webcamVisualStableSinceHostTime = nil
 		webcamVisualStallLogged = false
+		webcamVisualFreezeReviewLogged = false
 		resetWebcamPreflight(acceptingFrames: enablePreflight)
 		session.startRunning()
 
@@ -1087,6 +1090,11 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		stream = nil
 		closeActivePauseIfNeeded(at: finishStartedHostTime)
 		isRecording = false
+		emitWebcamVisualFreezeReviewIfNeeded(
+			hostTime: finishStartedHostTime,
+			meanDiff: nil,
+			reason: "recording-ended"
+		)
 		webcamSession?.stopRunning()
 		webcamSession = nil
 
@@ -1252,6 +1260,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		lastWebcamVisualSignature = nil
 		webcamVisualStableSinceHostTime = nil
 		webcamVisualStallLogged = false
+		webcamVisualFreezeReviewLogged = false
 		resetWebcamPreflight(acceptingFrames: false)
 		return path
 	}
@@ -1543,16 +1552,47 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 					return
 				}
 			} else {
+				emitWebcamVisualFreezeReviewIfNeeded(
+					hostTime: hostTime,
+					meanDiff: meanDiff,
+					reason: "recovered"
+				)
 				if webcamVisualStallLogged {
 					fputs("WEBCAM_VISUAL_STALL_RECOVERED meanDiff=\(meanDiff)\n", stderr)
 					fflush(stderr)
 				}
 				webcamVisualStableSinceHostTime = nil
 				webcamVisualStallLogged = false
+				webcamVisualFreezeReviewLogged = false
 			}
 		}
 
 			lastWebcamVisualSignature = signature
+	}
+
+	private func emitWebcamVisualFreezeReviewIfNeeded(
+		hostTime: CMTime,
+		meanDiff: Double?,
+		reason: String
+	) {
+		guard !webcamVisualFreezeReviewLogged, let stableSince = webcamVisualStableSinceHostTime else {
+			return
+		}
+
+		let stalledFor = hostTime - stableSince
+		guard stalledFor >= webcamVisualFreezeReviewThreshold else {
+			return
+		}
+
+		webcamVisualFreezeReviewLogged = true
+		let startPts = CMTimeMaximum(.zero, lastWebcamPresentationTime - stalledFor)
+		let endPts = lastWebcamPresentationTime
+		let meanDiffText = meanDiff.map { "\($0)" } ?? "unknown"
+		fputs(
+			"WEBCAM_VISUAL_FREEZE_REVIEW reason=\(reason) stalledFor=\(CMTimeGetSeconds(stalledFor)) startPts=\(CMTimeGetSeconds(startPts)) endPts=\(CMTimeGetSeconds(endPts)) meanDiff=\(meanDiffText)\n",
+			stderr
+		)
+		fflush(stderr)
 	}
 
 	private func maybeWriteWebcamPreviewFrame(

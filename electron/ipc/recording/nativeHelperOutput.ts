@@ -393,6 +393,18 @@ export function parseNativeHelperOutputLine(
     };
   }
 
+  if (trimmed.startsWith("WEBCAM_VISUAL_FREEZE_REVIEW ")) {
+    return {
+      event: "native-webcam-visual-freeze-review",
+      severity: "warning",
+      details: parseKeyValueTail(
+        trimmed.slice("WEBCAM_VISUAL_FREEZE_REVIEW ".length),
+      ),
+      message:
+        "Native webcam image looked frozen briefly. The recording was saved, but this timestamp should be reviewed.",
+    };
+  }
+
   if (trimmed.startsWith("VIDEO_STREAM_STOPPED_WITH_ERROR ")) {
     return {
       event: "native-video-stream-stopped-with-error",

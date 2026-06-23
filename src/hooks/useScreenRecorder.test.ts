@@ -280,6 +280,10 @@ describe("native recording audit finalization", () => {
       webcamWriterStatus: "completed",
       webcamDuration: 15,
       webcamFrames: 453,
+      webcamVisualFreezeReviews: {
+        count: 0,
+        totalDurationSeconds: 0,
+      },
       audioContinuityRepairs: {
         count: 0,
         totalDurationSeconds: 0,
@@ -447,6 +451,42 @@ describe("native recording audit finalization", () => {
       }),
     ).toContain(
       "Recordly kept the timeline continuous by applying 0.597s of audio silence across 2 events and 9 held webcam frames across 1 event after device callback gaps. First affected point: 0:05.3.",
+    );
+  });
+
+  it("warns with review timestamps when native webcam motion looked briefly frozen", () => {
+    const warningAudit: RendererRecordingRunAudit = {
+      ...failedAudit,
+      status: "warning",
+      issues: [],
+      warnings: [
+        {
+          code: "native-webcam-visual-freeze-review",
+          message:
+            "Native webcam image looked frozen briefly. The recording was saved, but this timestamp should be reviewed.",
+        },
+      ],
+      summary: {
+        ...failedAudit.summary,
+        screenWriterStatus: "completed",
+        webcamVisualFreezeReviews: {
+          count: 1,
+          totalDurationSeconds: 4.2,
+          firstStartPtsSeconds: 86.5,
+          firstEndPtsSeconds: 90.7,
+          lastStartPtsSeconds: 86.5,
+          lastEndPtsSeconds: 90.7,
+        },
+      },
+    };
+
+    expect(
+      getNativeRecordingAuditWarningMessage({
+        path: "/tmp/recording-1.mp4",
+        recordingAudit: warningAudit,
+      }),
+    ).toContain(
+      "Recording saved. Recordly marked 1 webcam visual freeze review totaling 4.200s. First affected point: 1:26.5.",
     );
   });
 

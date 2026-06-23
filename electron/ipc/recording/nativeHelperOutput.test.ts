@@ -203,6 +203,22 @@ describe("parseNativeHelperOutputLine", () => {
       },
       notifyRenderer: true,
     });
+
+    expect(
+      parseNativeHelperOutputLine(
+        "WEBCAM_VISUAL_FREEZE_REVIEW reason=recovered stalledFor=4.2 startPts=86.5 endPts=90.7 meanDiff=3.9",
+      ),
+    ).toMatchObject({
+      event: "native-webcam-visual-freeze-review",
+      severity: "warning",
+      details: {
+        reason: "recovered",
+        stalledFor: 4.2,
+        startPts: 86.5,
+        endPts: 90.7,
+        meanDiff: 3.9,
+      },
+    });
   });
 
   it("marks sustained native webcam visual stalls as fatal pipeline stalls", () => {

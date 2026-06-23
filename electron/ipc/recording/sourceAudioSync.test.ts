@@ -3,6 +3,7 @@ import {
 	buildRecordingAudioOnlySyncArgs,
 	buildRecordingSourceAudioSyncFilter,
 	getRecordingSourceAudioSyncPlan,
+	getTrustedNativeCompanionAudioSyncTelemetry,
 } from "./sourceAudioSync";
 
 describe("getRecordingSourceAudioSyncPlan", () => {
@@ -59,6 +60,46 @@ describe("getRecordingSourceAudioSyncPlan", () => {
 			driftSeconds: -1.2,
 			tempoRatio: 1,
 		});
+	});
+});
+
+describe("getTrustedNativeCompanionAudioSyncTelemetry", () => {
+	it("trusts completed native mic finalization durations before ffprobe duration repair", () => {
+		const telemetry = getTrustedNativeCompanionAudioSyncTelemetry({
+			trackKind: "mic",
+			nativeCaptureOutput: [
+				'VIDEO_RECORDING_FINALIZED path="/tmp/recording.mp4" writerStatus=completed frames=58796 realFrames=58795 holdFrames=1 duration=2017.82559383 lastPts=2017.792260497',
+				'MICROPHONE_RECORDING_FINALIZED path="/tmp/recording.mic.m4a" writerStatus=completed buffers=188229 duration=2017.801342292 lastPts=2017.790675625',
+			].join("\n"),
+		});
+
+		expect(telemetry).toMatchObject({
+			trackKind: "mic",
+			videoDurationSeconds: 2017.82559383,
+			audioDurationSeconds: 2017.801342292,
+			videoWriterStatus: "completed",
+			audioWriterStatus: "completed",
+		});
+		expect(
+			getRecordingSourceAudioSyncPlan({
+				videoDurationSeconds: telemetry?.videoDurationSeconds ?? null,
+				audioDurationSeconds: telemetry?.audioDurationSeconds ?? null,
+			}),
+		).toMatchObject({
+			action: "none",
+			reason: "within-tolerance",
+			driftSeconds: 0.024,
+		});
+	});
+
+	it("does not use mic-only telemetry for system audio sidecars", () => {
+		expect(
+			getTrustedNativeCompanionAudioSyncTelemetry({
+				trackKind: "system",
+				nativeCaptureOutput:
+					"MICROPHONE_RECORDING_FINALIZED writerStatus=completed duration=10",
+			}),
+		).toBeNull();
 	});
 });
 

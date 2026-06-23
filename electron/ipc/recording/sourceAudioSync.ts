@@ -43,6 +43,14 @@ export type RecordingSourceAudioVideoDurations = {
 	audioDurationSeconds: number | null;
 };
 
+export type NativeCompanionAudioSyncTelemetry = {
+	videoDurationSeconds: number;
+	audioDurationSeconds: number;
+	videoWriterStatus: string;
+	audioWriterStatus: string;
+	trackKind: "mic" | "system";
+};
+
 function finitePositive(value: unknown) {
 	const parsed =
 		typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
@@ -61,6 +69,91 @@ function recordingSessionIdForVideoPath(videoPath: string) {
 async function replaceFileWithTemp(tempPath: string, targetPath: string) {
 	await fs.rm(targetPath, { force: true });
 	await fs.rename(tempPath, targetPath);
+}
+
+function parseNativeHelperOutputScalar(line: string, key: string) {
+	const pattern = new RegExp(`(?:^|\\s)${key}=("[^"]*"|'[^']*'|\\S+)`);
+	const match = pattern.exec(line);
+	if (!match) {
+		return null;
+	}
+	const rawValue = match[1];
+	const unquoted =
+		(rawValue.startsWith('"') && rawValue.endsWith('"')) ||
+		(rawValue.startsWith("'") && rawValue.endsWith("'"))
+			? rawValue.slice(1, -1)
+			: rawValue;
+	return unquoted;
+}
+
+function parseNativeHelperOutputNumber(line: string, key: string) {
+	const value = parseNativeHelperOutputScalar(line, key);
+	if (value === null) {
+		return null;
+	}
+	const parsed = Number(value);
+	return Number.isFinite(parsed) ? parsed : null;
+}
+
+function findLastNativeFinalizationLine(output: string, prefix: string) {
+	let finalLine: string | null = null;
+	for (const line of output.split(/\r?\n/u)) {
+		if (line.trimStart().startsWith(prefix)) {
+			finalLine = line;
+		}
+	}
+	return finalLine;
+}
+
+export function getTrustedNativeCompanionAudioSyncTelemetry({
+	nativeCaptureOutput,
+	trackKind,
+}: {
+	nativeCaptureOutput?: string | null;
+	trackKind: "mic" | "system";
+}): NativeCompanionAudioSyncTelemetry | null {
+	if (!nativeCaptureOutput || trackKind !== "mic") {
+		return null;
+	}
+
+	const videoLine = findLastNativeFinalizationLine(
+		nativeCaptureOutput,
+		"VIDEO_RECORDING_FINALIZED ",
+	);
+	const audioLine = findLastNativeFinalizationLine(
+		nativeCaptureOutput,
+		"MICROPHONE_RECORDING_FINALIZED ",
+	);
+	if (!videoLine || !audioLine) {
+		return null;
+	}
+
+	const videoWriterStatus =
+		parseNativeHelperOutputScalar(videoLine, "writerStatus") ?? "";
+	const audioWriterStatus =
+		parseNativeHelperOutputScalar(audioLine, "writerStatus") ?? "";
+	if (videoWriterStatus !== "completed" || audioWriterStatus !== "completed") {
+		return null;
+	}
+
+	const videoDurationSeconds = parseNativeHelperOutputNumber(videoLine, "duration");
+	const audioDurationSeconds = parseNativeHelperOutputNumber(audioLine, "duration");
+	if (
+		videoDurationSeconds === null ||
+		audioDurationSeconds === null ||
+		videoDurationSeconds <= 0 ||
+		audioDurationSeconds <= 0
+	) {
+		return null;
+	}
+
+	return {
+		videoDurationSeconds,
+		audioDurationSeconds,
+		videoWriterStatus,
+		audioWriterStatus,
+		trackKind,
+	};
 }
 
 export function getRecordingSourceAudioSyncPlan({
@@ -277,10 +370,12 @@ export async function repairRecordingCompanionAudioSyncIfNeeded({
 	videoPath,
 	audioPath,
 	trackKind,
+	nativeCaptureOutput,
 }: {
 	videoPath: string;
 	audioPath: string;
 	trackKind: "mic" | "system";
+	nativeCaptureOutput?: string | null;
 }) {
 	const [{ videoDurationSeconds }, audioDurationSeconds] = await Promise.all([
 		probeRecordingSourceAudioVideoDurations(videoPath),
@@ -288,11 +383,44 @@ export async function repairRecordingCompanionAudioSyncIfNeeded({
 	]);
 	const before = { videoDurationSeconds, audioDurationSeconds };
 	const plan = getRecordingSourceAudioSyncPlan(before);
+	const trustedNativeTelemetry = getTrustedNativeCompanionAudioSyncTelemetry({
+		nativeCaptureOutput,
+		trackKind,
+	});
+	const trustedNativePlan = trustedNativeTelemetry
+		? getRecordingSourceAudioSyncPlan(trustedNativeTelemetry)
+		: null;
 	const eventDetails = {
 		...plan,
 		audioPath,
 		trackKind,
 	};
+
+	if (
+		trustedNativeTelemetry &&
+		trustedNativePlan?.action === "none" &&
+		trustedNativePlan.reason === "within-tolerance" &&
+		plan.action !== "none"
+	) {
+		await recordSourceAudioSyncEvent({
+			videoPath,
+			event: "recording-companion-audio-sync-skipped-native-telemetry",
+			details: {
+				reason: "native-finalization-within-tolerance",
+				audioPath,
+				trackKind,
+				ffprobePlan: plan,
+				nativeTelemetry: trustedNativeTelemetry,
+				nativePlan: trustedNativePlan,
+			},
+		});
+		return {
+			plan: trustedNativePlan,
+			before,
+			after: before,
+			repaired: false,
+		};
+	}
 
 	if (plan.action === "none") {
 		if (plan.reason === "missing-audio" || plan.reason === "invalid-duration") {

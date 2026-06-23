@@ -838,6 +838,8 @@ export function getNativeRecordingAuditWarningMessage(result: {
     result.recordingAudit.summary.audioContinuityRepairs;
   const webcamContinuityRepairs =
     result.recordingAudit.summary.webcamContinuityRepairs;
+  const webcamVisualFreezeReviews =
+    result.recordingAudit.summary.webcamVisualFreezeReviews;
   const continuityWarningParts = [
     audioContinuityRepairs && audioContinuityRepairs.count > 0
       ? `${audioContinuityRepairs.totalDurationSeconds.toFixed(3)}s of audio silence across ${audioContinuityRepairs.count} event${audioContinuityRepairs.count === 1 ? "" : "s"}`
@@ -846,20 +848,27 @@ export function getNativeRecordingAuditWarningMessage(result: {
       ? `${webcamContinuityRepairs.totalFrames ?? 0} held webcam frame${(webcamContinuityRepairs.totalFrames ?? 0) === 1 ? "" : "s"} across ${webcamContinuityRepairs.count} event${webcamContinuityRepairs.count === 1 ? "" : "s"}`
       : null,
   ].filter(Boolean);
-  const firstContinuityRepairSeconds = [
+  const webcamVisualFreezeReviewText =
+    webcamVisualFreezeReviews && webcamVisualFreezeReviews.count > 0
+      ? `${webcamVisualFreezeReviews.count} webcam visual freeze review${webcamVisualFreezeReviews.count === 1 ? "" : "s"} totaling ${webcamVisualFreezeReviews.totalDurationSeconds.toFixed(3)}s`
+      : null;
+  const firstAuditReviewSeconds = [
     audioContinuityRepairs?.firstTargetPtsSeconds,
     webcamContinuityRepairs?.firstTargetPtsSeconds,
+    webcamVisualFreezeReviews?.firstStartPtsSeconds,
   ]
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
     .sort((left, right) => left - right)[0];
-  const firstContinuityRepairTimestamp = formatAuditReviewTimestamp(
-    firstContinuityRepairSeconds,
+  const firstAuditReviewTimestamp = formatAuditReviewTimestamp(
+    firstAuditReviewSeconds,
   );
   const warningMessage =
     rendererPreviewIssueCount > 0
       ? `Recording saved, but the live webcam preview was not trustworthy during capture (${rendererPreviewIssueCount} preview issue${rendererPreviewIssueCount === 1 ? "" : "s"} reported). The native recorder kept proof evidence and did not find blocking media corruption.`
       : continuityWarningParts.length > 0
-        ? `Recording saved. Recordly kept the timeline continuous by applying ${continuityWarningParts.join(" and ")} after device callback gaps.${firstContinuityRepairTimestamp ? ` First affected point: ${firstContinuityRepairTimestamp}.` : ""}`
+        ? `Recording saved. Recordly kept the timeline continuous by applying ${continuityWarningParts.join(" and ")} after device callback gaps.${webcamVisualFreezeReviewText ? ` It also marked ${webcamVisualFreezeReviewText}.` : ""}${firstAuditReviewTimestamp ? ` First affected point: ${firstAuditReviewTimestamp}.` : ""}`
+        : webcamVisualFreezeReviewText
+          ? `Recording saved. Recordly marked ${webcamVisualFreezeReviewText}.${firstAuditReviewTimestamp ? ` First affected point: ${firstAuditReviewTimestamp}.` : ""}`
       : (primaryWarning?.message ??
         "Recording completed with native audit warnings.");
 

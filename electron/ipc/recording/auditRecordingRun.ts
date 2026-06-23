@@ -63,6 +63,7 @@ const WEBCAM_EVIDENCE_EVENTS = new Set([
 	"native-webcam-capture-stats",
 	"native-webcam-capture-low-cadence",
 	"native-webcam-preview-frame-written",
+	"native-webcam-visual-freeze-review",
 	"native-webcam-hold-frames-inserted",
 	"native-webcam-proof-preview-accepted",
 	"native-webcam-sidecar-accepted",
@@ -140,6 +141,7 @@ export type RecordingRunAuditSummary = {
 		first: Record<string, unknown> | null;
 		last: Record<string, unknown> | null;
 	};
+	webcamVisualFreezeReviews?: ReviewSegmentSummary;
 	audioContinuityRepairs?: ContinuityRepairSummary;
 	webcamContinuityRepairs?: ContinuityRepairSummary;
 	nativeMicrophone?: {
@@ -163,6 +165,17 @@ type ContinuityRepairSummary = {
 	totalDurationSeconds: number;
 	firstTargetPtsSeconds?: number;
 	lastTargetPtsSeconds?: number;
+	first: Record<string, unknown> | null;
+	last: Record<string, unknown> | null;
+};
+
+type ReviewSegmentSummary = {
+	count: number;
+	totalDurationSeconds: number;
+	firstStartPtsSeconds?: number;
+	firstEndPtsSeconds?: number;
+	lastStartPtsSeconds?: number;
+	lastEndPtsSeconds?: number;
 	first: Record<string, unknown> | null;
 	last: Record<string, unknown> | null;
 };
@@ -461,6 +474,38 @@ function getContinuityRepairSummary(
 	};
 }
 
+function getReviewSegmentSummary(
+	entries: EventLogEntry[],
+	eventName: string,
+): ReviewSegmentSummary {
+	const issueEntries = entries.filter((entry) => entry.event === eventName);
+	let totalDurationSeconds = 0;
+
+	for (const entry of issueEntries) {
+		const details = getDetails(entry);
+		totalDurationSeconds += getNumber(details.stalledFor) ?? 0;
+	}
+
+	const first = issueEntries[0] ? getDetails(issueEntries[0]) : null;
+	const last = issueEntries.length > 0 ? getDetails(issueEntries[issueEntries.length - 1]) : null;
+	return {
+		count: issueEntries.length,
+		totalDurationSeconds: Math.round(totalDurationSeconds * 1000) / 1000,
+		...(getNumber(first?.startPts) !== null
+			? { firstStartPtsSeconds: getNumber(first?.startPts)! }
+			: {}),
+		...(getNumber(first?.endPts) !== null
+			? { firstEndPtsSeconds: getNumber(first?.endPts)! }
+			: {}),
+		...(getNumber(last?.startPts) !== null
+			? { lastStartPtsSeconds: getNumber(last?.startPts)! }
+			: {}),
+		...(getNumber(last?.endPts) !== null ? { lastEndPtsSeconds: getNumber(last?.endPts)! } : {}),
+		first,
+		last,
+	};
+}
+
 function pushIssue(
 	issues: RecordingRunAuditIssue[],
 	code: string,
@@ -644,6 +689,10 @@ export async function auditRecordingRun(
 	const sawWebcamEvidence = entries.some((entry) => WEBCAM_EVIDENCE_EVENTS.has(entry.event));
 	const proof = getProofSummary(entries);
 	const rendererPreviewIssues = getRendererPreviewIssueSummary(entries);
+	const webcamVisualFreezeReviews = getReviewSegmentSummary(
+		entries,
+		"native-webcam-visual-freeze-review",
+	);
 	const audioContinuityRepairs = getContinuityRepairSummary(
 		entries,
 		"native-audio-silence-inserted",
@@ -870,6 +919,15 @@ export async function auditRecordingRun(
 			"native-webcam-preview-renderer-issue",
 			"The native recorder kept proof evidence, but the renderer preview surface reported stale or failed display frames.",
 			rendererPreviewIssues as unknown as Record<string, unknown>,
+		);
+	}
+
+	if (webcamVisualFreezeReviews.count > 0) {
+		pushIssue(
+			warnings,
+			"native-webcam-visual-freeze-review",
+			"The native recorder saw a short visually frozen webcam segment. The recording was saved, but this timestamp should be reviewed.",
+			webcamVisualFreezeReviews as unknown as Record<string, unknown>,
 		);
 	}
 
@@ -1233,6 +1291,7 @@ export async function auditRecordingRun(
 			resolvedLabel: getNonEmptyString(getDetails(recordingWebcamSelection).resolvedLabel),
 			captureLabel: getNonEmptyString(getDetails(recordingWebcamCaptureStarted).label),
 		},
+		webcamVisualFreezeReviews,
 		audioContinuityRepairs,
 		webcamContinuityRepairs,
 		nativeMicrophone: {

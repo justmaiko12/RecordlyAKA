@@ -101,6 +101,14 @@ interface RendererRecordingRunAudit {
       tempoRatio: number;
       toleranceSeconds: number;
     }>;
+    webcamVisualFreezeReviews: {
+      count: number;
+      totalDurationSeconds: number;
+      firstStartPtsSeconds?: number;
+      firstEndPtsSeconds?: number;
+      lastStartPtsSeconds?: number;
+      lastEndPtsSeconds?: number;
+    };
     audioContinuityRepairs: {
       count: number;
       totalFrames?: number;

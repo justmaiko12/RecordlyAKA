@@ -63,6 +63,7 @@ const WEBCAM_EVIDENCE_EVENTS = new Set([
   "native-webcam-capture-stats",
   "native-webcam-capture-low-cadence",
   "native-webcam-preview-frame-written",
+  "native-webcam-visual-freeze-review",
   "native-webcam-hold-frames-inserted",
   "native-webcam-proof-preview-accepted",
   "native-webcam-sidecar-accepted",
@@ -599,6 +600,37 @@ function getContinuityRepairSummary(entries, eventName) {
   };
 }
 
+function getReviewSegmentSummary(entries, eventName) {
+  const issueEntries = entries.filter((entry) => entry.event === eventName);
+  let totalDurationSeconds = 0;
+
+  for (const entry of issueEntries) {
+    const details = getDetails(entry);
+    totalDurationSeconds += getNumber(details.stalledFor) ?? 0;
+  }
+
+  const first = issueEntries[0] ? getDetails(issueEntries[0]) : null;
+  const last = issueEntries.at(-1) ? getDetails(issueEntries.at(-1)) : null;
+  return {
+    count: issueEntries.length,
+    totalDurationSeconds: Math.round(totalDurationSeconds * 1000) / 1000,
+    ...(getNumber(first?.startPts) !== null
+      ? { firstStartPtsSeconds: getNumber(first?.startPts) }
+      : {}),
+    ...(getNumber(first?.endPts) !== null
+      ? { firstEndPtsSeconds: getNumber(first?.endPts) }
+      : {}),
+    ...(getNumber(last?.startPts) !== null
+      ? { lastStartPtsSeconds: getNumber(last?.startPts) }
+      : {}),
+    ...(getNumber(last?.endPts) !== null
+      ? { lastEndPtsSeconds: getNumber(last?.endPts) }
+      : {}),
+    first,
+    last,
+  };
+}
+
 function pushIssue(issues, code, message, details = {}) {
   issues.push({ code, message, details });
 }
@@ -642,6 +674,10 @@ export async function auditRecordingRun(inputPath, options = {}) {
     WEBCAM_EVIDENCE_EVENTS.has(entry.event),
   );
   const proof = getProofSummary(entries);
+  const webcamVisualFreezeReviews = getReviewSegmentSummary(
+    entries,
+    "native-webcam-visual-freeze-review",
+  );
   const audioContinuityRepairs = getContinuityRepairSummary(
     entries,
     "native-audio-silence-inserted",
@@ -825,6 +861,15 @@ export async function auditRecordingRun(inputPath, options = {}) {
       "native-audio-continuity-repaired",
       "The native recorder inserted silence to keep audio sample time continuous after device callback gaps.",
       audioContinuityRepairs,
+    );
+  }
+
+  if (webcamVisualFreezeReviews.count > 0) {
+    pushIssue(
+      warnings,
+      "native-webcam-visual-freeze-review",
+      "The native recorder saw a short visually frozen webcam segment. The recording was saved, but this timestamp should be reviewed.",
+      webcamVisualFreezeReviews,
     );
   }
 
@@ -1026,6 +1071,7 @@ export async function auditRecordingRun(inputPath, options = {}) {
         : null,
     },
     proof,
+    webcamVisualFreezeReviews,
     audioContinuityRepairs,
     webcamContinuityRepairs,
     screenFinalization,
@@ -1078,6 +1124,15 @@ function formatHuman(result) {
   if (result.summary.proof) {
     lines.push(
       `Accepted proof samples: ${result.summary.proof.count} rejected=${result.summary.proof.rejectedCount} monotonic=${result.summary.proof.monotonic}`,
+    );
+  }
+  if ((result.summary.webcamVisualFreezeReviews?.count ?? 0) > 0) {
+    const firstAt =
+      typeof result.summary.webcamVisualFreezeReviews.firstStartPtsSeconds === "number"
+        ? ` firstAt=${result.summary.webcamVisualFreezeReviews.firstStartPtsSeconds}s`
+        : "";
+    lines.push(
+      `Webcam visual freeze reviews: events=${result.summary.webcamVisualFreezeReviews.count} duration=${result.summary.webcamVisualFreezeReviews.totalDurationSeconds}s${firstAt}`,
     );
   }
   if ((result.summary.audioContinuityRepairs?.count ?? 0) > 0) {

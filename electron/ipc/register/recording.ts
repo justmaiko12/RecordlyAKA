@@ -327,6 +327,39 @@ export function summarizeRecordingAuditForIpc(audit: RecordingRunAuditResult) {
       webcamFrames: audit.summary.webcamFinalization?.frames ?? null,
       sourceMediaDurations: audit.summary.sourceMediaDurations ?? null,
       companionAudioDurations: audit.summary.companionAudioDurations ?? [],
+      webcamVisualFreezeReviews: {
+        count: audit.summary.webcamVisualFreezeReviews?.count ?? 0,
+        totalDurationSeconds:
+          audit.summary.webcamVisualFreezeReviews?.totalDurationSeconds ?? 0,
+        ...(typeof audit.summary.webcamVisualFreezeReviews
+          ?.firstStartPtsSeconds === "number"
+          ? {
+              firstStartPtsSeconds:
+                audit.summary.webcamVisualFreezeReviews.firstStartPtsSeconds,
+            }
+          : {}),
+        ...(typeof audit.summary.webcamVisualFreezeReviews
+          ?.firstEndPtsSeconds === "number"
+          ? {
+              firstEndPtsSeconds:
+                audit.summary.webcamVisualFreezeReviews.firstEndPtsSeconds,
+            }
+          : {}),
+        ...(typeof audit.summary.webcamVisualFreezeReviews
+          ?.lastStartPtsSeconds === "number"
+          ? {
+              lastStartPtsSeconds:
+                audit.summary.webcamVisualFreezeReviews.lastStartPtsSeconds,
+            }
+          : {}),
+        ...(typeof audit.summary.webcamVisualFreezeReviews
+          ?.lastEndPtsSeconds === "number"
+          ? {
+              lastEndPtsSeconds:
+                audit.summary.webcamVisualFreezeReviews.lastEndPtsSeconds,
+            }
+          : {}),
+      },
       audioContinuityRepairs: {
         count: audit.summary.audioContinuityRepairs?.count ?? 0,
         ...(audit.summary.audioContinuityRepairs?.totalFrames
@@ -2131,6 +2164,7 @@ export function registerRecordingHandlers(
                 finalVideoPath,
                 preferredSystemAudioPath,
                 preferredMicrophonePath,
+                nativeCaptureOutputBuffer,
               );
               console.log("[stop-native] Audio mux completed successfully");
             } catch (error) {
@@ -2260,6 +2294,7 @@ export function registerRecordingHandlers(
                     fallbackPath,
                     fallbackSystemAudioPath,
                     fallbackMicrophonePath,
+                    nativeCaptureOutputBuffer,
                   );
                 } catch (muxError) {
                   console.warn(
