@@ -6,17 +6,31 @@ import {
 } from "./sourceAudioSync";
 
 describe("getRecordingSourceAudioSyncPlan", () => {
-	it("repairs slightly shorter embedded source audio instead of accepting duration drift", () => {
+	it("repairs tiny shorter embedded source audio instead of accepting duration drift", () => {
+		const plan = getRecordingSourceAudioSyncPlan({
+			videoDurationSeconds: 563.546667,
+			audioDurationSeconds: 563.146667,
+		});
+
+		expect(plan).toMatchObject({
+			action: "repair",
+			reason: "tempo",
+			driftSeconds: 0.4,
+			tempoRatio: expect.closeTo(0.99929, 5),
+		});
+	});
+
+	it("rejects multi-second source audio shortages instead of globally warping speech", () => {
 		const plan = getRecordingSourceAudioSyncPlan({
 			videoDurationSeconds: 563.546667,
 			audioDurationSeconds: 561.450667,
 		});
 
 		expect(plan).toMatchObject({
-			action: "repair",
-			reason: "tempo",
+			action: "reject",
+			reason: "unsafe-short-audio-mismatch",
 			driftSeconds: 2.096,
-			tempoRatio: expect.closeTo(0.996281, 6),
+			tempoRatio: 1,
 		});
 	});
 
@@ -52,11 +66,11 @@ describe("buildRecordingSourceAudioSyncFilter", () => {
 	it("builds an audio filter that produces exactly the video duration", () => {
 		const filter = buildRecordingSourceAudioSyncFilter({
 			videoDurationSeconds: 563.546667,
-			tempoRatio: 0.996281,
+			tempoRatio: 0.99929,
 		});
 
 		expect(filter).toBe(
-			"[0:a]atempo=0.996281,apad,atrim=duration=563.547,aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[aout_sync]",
+			"[0:a]atempo=0.999290,apad,atrim=duration=563.547,aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[aout_sync]",
 		);
 	});
 });

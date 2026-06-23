@@ -18,6 +18,8 @@ const MAX_ACCEPTED_PROOF_HEAD_FRAME_DRIFT = 90;
 const MIN_ACCEPTED_PROOF_SAMPLE_COUNT = 3;
 const MAX_SECONDS_PER_ACCEPTED_PROOF_SAMPLE = 3;
 const RECORDING_SOURCE_AUDIO_SYNC_TOLERANCE_SECONDS = 0.05;
+const RECORDING_SOURCE_AUDIO_MAX_TEMPO_DRIFT_SECONDS = 1.5;
+const RECORDING_SOURCE_AUDIO_MAX_TEMPO_DRIFT_RATIO = 0.0015;
 
 const FAILURE_EVENTS = new Set([
   "native-helper-exited-unexpectedly",
@@ -61,6 +63,7 @@ const WEBCAM_EVIDENCE_EVENTS = new Set([
   "native-webcam-capture-stats",
   "native-webcam-capture-low-cadence",
   "native-webcam-preview-frame-written",
+  "native-webcam-hold-frames-inserted",
   "native-webcam-proof-preview-accepted",
   "native-webcam-sidecar-accepted",
   "native-webcam-sidecar-rejected",
@@ -238,6 +241,21 @@ function getRecordingSourceAudioSyncPlan({
   const durationDeltaMs = Math.round(
     (videoDurationSeconds - audioDurationSeconds) * 1000,
   );
+  const relativeDrift = driftSeconds / videoDurationSeconds;
+  if (
+    driftSeconds > RECORDING_SOURCE_AUDIO_MAX_TEMPO_DRIFT_SECONDS &&
+    relativeDrift > RECORDING_SOURCE_AUDIO_MAX_TEMPO_DRIFT_RATIO
+  ) {
+    return {
+      action: "reject",
+      reason: "unsafe-short-audio-mismatch",
+      videoDurationSeconds,
+      audioDurationSeconds,
+      driftSeconds,
+      tempoRatio: 1,
+    };
+  }
+
   const relativeDelta =
     Math.abs(durationDeltaMs) / Math.max(videoDurationSeconds * 1000, 1);
   if (relativeDelta <= 0.03 || Math.abs(durationDeltaMs) <= 1500) {
@@ -550,6 +568,29 @@ function getProofSummary(entries) {
   };
 }
 
+function getContinuityRepairSummary(entries, eventName) {
+  const issueEntries = entries.filter((entry) => entry.event === eventName);
+  let totalFrames = 0;
+  let totalBuffers = 0;
+  let totalDurationSeconds = 0;
+
+  for (const entry of issueEntries) {
+    const details = getDetails(entry);
+    totalFrames += getNumber(details.frames) ?? 0;
+    totalBuffers += getNumber(details.buffers) ?? 0;
+    totalDurationSeconds += getNumber(details.duration) ?? 0;
+  }
+
+  return {
+    count: issueEntries.length,
+    ...(totalFrames > 0 ? { totalFrames } : {}),
+    ...(totalBuffers > 0 ? { totalBuffers } : {}),
+    totalDurationSeconds: Math.round(totalDurationSeconds * 1000) / 1000,
+    first: issueEntries[0] ? getDetails(issueEntries[0]) : null,
+    last: issueEntries.at(-1) ? getDetails(issueEntries.at(-1)) : null,
+  };
+}
+
 function pushIssue(issues, code, message, details = {}) {
   issues.push({ code, message, details });
 }
@@ -593,6 +634,14 @@ export async function auditRecordingRun(inputPath, options = {}) {
     WEBCAM_EVIDENCE_EVENTS.has(entry.event),
   );
   const proof = getProofSummary(entries);
+  const audioContinuityRepairs = getContinuityRepairSummary(
+    entries,
+    "native-audio-silence-inserted",
+  );
+  const webcamContinuityRepairs = getContinuityRepairSummary(
+    entries,
+    "native-webcam-hold-frames-inserted",
+  );
   const screenFinalization = getFinalizationSummary(
     findLast(entries, "native-video-recording-finalized"),
   );
@@ -759,6 +808,24 @@ export async function auditRecordingRun(inputPath, options = {}) {
       {
         deviceEvent: getDetails(nativeMicrophoneDevice),
       },
+    );
+  }
+
+  if (audioContinuityRepairs.count > 0) {
+    pushIssue(
+      warnings,
+      "native-audio-continuity-repaired",
+      "The native recorder inserted silence to keep audio sample time continuous after device callback gaps.",
+      audioContinuityRepairs,
+    );
+  }
+
+  if (webcamContinuityRepairs.count > 0) {
+    pushIssue(
+      warnings,
+      "native-webcam-continuity-held-frames",
+      "The native recorder held the last good webcam frame to keep the camera track continuous after device callback gaps.",
+      webcamContinuityRepairs,
     );
   }
 
@@ -951,6 +1018,8 @@ export async function auditRecordingRun(inputPath, options = {}) {
         : null,
     },
     proof,
+    audioContinuityRepairs,
+    webcamContinuityRepairs,
     screenFinalization,
     webcamFinalization,
     diagnosticsLatestPhase: isRecord(diagnostics?.latest)
@@ -1001,6 +1070,16 @@ function formatHuman(result) {
   if (result.summary.proof) {
     lines.push(
       `Accepted proof samples: ${result.summary.proof.count} rejected=${result.summary.proof.rejectedCount} monotonic=${result.summary.proof.monotonic}`,
+    );
+  }
+  if ((result.summary.audioContinuityRepairs?.count ?? 0) > 0) {
+    lines.push(
+      `Audio continuity repairs: events=${result.summary.audioContinuityRepairs.count} duration=${result.summary.audioContinuityRepairs.totalDurationSeconds}s`,
+    );
+  }
+  if ((result.summary.webcamContinuityRepairs?.count ?? 0) > 0) {
+    lines.push(
+      `Webcam continuity repairs: events=${result.summary.webcamContinuityRepairs.count} heldFrames=${result.summary.webcamContinuityRepairs.totalFrames ?? 0} duration=${result.summary.webcamContinuityRepairs.totalDurationSeconds}s`,
     );
   }
   for (const issue of result.issues) {

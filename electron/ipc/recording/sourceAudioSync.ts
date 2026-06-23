@@ -9,6 +9,8 @@ import { appendRecordingEventLogEntry } from "./recordingEventLog";
 const execFileAsync = promisify(execFile);
 
 export const RECORDING_SOURCE_AUDIO_SYNC_TOLERANCE_SECONDS = 0.05;
+export const RECORDING_SOURCE_AUDIO_MAX_TEMPO_DRIFT_SECONDS = 1.5;
+export const RECORDING_SOURCE_AUDIO_MAX_TEMPO_DRIFT_RATIO = 0.0015;
 
 export type RecordingSourceAudioSyncPlan =
 	| {
@@ -108,6 +110,21 @@ export function getRecordingSourceAudioSyncPlan({
 		return {
 			action: "repair",
 			reason: "trim",
+			videoDurationSeconds,
+			audioDurationSeconds,
+			driftSeconds,
+			tempoRatio: 1,
+		};
+	}
+
+	const relativeDrift = driftSeconds / videoDurationSeconds;
+	if (
+		driftSeconds > RECORDING_SOURCE_AUDIO_MAX_TEMPO_DRIFT_SECONDS &&
+		relativeDrift > RECORDING_SOURCE_AUDIO_MAX_TEMPO_DRIFT_RATIO
+	) {
+		return {
+			action: "reject",
+			reason: "unsafe-short-audio-mismatch",
 			videoDurationSeconds,
 			audioDurationSeconds,
 			driftSeconds,

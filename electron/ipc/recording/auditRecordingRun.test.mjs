@@ -175,6 +175,64 @@ describe("auditRecordingRun", () => {
 		});
 	});
 
+	it("warns when native audio continuity needed inserted silence", async () => {
+		const videoPath = await writeRun([
+			...healthyEvents(),
+			{
+				event: "native-audio-silence-inserted",
+				details: {
+					track: "mic",
+					buffers: 12,
+					duration: 0.256,
+					totalInserted: 0.256,
+					targetPts: 14.2,
+					nextPts: 14.186667,
+				},
+			},
+		]);
+		const result = await auditRunWithHealthySourceMedia(videoPath);
+
+		expect(result.status).toBe("warning");
+		expect(result.issues).toEqual([]);
+		expect(result.warnings).toEqual([
+			expect.objectContaining({ code: "native-audio-continuity-repaired" }),
+		]);
+		expect(result.summary.audioContinuityRepairs).toMatchObject({
+			count: 1,
+			totalBuffers: 12,
+			totalDurationSeconds: 0.256,
+		});
+	});
+
+	it("warns when native webcam continuity needed held frames", async () => {
+		const videoPath = await writeRun([
+			...healthyEvents(),
+			{
+				event: "native-webcam-hold-frames-inserted",
+				details: {
+					frames: 9,
+					totalFrames: 159,
+					holdFrames: 9,
+					duration: 0.3,
+					targetPts: 5.3,
+					lastPts: 5.266667,
+				},
+			},
+		]);
+		const result = await auditRunWithHealthySourceMedia(videoPath);
+
+		expect(result.status).toBe("warning");
+		expect(result.issues).toEqual([]);
+		expect(result.warnings).toEqual([
+			expect.objectContaining({ code: "native-webcam-continuity-held-frames" }),
+		]);
+		expect(result.summary.webcamContinuityRepairs).toMatchObject({
+			count: 1,
+			totalFrames: 9,
+			totalDurationSeconds: 0.3,
+		});
+	});
+
 	it("fails when source audio/video sync repair rejects the recording", async () => {
 		const videoPath = await writeRun([
 			...healthyEvents(),
@@ -297,7 +355,8 @@ describe("auditRecordingRun", () => {
 			videoDurationSeconds: 1200,
 			audioDurationSeconds: 1197.5,
 			driftSeconds: 2.5,
-			planAction: "repair",
+			planAction: "reject",
+			planReason: "unsafe-short-audio-mismatch",
 		});
 	});
 
@@ -348,7 +407,8 @@ describe("auditRecordingRun", () => {
 			videoDurationSeconds: 1200,
 			audioDurationSeconds: 1197.5,
 			driftSeconds: 2.5,
-			planAction: "repair",
+			planAction: "reject",
+			planReason: "unsafe-short-audio-mismatch",
 			preferredAudioSource: "mic-companion",
 		});
 	});
@@ -375,7 +435,8 @@ describe("auditRecordingRun", () => {
 				videoDurationSeconds: 1200,
 				audioDurationSeconds: 1197.5,
 				driftSeconds: 2.5,
-				planAction: "repair",
+				planAction: "reject",
+				planReason: "unsafe-short-audio-mismatch",
 			}),
 		]);
 	});

@@ -63,6 +63,7 @@ const WEBCAM_EVIDENCE_EVENTS = new Set([
 	"native-webcam-capture-stats",
 	"native-webcam-capture-low-cadence",
 	"native-webcam-preview-frame-written",
+	"native-webcam-hold-frames-inserted",
 	"native-webcam-proof-preview-accepted",
 	"native-webcam-sidecar-accepted",
 	"native-webcam-sidecar-rejected",
@@ -139,6 +140,8 @@ export type RecordingRunAuditSummary = {
 		first: Record<string, unknown> | null;
 		last: Record<string, unknown> | null;
 	};
+	audioContinuityRepairs?: ContinuityRepairSummary;
+	webcamContinuityRepairs?: ContinuityRepairSummary;
 	nativeMicrophone?: {
 		requested: boolean;
 		firstBufferWritten: boolean;
@@ -151,6 +154,15 @@ export type RecordingRunAuditSummary = {
 	webcamFinalization?: WriterFinalizationSummary | null;
 	diagnosticsLatestPhase?: unknown;
 	diagnosticsExpectedDurationMs?: unknown;
+};
+
+type ContinuityRepairSummary = {
+	count: number;
+	totalFrames?: number;
+	totalBuffers?: number;
+	totalDurationSeconds: number;
+	first: Record<string, unknown> | null;
+	last: Record<string, unknown> | null;
 };
 
 export type RecordingRunAuditResult = {
@@ -410,6 +422,32 @@ function getRendererPreviewIssueSummary(entries: EventLogEntry[]) {
 	};
 }
 
+function getContinuityRepairSummary(
+	entries: EventLogEntry[],
+	eventName: string,
+): ContinuityRepairSummary {
+	const issueEntries = entries.filter((entry) => entry.event === eventName);
+	let totalFrames = 0;
+	let totalBuffers = 0;
+	let totalDurationSeconds = 0;
+
+	for (const entry of issueEntries) {
+		const details = getDetails(entry);
+		totalFrames += getNumber(details.frames) ?? 0;
+		totalBuffers += getNumber(details.buffers) ?? 0;
+		totalDurationSeconds += getNumber(details.duration) ?? 0;
+	}
+
+	return {
+		count: issueEntries.length,
+		...(totalFrames > 0 ? { totalFrames } : {}),
+		...(totalBuffers > 0 ? { totalBuffers } : {}),
+		totalDurationSeconds: Math.round(totalDurationSeconds * 1000) / 1000,
+		first: issueEntries[0] ? getDetails(issueEntries[0]) : null,
+		last: issueEntries.length > 0 ? getDetails(issueEntries[issueEntries.length - 1]) : null,
+	};
+}
+
 function pushIssue(
 	issues: RecordingRunAuditIssue[],
 	code: string,
@@ -593,6 +631,14 @@ export async function auditRecordingRun(
 	const sawWebcamEvidence = entries.some((entry) => WEBCAM_EVIDENCE_EVENTS.has(entry.event));
 	const proof = getProofSummary(entries);
 	const rendererPreviewIssues = getRendererPreviewIssueSummary(entries);
+	const audioContinuityRepairs = getContinuityRepairSummary(
+		entries,
+		"native-audio-silence-inserted",
+	);
+	const webcamContinuityRepairs = getContinuityRepairSummary(
+		entries,
+		"native-webcam-hold-frames-inserted",
+	);
 	const previewHandoff = findLast(entries, "native-webcam-preview-handoff");
 	const recordingWebcamSelection = findLast(entries, "native-webcam-selection-resolved");
 	const recordingWebcamCaptureStarted = findFirst(entries, "native-webcam-capture-started");
@@ -811,6 +857,24 @@ export async function auditRecordingRun(
 			"native-webcam-preview-renderer-issue",
 			"The native recorder kept proof evidence, but the renderer preview surface reported stale or failed display frames.",
 			rendererPreviewIssues as unknown as Record<string, unknown>,
+		);
+	}
+
+	if (audioContinuityRepairs.count > 0) {
+		pushIssue(
+			warnings,
+			"native-audio-continuity-repaired",
+			"The native recorder inserted silence to keep audio sample time continuous after device callback gaps.",
+			audioContinuityRepairs as unknown as Record<string, unknown>,
+		);
+	}
+
+	if (webcamContinuityRepairs.count > 0) {
+		pushIssue(
+			warnings,
+			"native-webcam-continuity-held-frames",
+			"The native recorder held the last good webcam frame to keep the camera track continuous after device callback gaps.",
+			webcamContinuityRepairs as unknown as Record<string, unknown>,
 		);
 	}
 
@@ -1156,6 +1220,8 @@ export async function auditRecordingRun(
 			resolvedLabel: getNonEmptyString(getDetails(recordingWebcamSelection).resolvedLabel),
 			captureLabel: getNonEmptyString(getDetails(recordingWebcamCaptureStarted).label),
 		},
+		audioContinuityRepairs,
+		webcamContinuityRepairs,
 		nativeMicrophone: {
 			requested: nativeMicrophoneRequested,
 			firstBufferWritten: nativeMicrophoneFirstBuffer !== null,

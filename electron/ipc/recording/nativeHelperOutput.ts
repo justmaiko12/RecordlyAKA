@@ -205,6 +205,16 @@ export function parseNativeHelperOutputLine(
     };
   }
 
+  if (trimmed.startsWith("WEBCAM_HOLD_FRAMES_INSERTED ")) {
+    return {
+      event: "native-webcam-hold-frames-inserted",
+      severity: "info",
+      details: parseKeyValueTail(
+        trimmed.slice("WEBCAM_HOLD_FRAMES_INSERTED ".length),
+      ),
+    };
+  }
+
   if (trimmed.startsWith("MICROPHONE_AUDIO_FIRST_BUFFER_WRITTEN ")) {
     return {
       event: "native-microphone-audio-first-buffer-written",
@@ -220,6 +230,16 @@ export function parseNativeHelperOutputLine(
       event: "native-audio-capture-stats",
       severity: "info",
       details: parseKeyValueTail(trimmed.slice("AUDIO_CAPTURE_STATS ".length)),
+    };
+  }
+
+  if (trimmed.startsWith("AUDIO_SILENCE_INSERTED ")) {
+    return {
+      event: "native-audio-silence-inserted",
+      severity: "info",
+      details: parseKeyValueTail(
+        trimmed.slice("AUDIO_SILENCE_INSERTED ".length),
+      ),
     };
   }
 

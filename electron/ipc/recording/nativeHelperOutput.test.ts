@@ -291,6 +291,25 @@ describe("parseNativeHelperOutputLine", () => {
     });
   });
 
+  it("parses native webcam hold-frame continuity evidence", () => {
+    expect(
+      parseNativeHelperOutputLine(
+        "WEBCAM_HOLD_FRAMES_INSERTED frames=9 totalFrames=159 holdFrames=9 duration=0.3 targetPts=5.3 lastPts=5.266667",
+      ),
+    ).toEqual({
+      event: "native-webcam-hold-frames-inserted",
+      severity: "info",
+      details: {
+        frames: 9,
+        totalFrames: 159,
+        holdFrames: 9,
+        duration: 0.3,
+        targetPts: 5.3,
+        lastPts: 5.266667,
+      },
+    });
+  });
+
   it("parses native microphone audio health diagnostics", () => {
     expect(
       parseNativeHelperOutputLine("MICROPHONE_CAPTURE_UNAVAILABLE"),
@@ -369,6 +388,23 @@ describe("parseNativeHelperOutputLine", () => {
         recentFps: 3.5,
         totalFps: 2,
         lastPts: 9.5,
+      },
+    });
+
+    expect(
+      parseNativeHelperOutputLine(
+        "AUDIO_SILENCE_INSERTED track=mic buffers=12 duration=0.256 totalInserted=0.256 targetPts=14.2 nextPts=14.186667",
+      ),
+    ).toEqual({
+      event: "native-audio-silence-inserted",
+      severity: "info",
+      details: {
+        track: "mic",
+        buffers: 12,
+        duration: 0.256,
+        totalInserted: 0.256,
+        targetPts: 14.2,
+        nextPts: 14.186667,
       },
     });
   });
