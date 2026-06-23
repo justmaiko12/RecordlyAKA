@@ -143,6 +143,63 @@ describe("auditRecordingRun", () => {
 		);
 	});
 
+	it("fails when accepted webcam proof samples contain an isolated timestamp gap", async () => {
+		const videoPath = await writeRun([
+			{
+				event: "native-video-first-frame-written",
+				details: { frames: 1, pts: 0 },
+			},
+			{ event: "native-webcam-capture-started", details: { label: "Camera" } },
+			{
+				event: "native-webcam-first-visible-frame-written",
+				details: { frames: 1, pts: 0.033 },
+			},
+			{
+				event: "native-webcam-proof-preview-accepted",
+				details: { sequence: 1, acceptedFrame: 1, acceptedPts: 0.033 },
+			},
+			{
+				event: "native-webcam-proof-preview-accepted",
+				details: { sequence: 2, acceptedFrame: 31, acceptedPts: 1.033 },
+			},
+			{
+				event: "native-webcam-proof-preview-accepted",
+				details: { sequence: 3, acceptedFrame: 150, acceptedPts: 5.1 },
+			},
+			{
+				event: "native-video-recording-finalized",
+				details: {
+					writerStatus: "completed",
+					frames: 180,
+					realFrames: 180,
+					holdFrames: 0,
+					duration: 6,
+				},
+			},
+			{
+				event: "native-webcam-recording-finalized",
+				details: {
+					writerStatus: "completed",
+					frames: 180,
+					duration: 6,
+				},
+			},
+			{ event: "native-screen-recording-accepted", details: {} },
+			{ event: "native-webcam-sidecar-accepted", details: {} },
+		]);
+		const result = await auditRunWithHealthySourceMedia(videoPath);
+
+		expect(result.status).toBe("fail");
+		expect(result.issues).toEqual([
+			expect.objectContaining({ code: "accepted-proof-preview-gap" }),
+		]);
+		expect(result.summary.proof).toMatchObject({
+			largeGapCount: 1,
+			maxAcceptedPtsGapSeconds: 4.067,
+			maxAcceptedFrameGap: 119,
+		});
+	});
+
 	it("warns when native media is healthy but the renderer preview surface reported stale frames", async () => {
 		const events = [
 			...healthyEvents(),

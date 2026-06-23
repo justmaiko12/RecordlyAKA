@@ -18,6 +18,7 @@ const MAX_ACCEPTED_PROOF_HEAD_FRAME_DRIFT = 90;
 const MAX_PREVIEW_HANDOFF_REPROOF_SECONDS = 3;
 const MIN_ACCEPTED_PROOF_SAMPLE_COUNT = 3;
 const MAX_SECONDS_PER_ACCEPTED_PROOF_SAMPLE = 3;
+const MAX_ACCEPTED_PROOF_GAP_SECONDS = 3.5;
 const MIN_BROWSER_MIC_CHUNK_TIMING_EVENTS = 3;
 const MAX_SECONDS_PER_BROWSER_MIC_CHUNK_TIMING_EVENT = 10;
 
@@ -117,6 +118,10 @@ export type RecordingRunAuditSummary = {
 		count: number;
 		rejectedCount: number;
 		monotonic: boolean;
+		maxAcceptedPtsGapSeconds: number;
+		maxAcceptedFrameGap: number;
+		largeGapCount: number;
+		largeGaps: Array<Record<string, unknown>>;
 		first: Record<string, unknown> | null;
 		last: Record<string, unknown> | null;
 	};
@@ -397,6 +402,9 @@ function getProofSummary(entries: EventLogEntry[]) {
 		acceptedFrame: number | null;
 		acceptedPts: number | null;
 	} | null = null;
+	let maxAcceptedPtsGapSeconds = 0;
+	let maxAcceptedFrameGap = 0;
+	const largeGaps: Array<Record<string, unknown>> = [];
 
 	for (const entry of proofEntries) {
 		const details = getDetails(entry);
@@ -429,6 +437,30 @@ function getProofSummary(entries: EventLogEntry[]) {
 		) {
 			monotonic = false;
 		}
+		if (previous) {
+			if (current.acceptedPts !== null && previous.acceptedPts !== null) {
+				const acceptedPtsGapSeconds = current.acceptedPts - previous.acceptedPts;
+				maxAcceptedPtsGapSeconds = Math.max(maxAcceptedPtsGapSeconds, acceptedPtsGapSeconds);
+				if (acceptedPtsGapSeconds > MAX_ACCEPTED_PROOF_GAP_SECONDS) {
+					largeGaps.push({
+						index: largeGaps.length,
+						acceptedPtsGapSeconds,
+						previousAcceptedPts: previous.acceptedPts,
+						currentAcceptedPts: current.acceptedPts,
+						previousAcceptedFrame: previous.acceptedFrame,
+						currentAcceptedFrame: current.acceptedFrame,
+						previousSequence: previous.sequence,
+						currentSequence: current.sequence,
+					});
+				}
+			}
+			if (current.acceptedFrame !== null && previous.acceptedFrame !== null) {
+				maxAcceptedFrameGap = Math.max(
+					maxAcceptedFrameGap,
+					current.acceptedFrame - previous.acceptedFrame,
+				);
+			}
+		}
 		previous = current;
 	}
 
@@ -436,6 +468,10 @@ function getProofSummary(entries: EventLogEntry[]) {
 		count: proofEntries.length,
 		rejectedCount: rejectedEntries.length,
 		monotonic,
+		maxAcceptedPtsGapSeconds: Math.round(maxAcceptedPtsGapSeconds * 1000) / 1000,
+		maxAcceptedFrameGap,
+		largeGapCount: largeGaps.length,
+		largeGaps: largeGaps.slice(0, 10),
 		first: proofEntries[0] ? getDetails(proofEntries[0]) : null,
 		last: proofEntries.length > 0 ? getDetails(proofEntries[proofEntries.length - 1]) : null,
 	};
@@ -1118,6 +1154,17 @@ export async function auditRecordingRun(
 				"non-monotonic-accepted-proof-preview",
 				"Accepted proof-preview samples were not monotonic.",
 				proof as unknown as Record<string, unknown>,
+			);
+		}
+		if (proof.largeGapCount > 0) {
+			pushIssue(
+				issues,
+				"accepted-proof-preview-gap",
+				"Accepted proof-preview samples contain a large webcam timestamp gap, which can produce a frozen or jumped facecam segment.",
+				{
+					maxAcceptedProofGapSeconds: MAX_ACCEPTED_PROOF_GAP_SECONDS,
+					...proof,
+				} as unknown as Record<string, unknown>,
 			);
 		}
 		if (!webcamFinalization) {
