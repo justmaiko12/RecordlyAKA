@@ -281,6 +281,13 @@ export function getRecordingStartFailureAlertMessage(error: unknown): string {
   }
   if (
     message.includes(
+      "Timed out waiting for native screen first frame to be written",
+    )
+  ) {
+    return "Failed to start recording: Recordly could not capture the selected screen. Recording was not started because the screen stream did not deliver a first frame. Re-select the screen source if your monitor setup changed.";
+  }
+  if (
+    message.includes(
       "Timed out waiting for native screen and visible webcam frames to be written",
     )
   ) {
@@ -1858,6 +1865,49 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
             display_id: displayMatch.display_id ?? source.display_id,
           };
         }
+
+        const nameMatch = liveSources.find(
+          (candidate) =>
+            candidate.name === source.name ||
+            candidate.originalName === source.originalName,
+        );
+        if (nameMatch) {
+          return {
+            ...source,
+            id: nameMatch.id,
+            name: nameMatch.name ?? source.name,
+            display_id: nameMatch.display_id ?? source.display_id,
+          };
+        }
+
+        const sourceName = `${source.name ?? ""} ${source.originalName ?? ""}`;
+        if (sourceName.includes("(Primary)")) {
+          const primaryMatch = liveSources.find((candidate) =>
+            `${candidate.name ?? ""} ${candidate.originalName ?? ""}`.includes(
+              "(Primary)",
+            ),
+          );
+          if (primaryMatch) {
+            return {
+              ...source,
+              id: primaryMatch.id,
+              name: primaryMatch.name ?? source.name,
+              display_id: primaryMatch.display_id ?? source.display_id,
+            };
+          }
+        }
+
+        if (liveSources.length === 1) {
+          const [onlySource] = liveSources;
+          if (onlySource) {
+            return {
+              ...source,
+              id: onlySource.id,
+              name: onlySource.name ?? source.name,
+              display_id: onlySource.display_id ?? source.display_id,
+            };
+          }
+        }
       } catch (error) {
         console.warn("Failed to resolve browser capture source:", error);
       }
@@ -3072,6 +3122,23 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         (selectedSource.id?.startsWith("screen:") ||
           selectedSource.id?.startsWith("window:")) &&
         typeof window.electronAPI.startNativeScreenRecording === "function";
+      const nativeMacCaptureSource = useNativeMacScreenCapture
+        ? await resolveBrowserCaptureSource(selectedSource)
+        : selectedSource;
+      if (
+        useNativeMacScreenCapture &&
+        (nativeMacCaptureSource.id !== selectedSource.id ||
+          String(nativeMacCaptureSource.display_id ?? "") !==
+            String(selectedSource.display_id ?? ""))
+      ) {
+        recordRecordingEvent("native-screen-source-refreshed", {
+          previousId: selectedSource.id,
+          previousDisplayId: selectedSource.display_id ?? null,
+          nextId: nativeMacCaptureSource.id,
+          nextDisplayId: nativeMacCaptureSource.display_id ?? null,
+          sourceName: nativeMacCaptureSource.name ?? selectedSource.name,
+        });
+      }
       const webcamCaptureOwner = resolveWebcamCaptureOwner({
         platform,
         webcamEnabled,
@@ -3298,7 +3365,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         }
 
         const nativeResult =
-          await window.electronAPI.startNativeScreenRecording(selectedSource, {
+          await window.electronAPI.startNativeScreenRecording(nativeMacCaptureSource, {
             sessionId: String(recordingSessionTimestamp.current),
             capturesSystemAudio: systemAudioEnabled,
             capturesMicrophone:
@@ -3527,7 +3594,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
       const wantsAudioCapture = microphoneEnabled || systemAudioEnabled;
       const browserCaptureSource =
-        await resolveBrowserCaptureSource(selectedSource);
+        await resolveBrowserCaptureSource(nativeMacCaptureSource);
 
       if (
         browserCaptureSource?.id?.startsWith("screen:fallback:") ||

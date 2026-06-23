@@ -645,6 +645,44 @@ describe("mac native capture lifecycle", () => {
     await expectation;
   });
 
+  it("reports missing native screen first frame before blaming webcam proof-preview", async () => {
+    vi.useFakeTimers();
+    const state = await import("../state");
+    const { waitForNativeCaptureStart } = await import("./mac");
+    const process = createNativeProcessStub();
+    state.setNativeCaptureOutputBuffer("");
+
+    const started = waitForNativeCaptureStart(process as never, {
+      requiresWebcamFirstFrame: true,
+      requiresWebcamProofPreview: true,
+      timeoutMs: 1000,
+    });
+
+    process.stdout.emit("data", Buffer.from("Recording started\n"));
+    process.stderr.emit(
+      "data",
+      Buffer.from("WEBCAM_FIRST_FRAME_WRITTEN frames=1 pts=0\n"),
+    );
+    process.stderr.emit(
+      "data",
+      Buffer.from(
+        "WEBCAM_FIRST_VISIBLE_FRAME_WRITTEN frames=2 pts=0.033 averageLuma=12.5 maxLuma=88\n",
+      ),
+    );
+    process.stderr.emit(
+      "data",
+      Buffer.from(
+        "WEBCAM_PROOF_PREVIEW_ACCEPTED sequence=1 acceptedFrame=2 acceptedPts=0.033\n",
+      ),
+    );
+
+    const expectation = expect(started).rejects.toThrow(
+      "Timed out waiting for native screen first frame to be written",
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    await expectation;
+  });
+
   it("reports blank webcam frames when proof-preview exists but no visible frame arrives", async () => {
     vi.useFakeTimers();
     const state = await import("../state");

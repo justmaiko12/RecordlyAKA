@@ -475,27 +475,28 @@ export function waitForNativeCaptureStart(
       if (maybeResolve()) {
         return;
       }
-      fail(
-        new Error(
-          requiresWebcamFirstFrame &&
+      const timeoutMessage = !sawVideoFirstFrame
+        ? "Timed out waiting for native screen first frame to be written"
+        : requiresWebcamFirstFrame &&
             sawRecordingStarted &&
             sawVideoFirstFrame &&
             sawWebcamWriterFrame &&
             sawWebcamProofPreview &&
             !sawWebcamFirstFrame
-            ? "Selected webcam is delivering blank frames. Recordly did not start because the native webcam proof preview could not verify visible facecam video."
-            : requiresWebcamFirstFrame
-              ? requiresWebcamProofPreview
-                ? requiresMicrophoneAudio
-                  ? "Timed out waiting for native screen, microphone audio, visible webcam, and proof-preview frames to be written"
-                  : "Timed out waiting for native screen, visible webcam, and proof-preview frames to be written"
-                : requiresMicrophoneAudio
-                  ? "Timed out waiting for native screen, microphone audio, and visible webcam frames to be written"
-                  : "Timed out waiting for native screen and visible webcam frames to be written"
+          ? "Selected webcam is delivering blank frames. Recordly did not start because the native webcam proof preview could not verify visible facecam video."
+          : requiresWebcamFirstFrame
+            ? requiresWebcamProofPreview
+              ? requiresMicrophoneAudio
+                ? "Timed out waiting for native screen, microphone audio, visible webcam, and proof-preview frames to be written"
+                : "Timed out waiting for native screen, visible webcam, and proof-preview frames to be written"
               : requiresMicrophoneAudio
-                ? "Timed out waiting for native screen and microphone audio frames to be written"
-                : "Timed out waiting for native screen frames to be written",
-        ),
+                ? "Timed out waiting for native screen, microphone audio, and visible webcam frames to be written"
+                : "Timed out waiting for native screen and visible webcam frames to be written"
+            : requiresMicrophoneAudio
+              ? "Timed out waiting for native screen and microphone audio frames to be written"
+              : "Timed out waiting for native screen frames to be written";
+      fail(
+        new Error(timeoutMessage),
       );
     }, options.timeoutMs ?? 15000);
 

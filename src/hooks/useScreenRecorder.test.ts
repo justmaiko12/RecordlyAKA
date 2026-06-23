@@ -204,6 +204,14 @@ describe("getRecordingStartFailureAlertMessage", () => {
     ).toContain("could not verify the native webcam proof preview");
   });
 
+  it("explains missing native screen frames as a screen capture failure", () => {
+    expect(
+      getRecordingStartFailureAlertMessage(
+        new Error("Timed out waiting for native screen first frame to be written"),
+      ),
+    ).toContain("could not capture the selected screen");
+  });
+
   it("explains blank native webcam frames as a visible-facecam failure", () => {
     expect(
       getRecordingStartFailureAlertMessage(
