@@ -1280,6 +1280,7 @@ export function registerRecordingHandlers(
               issue.event === "native-webcam-capture-low-cadence-sustained" ||
               issue.event === "native-webcam-visual-stall-fail-closed" ||
               issue.event === "native-webcam-proof-preview-stale" ||
+              issue.event === "native-webcam-proof-preview-gap" ||
               issue.event === "native-webcam-proof-preview-lagging"
             ) {
               let reason = "main-webcam-stats-timeout";
@@ -1293,13 +1294,15 @@ export function registerRecordingHandlers(
                 reason = "main-webcam-visual-stall";
               } else if (issue.event === "native-webcam-proof-preview-stale") {
                 reason = "main-webcam-proof-preview-stale";
+              } else if (issue.event === "native-webcam-proof-preview-gap") {
+                reason = "main-webcam-proof-preview-gap";
               } else if (
                 issue.event === "native-webcam-proof-preview-lagging"
               ) {
                 reason = "main-webcam-proof-preview-lagging";
               }
               appendNativeCaptureOutputBuffer(
-                `WEBCAM_CAPTURE_DISABLED reason=${reason} staleForMs=${issue.details.staleForMs ?? "unknown"} previewStaleForMs=${issue.details.previewStaleForMs ?? "unknown"} previewWriterLagSeconds=${issue.details.previewWriterLagSeconds ?? "unknown"} previewWriterFrameLag=${issue.details.previewWriterFrameLag ?? "unknown"} lowCadenceForMs=${issue.details.lowCadenceForMs ?? "unknown"} stalledFor=${issue.details.stalledFor ?? "unknown"} meanDiff=${issue.details.meanDiff ?? "unknown"}\n`,
+                `WEBCAM_CAPTURE_DISABLED reason=${reason} staleForMs=${issue.details.staleForMs ?? "unknown"} previewStaleForMs=${issue.details.previewStaleForMs ?? "unknown"} acceptedProofGapSeconds=${issue.details.acceptedProofGapSeconds ?? "unknown"} previewWriterLagSeconds=${issue.details.previewWriterLagSeconds ?? "unknown"} previewWriterFrameLag=${issue.details.previewWriterFrameLag ?? "unknown"} lowCadenceForMs=${issue.details.lowCadenceForMs ?? "unknown"} stalledFor=${issue.details.stalledFor ?? "unknown"} meanDiff=${issue.details.meanDiff ?? "unknown"}\n`,
               );
               nativeCaptureHealth.observe({
                 event: "native-webcam-capture-disabled",

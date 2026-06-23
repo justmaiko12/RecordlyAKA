@@ -21,6 +21,7 @@ const LINKED_WEBCAM_SUPPRESSING_AUDIT_ISSUES = new Set([
 	"native-webcam-capture-low-cadence-sustained",
 	"native-webcam-visual-stall-fail-closed",
 	"native-webcam-proof-preview-stale",
+	"native-webcam-proof-preview-gap",
 	"native-webcam-proof-preview-lagging",
 	"native-webcam-proof-preview-invalid",
 	"native-webcam-proof-preview-publish-failed",

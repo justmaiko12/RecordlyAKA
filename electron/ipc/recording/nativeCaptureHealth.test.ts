@@ -638,6 +638,12 @@ describe("NativeCaptureHealthSupervisor", () => {
 		);
 		supervisor.observe(
 			event("native-webcam-proof-preview-accepted", {
+				acceptedFrame: 120,
+				acceptedPts: 4,
+			}),
+		);
+		supervisor.observe(
+			event("native-webcam-proof-preview-accepted", {
 				acceptedFrame: 176,
 				acceptedPts: 5.86,
 			}),
@@ -645,6 +651,51 @@ describe("NativeCaptureHealthSupervisor", () => {
 		supervisor.check();
 
 		expect(issues).toEqual([]);
+	});
+
+	it("fails closed when accepted proof-preview jumps too far between accepted frames", () => {
+		let now = 5000;
+		const issues: NativeCaptureHealthIssue[] = [];
+		const supervisor = new NativeCaptureHealthSupervisor({
+			requiresWebcam: true,
+			nowMs: () => now,
+			setIntervalFn: vi.fn(),
+			clearIntervalFn: vi.fn(),
+			staleAfterMs: 15000,
+			maxAcceptedProofGapSeconds: 3.5,
+			onIssue: (issue) => issues.push(issue),
+		});
+
+		supervisor.observe(event("native-video-first-frame-written"));
+		supervisor.observe(event("native-webcam-first-visible-frame-written"));
+		supervisor.observe(
+			event("native-webcam-proof-preview-accepted", {
+				acceptedFrame: 30,
+				acceptedPts: 1,
+			}),
+		);
+		supervisor.start();
+		now += 1000;
+		supervisor.observe(
+			event("native-webcam-proof-preview-accepted", {
+				acceptedFrame: 155,
+				acceptedPts: 5.1,
+			}),
+		);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toMatchObject({
+			event: "native-webcam-proof-preview-gap",
+			severity: "error",
+			details: {
+				acceptedProofGapSeconds: 4.1,
+				maxAcceptedProofGapSeconds: 3.5,
+				previousAcceptedPts: 1,
+				currentAcceptedPts: 5.1,
+				previousAcceptedFrame: 30,
+				currentAcceptedFrame: 155,
+			},
+		});
 	});
 
 	it("fails closed when accepted proof-preview falls behind webcam writer progress", () => {
@@ -725,6 +776,18 @@ describe("NativeCaptureHealthSupervisor", () => {
 				frames: 500,
 				recentFps: 30,
 				lastPts: 6,
+			}),
+		);
+		supervisor.observe(
+			event("native-webcam-proof-preview-accepted", {
+				acceptedFrame: 180,
+				acceptedPts: 3,
+			}),
+		);
+		supervisor.observe(
+			event("native-webcam-proof-preview-accepted", {
+				acceptedFrame: 300,
+				acceptedPts: 5,
 			}),
 		);
 		supervisor.observe(

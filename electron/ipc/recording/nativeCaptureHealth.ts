@@ -18,6 +18,7 @@ export interface NativeCaptureHealthSupervisorOptions {
 	checkIntervalMs?: number;
 	staleAfterMs?: number;
 	lowCadenceAfterMs?: number;
+	maxAcceptedProofGapSeconds?: number;
 	maxPreviewWriterLagSeconds?: number;
 	maxPreviewWriterFrameLag?: number;
 }
@@ -25,6 +26,7 @@ export interface NativeCaptureHealthSupervisorOptions {
 const DEFAULT_CHECK_INTERVAL_MS = 2000;
 const DEFAULT_STALE_AFTER_MS = 15000;
 const DEFAULT_LOW_CADENCE_AFTER_MS = 15000;
+const DEFAULT_MAX_ACCEPTED_PROOF_GAP_SECONDS = 3.5;
 const DEFAULT_MAX_PREVIEW_WRITER_LAG_SECONDS = 2.5;
 const DEFAULT_MAX_PREVIEW_WRITER_FRAME_LAG = 90;
 
@@ -43,6 +45,7 @@ export class NativeCaptureHealthSupervisor {
 	private readonly checkIntervalMs: number;
 	private readonly staleAfterMs: number;
 	private readonly lowCadenceAfterMs: number;
+	private readonly maxAcceptedProofGapSeconds: number;
 	private readonly maxPreviewWriterLagSeconds: number;
 	private readonly maxPreviewWriterFrameLag: number;
 	private timer: unknown = null;
@@ -76,6 +79,8 @@ export class NativeCaptureHealthSupervisor {
 		this.checkIntervalMs = options.checkIntervalMs ?? DEFAULT_CHECK_INTERVAL_MS;
 		this.staleAfterMs = options.staleAfterMs ?? DEFAULT_STALE_AFTER_MS;
 		this.lowCadenceAfterMs = options.lowCadenceAfterMs ?? DEFAULT_LOW_CADENCE_AFTER_MS;
+		this.maxAcceptedProofGapSeconds =
+			options.maxAcceptedProofGapSeconds ?? DEFAULT_MAX_ACCEPTED_PROOF_GAP_SECONDS;
 		this.maxPreviewWriterLagSeconds =
 			options.maxPreviewWriterLagSeconds ?? DEFAULT_MAX_PREVIEW_WRITER_LAG_SECONDS;
 		this.maxPreviewWriterFrameLag =
@@ -130,6 +135,9 @@ export class NativeCaptureHealthSupervisor {
 				break;
 			case "native-webcam-proof-preview-accepted":
 				this.webcamPreviewLastEvidenceAtMs = now;
+				if (this.acceptedProofGapExceeded(now, event.details)) {
+					return;
+				}
 				this.updateWebcamPreviewProgress(event.details);
 				break;
 			case "native-webcam-capture-low-cadence":
@@ -309,6 +317,25 @@ export class NativeCaptureHealthSupervisor {
 		}
 	}
 
+	private acceptedProofGapExceeded(now: number, details: Record<string, unknown>) {
+		if (this.webcamIssueEmitted) {
+			return true;
+		}
+		const acceptedPts = getFiniteNumber(details.acceptedPts);
+		const previousAcceptedPts = this.webcamPreviewAcceptedPtsSeconds;
+		if (acceptedPts === null || previousAcceptedPts === null) {
+			return false;
+		}
+
+		const acceptedProofGapSeconds = acceptedPts - previousAcceptedPts;
+		if (acceptedProofGapSeconds <= this.maxAcceptedProofGapSeconds) {
+			return false;
+		}
+
+		this.emitWebcamProofPreviewGapIssue(now, details, acceptedProofGapSeconds);
+		return true;
+	}
+
 	private emitVideoIssue(now: number, staleForMs: number | null) {
 		if (this.videoIssueEmitted) {
 			return;
@@ -426,6 +453,29 @@ export class NativeCaptureHealthSupervisor {
 				writerFrames: this.webcamWriterFrameCount,
 				previewAcceptedPts: this.webcamPreviewAcceptedPtsSeconds,
 				previewAcceptedFrame: this.webcamPreviewAcceptedFrame,
+			},
+		});
+	}
+
+	private emitWebcamProofPreviewGapIssue(
+		now: number,
+		details: Record<string, unknown>,
+		acceptedProofGapSeconds: number,
+	) {
+		this.webcamIssueEmitted = true;
+		this.onIssue({
+			event: "native-webcam-proof-preview-gap",
+			severity: "error",
+			message:
+				"Native webcam proof preview jumped too far between accepted frames. Recordly stopped the recording instead of saving a take with a hidden facecam gap.",
+			details: {
+				nowMs: now,
+				acceptedProofGapSeconds,
+				maxAcceptedProofGapSeconds: this.maxAcceptedProofGapSeconds,
+				previousAcceptedPts: this.webcamPreviewAcceptedPtsSeconds,
+				currentAcceptedPts: getFiniteNumber(details.acceptedPts),
+				previousAcceptedFrame: this.webcamPreviewAcceptedFrame,
+				currentAcceptedFrame: getFiniteNumber(details.acceptedFrame),
 			},
 		});
 	}
