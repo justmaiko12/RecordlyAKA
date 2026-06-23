@@ -80,6 +80,23 @@ describe("parseNativeHelperOutputLine", () => {
     });
   });
 
+  it("marks a missing selected microphone as a renderer-visible error", () => {
+    expect(
+      parseNativeHelperOutputLine(
+        'MICROPHONE_CAPTURE_DEVICE_NOT_FOUND requestedLabel="Wireless microphone" requestedDeviceId="stale-browser-hash" available="MacBook Air Microphone [BuiltInMicrophoneDevice]"',
+      ),
+    ).toMatchObject({
+      event: "native-microphone-device-not-found",
+      severity: "error",
+      details: {
+        requestedLabel: "Wireless microphone",
+        requestedDeviceId: "stale-browser-hash",
+        available: "MacBook Air Microphone [BuiltInMicrophoneDevice]",
+      },
+      notifyRenderer: true,
+    });
+  });
+
   it("marks missing selected webcam as a renderer-visible error", () => {
     expect(
       parseNativeHelperOutputLine(

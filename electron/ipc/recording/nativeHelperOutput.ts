@@ -109,6 +109,19 @@ export function parseNativeHelperOutputLine(
     };
   }
 
+  if (trimmed.startsWith("MICROPHONE_CAPTURE_DEVICE_NOT_FOUND ")) {
+    return {
+      event: "native-microphone-device-not-found",
+      severity: "error",
+      details: parseKeyValueTail(
+        trimmed.slice("MICROPHONE_CAPTURE_DEVICE_NOT_FOUND ".length),
+      ),
+      notifyRenderer: true,
+      message:
+        "Recordly could not find the selected microphone. Re-select the microphone before recording.",
+    };
+  }
+
   if (trimmed === "MICROPHONE_CAPTURE_UNAVAILABLE") {
     return {
       event: "native-microphone-capture-unavailable",

@@ -215,13 +215,22 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 
 		if capturesMicrophone {
 			streamConfig.setValue(true, forKey: "captureMicrophone")
+			let requestedMicrophoneDeviceId = config.microphoneDeviceId?.trimmingCharacters(in: .whitespacesAndNewlines)
+			let requestedMicrophoneLabel = config.microphoneLabel?.trimmingCharacters(in: .whitespacesAndNewlines)
 			if let microphoneDeviceId = Self.resolveMicrophoneCaptureDeviceID(config: config) {
 				streamConfig.setValue(microphoneDeviceId, forKey: "microphoneCaptureDeviceID")
-				fputs("MICROPHONE_CAPTURE_DEVICE_RESOLVED requestedLabel=\"\(Self.sanitizeLogValue(config.microphoneLabel ?? ""))\" requestedDeviceId=\"\(Self.sanitizeLogValue(config.microphoneDeviceId ?? ""))\" resolvedDeviceId=\"\(Self.sanitizeLogValue(microphoneDeviceId))\"\n", stderr)
+				fputs("MICROPHONE_CAPTURE_DEVICE_RESOLVED requestedLabel=\"\(Self.sanitizeLogValue(requestedMicrophoneLabel ?? ""))\" requestedDeviceId=\"\(Self.sanitizeLogValue(requestedMicrophoneDeviceId ?? ""))\" resolvedDeviceId=\"\(Self.sanitizeLogValue(microphoneDeviceId))\"\n", stderr)
 				fflush(stderr)
+			} else if requestedMicrophoneDeviceId?.isEmpty == false || requestedMicrophoneLabel?.isEmpty == false {
+				fputs(
+					"MICROPHONE_CAPTURE_DEVICE_NOT_FOUND requestedLabel=\"\(Self.sanitizeLogValue(requestedMicrophoneLabel ?? ""))\" requestedDeviceId=\"\(Self.sanitizeLogValue(requestedMicrophoneDeviceId ?? ""))\" available=\"\(Self.sanitizeLogValue(Self.audioDeviceSummary(AVCaptureDevice.devices(for: .audio))))\"\n",
+					stderr
+				)
+				fflush(stderr)
+				throw NSError(domain: "RecordlyCapture", code: 28, userInfo: [NSLocalizedDescriptionKey: "Unable to find selected microphone"])
 			} else {
 				fputs(
-					"MICROPHONE_CAPTURE_DEVICE_DEFAULT requestedLabel=\"\(Self.sanitizeLogValue(config.microphoneLabel ?? ""))\" requestedDeviceId=\"\(Self.sanitizeLogValue(config.microphoneDeviceId ?? ""))\" available=\"\(Self.sanitizeLogValue(Self.audioDeviceSummary(AVCaptureDevice.devices(for: .audio))))\"\n",
+					"MICROPHONE_CAPTURE_DEVICE_DEFAULT requestedLabel=\"\" requestedDeviceId=\"\" available=\"\(Self.sanitizeLogValue(Self.audioDeviceSummary(AVCaptureDevice.devices(for: .audio))))\"\n",
 					stderr
 				)
 				fflush(stderr)
