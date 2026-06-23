@@ -125,6 +125,10 @@ export class NativeCaptureHealthSupervisor {
 			case "native-audio-capture-stats":
 				this.microphoneAudioLastEvidenceAtMs = now;
 				break;
+			case "native-audio-silence-inserted":
+				this.emitAudioContinuityRepairIssue(now, event.details);
+				this.stop();
+				break;
 			case "native-webcam-first-frame-written":
 			case "native-webcam-first-visible-frame-written":
 			case "native-webcam-capture-stats":
@@ -146,11 +150,19 @@ export class NativeCaptureHealthSupervisor {
 				this.webcamLowCadenceSinceMs ??= now;
 				this.webcamLowCadenceDetails = event.details;
 				break;
+			case "native-webcam-hold-frames-inserted":
+				this.emitWebcamContinuityRepairIssue(now, event.details);
+				this.stop();
+				break;
 			case "native-webcam-visual-stall-suspected":
 				// A visually still camera frame is useful evidence, but it is not
 				// conclusive by itself. A talking-head recording can stay nearly
 				// unchanged for several seconds, so only the native helper's sustained
 				// pipeline-stall event should stop the take.
+				break;
+			case "native-webcam-visual-freeze-review":
+				this.emitWebcamVisualFreezeReviewIssue(now, event.details);
+				this.stop();
 				break;
 			case "native-webcam-pipeline-stalled":
 			case "native-webcam-capture-disabled":
@@ -386,6 +398,26 @@ export class NativeCaptureHealthSupervisor {
 		});
 	}
 
+	private emitAudioContinuityRepairIssue(
+		now: number,
+		details: Record<string, unknown>,
+	) {
+		if (this.microphoneAudioIssueEmitted) {
+			return;
+		}
+		this.microphoneAudioIssueEmitted = true;
+		this.onIssue({
+			event: "native-audio-continuity-repaired",
+			severity: "error",
+			message:
+				"Native audio had a callback gap and required inserted silence. Recordly stopped the take instead of saving audio that can drift in the middle.",
+			details: {
+				nowMs: now,
+				...details,
+			},
+		});
+	}
+
 	private emitWebcamIssue(now: number, staleForMs: number | null) {
 		this.webcamIssueEmitted = true;
 		this.onIssue({
@@ -397,6 +429,46 @@ export class NativeCaptureHealthSupervisor {
 				nowMs: now,
 				staleForMs,
 				staleAfterMs: this.staleAfterMs,
+			},
+		});
+	}
+
+	private emitWebcamContinuityRepairIssue(
+		now: number,
+		details: Record<string, unknown>,
+	) {
+		if (this.webcamIssueEmitted) {
+			return;
+		}
+		this.webcamIssueEmitted = true;
+		this.onIssue({
+			event: "native-webcam-continuity-held-frames",
+			severity: "error",
+			message:
+				"Native webcam had a callback gap and required held frames. Recordly stopped the take instead of saving frozen facecam sections.",
+			details: {
+				nowMs: now,
+				...details,
+			},
+		});
+	}
+
+	private emitWebcamVisualFreezeReviewIssue(
+		now: number,
+		details: Record<string, unknown>,
+	) {
+		if (this.webcamIssueEmitted) {
+			return;
+		}
+		this.webcamIssueEmitted = true;
+		this.onIssue({
+			event: "native-webcam-visual-freeze-review",
+			severity: "error",
+			message:
+				"Native webcam looked visually frozen. Recordly stopped the take instead of saving a camera segment that would need manual review.",
+			details: {
+				nowMs: now,
+				...details,
 			},
 		});
 	}

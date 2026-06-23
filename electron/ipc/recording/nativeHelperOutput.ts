@@ -414,7 +414,7 @@ export function parseNativeHelperOutputLine(
         trimmed.slice("WEBCAM_VISUAL_FREEZE_REVIEW ".length),
       ),
       message:
-        "Native webcam image looked frozen briefly. The recording was saved, but this timestamp should be reviewed.",
+        "Native webcam image looked frozen. Recordly will reject this take instead of saving a camera segment that needs manual review.",
     };
   }
 

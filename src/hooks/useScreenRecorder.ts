@@ -60,6 +60,8 @@ const NATIVE_RECORDING_HARD_FAILURE_REASONS = new Set([
   "native-webcam-capture-stats-stale",
   "native-webcam-capture-low-cadence-sustained",
   "native-webcam-visual-stall-fail-closed",
+  "native-webcam-visual-freeze-review",
+  "native-webcam-continuity-held-frames",
   "native-webcam-proof-preview-stale",
   "native-webcam-proof-preview-gap",
   "native-webcam-proof-preview-lagging",
@@ -70,6 +72,7 @@ const NATIVE_RECORDING_HARD_FAILURE_REASONS = new Set([
   "native-webcam-device-not-found",
   "native-webcam-fail-closed",
   "native-audio-capture-stats-stale",
+  "native-audio-continuity-repaired",
   "native-microphone-recording-finalized-unhealthy",
 ]);
 

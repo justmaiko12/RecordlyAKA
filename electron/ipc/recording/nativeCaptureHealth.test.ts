@@ -26,6 +26,7 @@ describe("NativeCaptureHealthSupervisor", () => {
 		});
 
 		supervisor.observe(event("native-video-first-frame-written"));
+		supervisor.observe(event("native-video-first-frame-written"));
 		supervisor.start();
 		now += 7000;
 		supervisor.observe(event("native-video-capture-stats"));
@@ -114,6 +115,7 @@ describe("NativeCaptureHealthSupervisor", () => {
 		});
 
 		supervisor.observe(event("native-video-first-frame-written"));
+		supervisor.observe(event("native-video-first-frame-written"));
 		supervisor.start();
 		now += 1000;
 		supervisor.observe(
@@ -164,6 +166,44 @@ describe("NativeCaptureHealthSupervisor", () => {
 			details: {
 				staleForMs: 15000,
 				staleAfterMs: 15000,
+			},
+		});
+	});
+
+	it("reports inserted native audio silence immediately", () => {
+		let now = 1000;
+		const issues: NativeCaptureHealthIssue[] = [];
+		const supervisor = new NativeCaptureHealthSupervisor({
+			requiresWebcam: false,
+			requiresMicrophoneAudio: true,
+			nowMs: () => now,
+			setIntervalFn: vi.fn(),
+			clearIntervalFn: vi.fn(),
+			onIssue: (issue) => issues.push(issue),
+		});
+
+		supervisor.observe(event("native-video-first-frame-written"));
+		supervisor.start();
+		now += 1000;
+		supervisor.observe(
+			event("native-audio-silence-inserted", {
+				track: "mic",
+				buffers: 12,
+				duration: 0.256,
+				targetPts: 14.2,
+			}),
+		);
+		now += 30000;
+		supervisor.check();
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toMatchObject({
+			event: "native-audio-continuity-repaired",
+			severity: "error",
+			details: {
+				track: "mic",
+				duration: 0.256,
+				targetPts: 14.2,
 			},
 		});
 	});
@@ -495,6 +535,83 @@ describe("NativeCaptureHealthSupervisor", () => {
 		);
 
 		expect(issues).toHaveLength(0);
+	});
+
+	it("reports held native webcam frames immediately", () => {
+		let now = 4000;
+		const issues: NativeCaptureHealthIssue[] = [];
+		const supervisor = new NativeCaptureHealthSupervisor({
+			requiresWebcam: true,
+			nowMs: () => now,
+			setIntervalFn: vi.fn(),
+			clearIntervalFn: vi.fn(),
+			onIssue: (issue) => issues.push(issue),
+		});
+
+		supervisor.observe(event("native-video-first-frame-written"));
+		supervisor.observe(event("native-webcam-first-visible-frame-written"));
+		supervisor.observe(event("native-webcam-proof-preview-accepted"));
+		supervisor.start();
+		now += 1000;
+		supervisor.observe(
+			event("native-webcam-hold-frames-inserted", {
+				frames: 9,
+				duration: 0.3,
+				targetPts: 5.3,
+			}),
+		);
+		now += 30000;
+		supervisor.check();
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toMatchObject({
+			event: "native-webcam-continuity-held-frames",
+			severity: "error",
+			details: {
+				frames: 9,
+				duration: 0.3,
+				targetPts: 5.3,
+			},
+		});
+	});
+
+	it("reports native webcam visual freeze review immediately", () => {
+		let now = 4000;
+		const issues: NativeCaptureHealthIssue[] = [];
+		const supervisor = new NativeCaptureHealthSupervisor({
+			requiresWebcam: true,
+			nowMs: () => now,
+			setIntervalFn: vi.fn(),
+			clearIntervalFn: vi.fn(),
+			onIssue: (issue) => issues.push(issue),
+		});
+
+		supervisor.observe(event("native-video-first-frame-written"));
+		supervisor.observe(event("native-webcam-first-visible-frame-written"));
+		supervisor.observe(event("native-webcam-proof-preview-accepted"));
+		supervisor.start();
+		now += 1000;
+		supervisor.observe(
+			event("native-webcam-visual-freeze-review", {
+				stalledFor: 4.2,
+				startPts: 86.5,
+				endPts: 90.7,
+				meanDiff: 3.9,
+			}),
+		);
+		now += 30000;
+		supervisor.check();
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toMatchObject({
+			event: "native-webcam-visual-freeze-review",
+			severity: "error",
+			details: {
+				stalledFor: 4.2,
+				startPts: 86.5,
+				endPts: 90.7,
+			},
+		});
 	});
 
 	it("stops supervising webcam once native webcam capture is disabled", () => {

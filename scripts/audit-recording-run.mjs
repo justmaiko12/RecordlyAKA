@@ -31,11 +31,14 @@ const FAILURE_EVENTS = new Set([
   "native-video-stream-stopped-with-error",
   "native-video-pipeline-stalled",
   "native-audio-capture-stats-stale",
+  "native-audio-continuity-repaired",
   "native-audio-pipeline-stalled",
   "native-microphone-recording-finalized-unhealthy",
   "native-webcam-capture-stats-stale",
   "native-webcam-capture-low-cadence-sustained",
   "native-webcam-visual-stall-fail-closed",
+  "native-webcam-visual-freeze-review",
+  "native-webcam-continuity-held-frames",
   "native-webcam-proof-preview-stale",
   "native-webcam-proof-preview-gap",
   "native-webcam-proof-preview-lagging",
@@ -750,6 +753,10 @@ function pushIssue(issues, code, message, details = {}) {
   issues.push({ code, message, details });
 }
 
+function hasIssueCode(issues, code) {
+  return issues.some((issue) => issue.code === code);
+}
+
 function getMinimumAcceptedProofCount(durationSeconds) {
   return Math.max(
     MIN_ACCEPTED_PROOF_SAMPLE_COUNT,
@@ -1006,21 +1013,25 @@ export async function auditRecordingRun(inputPath, options = {}) {
   }
 
   if (audioContinuityRepairs.count > 0) {
-    pushIssue(
-      issues,
-      "native-audio-continuity-repaired",
-      "The native recorder inserted silence after audio callback gaps. Recordly rejected the take instead of saving audio that can drift in the middle.",
-      audioContinuityRepairs,
-    );
+    if (!hasIssueCode(issues, "native-audio-continuity-repaired")) {
+      pushIssue(
+        issues,
+        "native-audio-continuity-repaired",
+        "The native recorder inserted silence after audio callback gaps. Recordly rejected the take instead of saving audio that can drift in the middle.",
+        audioContinuityRepairs,
+      );
+    }
   }
 
   if (webcamVisualFreezeReviews.count > 0) {
-    pushIssue(
-      issues,
-      "native-webcam-visual-freeze-review",
-      "The native recorder saw a visually frozen webcam segment. Recordly rejected the take instead of saving footage that would need manual camera repair.",
-      webcamVisualFreezeReviews,
-    );
+    if (!hasIssueCode(issues, "native-webcam-visual-freeze-review")) {
+      pushIssue(
+        issues,
+        "native-webcam-visual-freeze-review",
+        "The native recorder saw a visually frozen webcam segment. Recordly rejected the take instead of saving footage that would need manual camera repair.",
+        webcamVisualFreezeReviews,
+      );
+    }
   }
 
   if (webcamCadenceSeverelyExceededTarget(webcamCadence)) {
@@ -1040,12 +1051,14 @@ export async function auditRecordingRun(inputPath, options = {}) {
   }
 
   if (webcamContinuityRepairs.count > 0) {
-    pushIssue(
-      issues,
-      "native-webcam-continuity-held-frames",
-      "The native recorder held webcam frames after camera callback gaps. Recordly rejected the take instead of saving frozen facecam sections.",
-      webcamContinuityRepairs,
-    );
+    if (!hasIssueCode(issues, "native-webcam-continuity-held-frames")) {
+      pushIssue(
+        issues,
+        "native-webcam-continuity-held-frames",
+        "The native recorder held webcam frames after camera callback gaps. Recordly rejected the take instead of saving frozen facecam sections.",
+        webcamContinuityRepairs,
+      );
+    }
   }
 
   if (!screenFinalization) {

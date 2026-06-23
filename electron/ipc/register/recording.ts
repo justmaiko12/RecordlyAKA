@@ -1279,6 +1279,8 @@ export function registerRecordingHandlers(
               issue.event === "native-webcam-capture-stats-stale" ||
               issue.event === "native-webcam-capture-low-cadence-sustained" ||
               issue.event === "native-webcam-visual-stall-fail-closed" ||
+              issue.event === "native-webcam-visual-freeze-review" ||
+              issue.event === "native-webcam-continuity-held-frames" ||
               issue.event === "native-webcam-proof-preview-stale" ||
               issue.event === "native-webcam-proof-preview-gap" ||
               issue.event === "native-webcam-proof-preview-lagging"
@@ -1292,6 +1294,14 @@ export function registerRecordingHandlers(
                 issue.event === "native-webcam-visual-stall-fail-closed"
               ) {
                 reason = "main-webcam-visual-stall";
+              } else if (
+                issue.event === "native-webcam-visual-freeze-review"
+              ) {
+                reason = "main-webcam-visual-freeze";
+              } else if (
+                issue.event === "native-webcam-continuity-held-frames"
+              ) {
+                reason = "main-webcam-continuity-gap";
               } else if (issue.event === "native-webcam-proof-preview-stale") {
                 reason = "main-webcam-proof-preview-stale";
               } else if (issue.event === "native-webcam-proof-preview-gap") {
@@ -1302,7 +1312,7 @@ export function registerRecordingHandlers(
                 reason = "main-webcam-proof-preview-lagging";
               }
               appendNativeCaptureOutputBuffer(
-                `WEBCAM_CAPTURE_DISABLED reason=${reason} staleForMs=${issue.details.staleForMs ?? "unknown"} previewStaleForMs=${issue.details.previewStaleForMs ?? "unknown"} acceptedProofGapSeconds=${issue.details.acceptedProofGapSeconds ?? "unknown"} previewWriterLagSeconds=${issue.details.previewWriterLagSeconds ?? "unknown"} previewWriterFrameLag=${issue.details.previewWriterFrameLag ?? "unknown"} lowCadenceForMs=${issue.details.lowCadenceForMs ?? "unknown"} stalledFor=${issue.details.stalledFor ?? "unknown"} meanDiff=${issue.details.meanDiff ?? "unknown"}\n`,
+                `WEBCAM_CAPTURE_DISABLED reason=${reason} staleForMs=${issue.details.staleForMs ?? "unknown"} previewStaleForMs=${issue.details.previewStaleForMs ?? "unknown"} acceptedProofGapSeconds=${issue.details.acceptedProofGapSeconds ?? "unknown"} previewWriterLagSeconds=${issue.details.previewWriterLagSeconds ?? "unknown"} previewWriterFrameLag=${issue.details.previewWriterFrameLag ?? "unknown"} lowCadenceForMs=${issue.details.lowCadenceForMs ?? "unknown"} stalledFor=${issue.details.stalledFor ?? "unknown"} meanDiff=${issue.details.meanDiff ?? "unknown"} heldFrames=${issue.details.totalFrames ?? issue.details.frames ?? "unknown"} holdDuration=${issue.details.duration ?? "unknown"}\n`,
               );
               nativeCaptureHealth.observe({
                 event: "native-webcam-capture-disabled",
@@ -1327,9 +1337,16 @@ export function registerRecordingHandlers(
               captProc?.kill("SIGTERM");
             }
 
-            if (issue.event === "native-audio-capture-stats-stale") {
+            if (
+              issue.event === "native-audio-capture-stats-stale" ||
+              issue.event === "native-audio-continuity-repaired"
+            ) {
+              const reason =
+                issue.event === "native-audio-continuity-repaired"
+                  ? "main-audio-continuity-gap"
+                  : "main-audio-stats-timeout";
               appendNativeCaptureOutputBuffer(
-                `AUDIO_PIPELINE_STALLED reason=main-audio-stats-timeout stalledFor=${issue.details.staleForMs ?? "unknown"} audioVideoDrift=unknown audioEnd=unknown videoEnd=unknown action=stop-recording\n`,
+                `AUDIO_PIPELINE_STALLED reason=${reason} stalledFor=${issue.details.staleForMs ?? "unknown"} insertedDuration=${issue.details.duration ?? issue.details.totalInserted ?? "unknown"} targetPts=${issue.details.targetPts ?? "unknown"} audioVideoDrift=unknown audioEnd=unknown videoEnd=unknown action=stop-recording\n`,
               );
               nativeCaptureHealth.stop();
               captProc?.kill("SIGTERM");
