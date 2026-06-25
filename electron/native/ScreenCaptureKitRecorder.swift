@@ -48,6 +48,8 @@ let maxVideoKeepAliveLagBeforeFailure = CMTime(seconds: 5.0, preferredTimescale:
 let maxMicrophoneAudioGapBeforeFailure = CMTime(seconds: 5.0, preferredTimescale: 600)
 let audioContinuityGapFillThreshold = CMTime(seconds: 0.020, preferredTimescale: 48_000)
 let maxAudioSilenceBuffersPerAppend = 1_000
+let maxAudioAppendBackpressureWaitSeconds = 0.25
+let audioAppendBackpressureSleepSeconds = 0.001
 let maxWebcamHoldFramesPerAppend = 300
 let maxScreenOutputPixels = 2560 * 1440
 let maxScreenOutputLongEdge = 2560
@@ -701,23 +703,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		fputs("WEBCAM_SESSION_PRESET preset=\"\(session.sessionPreset.rawValue)\" requestedWidth=\(width) requestedHeight=\(height)\n", stderr)
 		fflush(stderr)
 
-		do {
-			try device.lockForConfiguration()
-			defer { device.unlockForConfiguration() }
-
-			if let frameDuration = Self.supportedExactFrameDuration(for: device, targetFPS: webcamTargetFPS) {
-				device.activeVideoMinFrameDuration = frameDuration
-				device.activeVideoMaxFrameDuration = frameDuration
-				fputs("WEBCAM_FRAME_DURATION_SELECTED fps=\(webcamTargetFPS) duration=\(CMTimeGetSeconds(frameDuration)) ranges=\"\(Self.sanitizeLogValue(Self.frameRateRangeSummary(device.activeFormat.videoSupportedFrameRateRanges)))\"\n", stderr)
-				fflush(stderr)
-			} else {
-				fputs("WEBCAM_FRAME_DURATION_UNCHANGED fps=\(webcamTargetFPS) reason=no-exact-supported-endpoint ranges=\"\(Self.sanitizeLogValue(Self.frameRateRangeSummary(device.activeFormat.videoSupportedFrameRateRanges)))\"\n", stderr)
-				fflush(stderr)
-			}
-		} catch {
-			fputs("WEBCAM_FRAME_DURATION_UNCHANGED fps=\(webcamTargetFPS) reason=\"\(Self.sanitizeLogValue(error.localizedDescription))\"\n", stderr)
-			fflush(stderr)
-		}
+		fputs("WEBCAM_FRAME_DURATION_UNCHANGED fps=\(webcamTargetFPS) reason=avoid-unsafe-avcapture-framerate-setter ranges=\"\(Self.sanitizeLogValue(Self.frameRateRangeSummary(device.activeFormat.videoSupportedFrameRateRanges)))\"\n", stderr)
+		fflush(stderr)
 
 		let deviceInput = try AVCaptureDeviceInput(device: device)
 		guard session.canAddInput(deviceInput) else {
@@ -2093,17 +2080,62 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		return CMTimeMaximum(.zero, videoEnd - audioEnd)
 	}
 
-	private func failRequiredAudioAppend(trackName: String, reason: String, presentationTime: CMTime) {
+	private func failRequiredAudioAppend(
+		trackName: String,
+		reason: String,
+		presentationTime: CMTime,
+		stalledFor: CMTime = .zero
+	) {
 		fputs(
-			"AUDIO_APPEND_FAILED track=\(trackName) reason=\(reason) pts=\(CMTimeGetSeconds(presentationTime)) action=stop-recording\n",
+			"AUDIO_APPEND_FAILED track=\(trackName) reason=\(reason) pts=\(CMTimeGetSeconds(presentationTime)) stalledFor=\(CMTimeGetSeconds(stalledFor)) action=stop-recording\n",
 			stderr
 		)
 		fflush(stderr)
 		triggerAudioPipelineFailure(
 			reason: "\(trackName)-audio-\(reason)",
-			stalledFor: .zero,
+			stalledFor: stalledFor,
 			audioVideoDrift: currentAudioVideoDriftForFailure()
 		)
+	}
+
+	private func waitForAudioInputReady(
+		_ input: AVAssetWriterInput,
+		trackName: String,
+		presentationTime: CMTime,
+		fatalOnFailure: Bool
+	) -> Bool {
+		guard !input.isReadyForMoreMediaData else { return true }
+
+		let startedAt = CFAbsoluteTimeGetCurrent()
+		var waitedSeconds = 0.0
+		var spins = 0
+		while !input.isReadyForMoreMediaData &&
+			waitedSeconds < maxAudioAppendBackpressureWaitSeconds &&
+			isRecording &&
+			!audioPipelineFailureTriggered {
+			Thread.sleep(forTimeInterval: audioAppendBackpressureSleepSeconds)
+			spins += 1
+			waitedSeconds = CFAbsoluteTimeGetCurrent() - startedAt
+		}
+
+		if input.isReadyForMoreMediaData {
+			fputs(
+				"AUDIO_APPEND_BACKPRESSURE_RECOVERED track=\(trackName) waited=\(waitedSeconds) spins=\(spins) pts=\(CMTimeGetSeconds(presentationTime))\n",
+				stderr
+			)
+			fflush(stderr)
+			return true
+		}
+
+		if fatalOnFailure {
+			failRequiredAudioAppend(
+				trackName: trackName,
+				reason: "input-not-ready",
+				presentationTime: presentationTime,
+				stalledFor: CMTime(seconds: waitedSeconds, preferredTimescale: 600)
+			)
+		}
+		return false
 	}
 
 	private func appendVideoPixelBuffer(
@@ -2462,14 +2494,12 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		trackName: String,
 		fatalOnFailure: Bool
 	) -> AudioAppendResult? {
-		guard input.isReadyForMoreMediaData else {
-			if fatalOnFailure {
-				failRequiredAudioAppend(
-					trackName: trackName,
-					reason: "input-not-ready",
-					presentationTime: presentationTime
-				)
-			}
+		guard waitForAudioInputReady(
+			input,
+			trackName: trackName,
+			presentationTime: presentationTime,
+			fatalOnFailure: fatalOnFailure
+		) else {
 			return nil
 		}
 
@@ -2562,7 +2592,12 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		var insertedDuration: CMTime = .zero
 		let halfSampleDuration = CMTimeMultiplyByFloat64(sampleDuration, multiplier: 0.5)
 		while next + halfSampleDuration < targetPresentationTime && insertedBuffers < maxAudioSilenceBuffersPerAppend {
-			guard input.isReadyForMoreMediaData else { return false }
+			guard waitForAudioInputReady(
+				input,
+				trackName: trackName,
+				presentationTime: next,
+				fatalOnFailure: false
+			) else { return false }
 			guard let silence = makeSilentAudioSampleBuffer(
 				matching: sampleBuffer,
 				presentationTime: next,

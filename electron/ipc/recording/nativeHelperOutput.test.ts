@@ -444,6 +444,21 @@ describe("parseNativeHelperOutputLine", () => {
         nextPts: 14.186667,
       },
     });
+
+    expect(
+      parseNativeHelperOutputLine(
+        "AUDIO_APPEND_BACKPRESSURE_RECOVERED track=mic waited=0.0042 spins=4 pts=0.041356625",
+      ),
+    ).toEqual({
+      event: "native-audio-append-backpressure-recovered",
+      severity: "info",
+      details: {
+        track: "mic",
+        waited: 0.0042,
+        spins: 4,
+        pts: 0.041356625,
+      },
+    });
   });
 
   it("parses final native writer summaries", () => {

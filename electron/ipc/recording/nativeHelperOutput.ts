@@ -256,6 +256,16 @@ export function parseNativeHelperOutputLine(
     };
   }
 
+  if (trimmed.startsWith("AUDIO_APPEND_BACKPRESSURE_RECOVERED ")) {
+    return {
+      event: "native-audio-append-backpressure-recovered",
+      severity: "info",
+      details: parseKeyValueTail(
+        trimmed.slice("AUDIO_APPEND_BACKPRESSURE_RECOVERED ".length),
+      ),
+    };
+  }
+
   if (trimmed.startsWith("AUDIO_PIPELINE_STALLED ")) {
     return {
       event: "native-audio-pipeline-stalled",
