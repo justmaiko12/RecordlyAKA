@@ -430,7 +430,7 @@ describe("parseNativeHelperOutputLine", () => {
 
     expect(
       parseNativeHelperOutputLine(
-        "AUDIO_SILENCE_INSERTED track=mic buffers=12 duration=0.256 totalInserted=0.256 targetPts=14.2 nextPts=14.186667",
+        "AUDIO_SILENCE_INSERTED track=mic buffers=12 duration=0.256 totalInserted=0.256 targetPts=14.2 nextPts=14.186667 remainingGap=0.013333",
       ),
     ).toEqual({
       event: "native-audio-silence-inserted",
@@ -442,6 +442,7 @@ describe("parseNativeHelperOutputLine", () => {
         totalInserted: 0.256,
         targetPts: 14.2,
         nextPts: 14.186667,
+        remainingGap: 0.013333,
       },
     });
 

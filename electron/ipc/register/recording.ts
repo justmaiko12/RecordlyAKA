@@ -233,6 +233,7 @@ import { stopNativeWebcamPreviewSession } from "./nativeWebcamPreview";
 
 const execFileAsync = promisify(execFile);
 const webcamSidecarStreams = new WebcamSidecarStreamRegistry();
+const NATIVE_ACCEPTED_PROOF_EVENT_PERSIST_INTERVAL = 15;
 
 async function writeWindowsRecordingDiagnostics(
   videoPath: string | null | undefined,
@@ -1558,7 +1559,9 @@ export function registerRecordingHandlers(
               acceptedProofCount,
             );
             const shouldPersistAcceptedProof =
-              acceptedProofCount <= 5 || acceptedProofCount % 30 === 0;
+              acceptedProofCount <= 5 ||
+              acceptedProofCount % NATIVE_ACCEPTED_PROOF_EVENT_PERSIST_INTERVAL ===
+                0;
             if (shouldPersistAcceptedProof) {
               void queueNativeEventLogWrite(
                 {

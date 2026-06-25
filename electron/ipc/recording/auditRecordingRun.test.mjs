@@ -71,7 +71,7 @@ function healthyEvents(overrides = {}) {
 	const firstVisiblePts = overrides.firstVisiblePts ?? 0.033;
 	const firstVisibleFrames = Math.max(2, Math.round(firstVisiblePts * 30));
 	const webcamFrames = Math.round(webcamDuration * 30);
-	const proofCount = overrides.proofCount ?? Math.max(3, Math.floor(webcamDuration / 3) + 1);
+	const proofCount = overrides.proofCount ?? Math.max(3, Math.floor(webcamDuration) + 1);
 	const proofEvents = Array.from({ length: proofCount }, (_, index) => {
 		const ratio = proofCount <= 1 ? 1 : index / (proofCount - 1);
 		const acceptedPts =
@@ -86,7 +86,7 @@ function healthyEvents(overrides = {}) {
 		return {
 			event: "native-webcam-proof-preview-accepted",
 			details: {
-				count: index === 0 ? 1 : index * 30,
+				count: index === 0 ? 1 : index * 15,
 				sequence: index + 1,
 				acceptedFrame: Math.max(2, Math.round(acceptedPts * 30)),
 				acceptedPts,

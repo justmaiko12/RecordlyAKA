@@ -24,6 +24,19 @@ describe("recording session sidecar resolution", () => {
 	}
 
 	function healthyNativeWebcamEvents() {
+		const proofEvents = Array.from({ length: 1200 }, (_, index) => {
+			const acceptedPts = Number((0.033 + index).toFixed(3));
+			return {
+				event: "native-webcam-proof-preview-accepted",
+				details: {
+					count: index === 0 ? 1 : index * 15,
+					sequence: index + 1,
+					acceptedFrame: Math.max(2, Math.round(acceptedPts * 30)),
+					acceptedPts,
+				},
+			};
+		});
+
 		return [
 			{ event: "native-video-first-frame-written", details: { frames: 1, pts: 0 } },
 			{ event: "native-webcam-capture-started", details: { label: "Camera" } },
@@ -31,14 +44,7 @@ describe("recording session sidecar resolution", () => {
 				event: "native-webcam-first-visible-frame-written",
 				details: { frames: 2, pts: 0.033 },
 			},
-			{
-				event: "native-webcam-proof-preview-accepted",
-				details: { count: 1, sequence: 1, acceptedFrame: 2, acceptedPts: 0.033 },
-			},
-			{
-				event: "native-webcam-proof-preview-accepted",
-				details: { count: 30, sequence: 30, acceptedFrame: 35880, acceptedPts: 1194 },
-			},
+			...proofEvents,
 			{
 				event: "native-video-recording-finalized",
 				details: {
@@ -51,12 +57,12 @@ describe("recording session sidecar resolution", () => {
 			},
 			{
 				event: "native-webcam-recording-finalized",
-				details: {
-					writerStatus: "completed",
-					frames: 35940,
-					duration: 1198,
+					details: {
+						writerStatus: "completed",
+						frames: 35982,
+						duration: 1199.4,
+					},
 				},
-			},
 			{ event: "native-screen-recording-accepted", details: {} },
 			{ event: "native-webcam-sidecar-accepted", details: {} },
 		];

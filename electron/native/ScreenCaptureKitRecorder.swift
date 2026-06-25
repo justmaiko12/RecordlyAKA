@@ -2080,15 +2080,16 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		return CMTimeMaximum(.zero, videoEnd - audioEnd)
 	}
 
-	private func failRequiredAudioAppend(
-		trackName: String,
-		reason: String,
-		presentationTime: CMTime,
-		stalledFor: CMTime = .zero
-	) {
-		fputs(
-			"AUDIO_APPEND_FAILED track=\(trackName) reason=\(reason) pts=\(CMTimeGetSeconds(presentationTime)) stalledFor=\(CMTimeGetSeconds(stalledFor)) action=stop-recording\n",
-			stderr
+		private func failRequiredAudioAppend(
+			trackName: String,
+			reason: String,
+			presentationTime: CMTime,
+			stalledFor: CMTime = .zero
+		) {
+			guard !audioPipelineFailureTriggered else { return }
+			fputs(
+				"AUDIO_APPEND_FAILED track=\(trackName) reason=\(reason) pts=\(CMTimeGetSeconds(presentationTime)) stalledFor=\(CMTimeGetSeconds(stalledFor)) action=stop-recording\n",
+				stderr
 		)
 		fflush(stderr)
 		triggerAudioPipelineFailure(
@@ -2098,11 +2099,11 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		)
 	}
 
-	private func waitForAudioInputReady(
-		_ input: AVAssetWriterInput,
-		trackName: String,
-		presentationTime: CMTime,
-		fatalOnFailure: Bool
+		private func waitForAudioInputReady(
+			_ input: AVAssetWriterInput,
+			trackName: String,
+			presentationTime: CMTime,
+			fatalOnFailure: Bool
 	) -> Bool {
 		guard !input.isReadyForMoreMediaData else { return true }
 
@@ -2134,11 +2135,49 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 				presentationTime: presentationTime,
 				stalledFor: CMTime(seconds: waitedSeconds, preferredTimescale: 600)
 			)
+			}
+			return false
 		}
-		return false
-	}
 
-	private func appendVideoPixelBuffer(
+		private func audioWriter(for input: AVAssetWriterInput) -> AVAssetWriter? {
+			if input === inlineAudioInput {
+				return assetWriter
+			}
+			if input === systemAudioInput {
+				return systemAudioWriter
+			}
+			if input === microphoneOnlyInput {
+				return microphoneOnlyWriter
+			}
+			return nil
+		}
+
+		private func audioWriterAllowsAppend(
+			_ input: AVAssetWriterInput,
+			trackName: String,
+			presentationTime: CMTime,
+			fatalOnFailure: Bool
+		) -> Bool {
+			let writer = audioWriter(for: input)
+			guard writer?.status == .writing else {
+				fputs(
+					"AUDIO_APPEND_SKIPPED track=\(trackName) reason=writer-not-writing writerStatus=\(Self.assetWriterStatusName(writer)) pts=\(CMTimeGetSeconds(presentationTime))\(Self.assetWriterErrorSummary(writer))\n",
+					stderr
+				)
+				fflush(stderr)
+				if fatalOnFailure {
+					failRequiredAudioAppend(
+						trackName: trackName,
+						reason: "writer-not-writing",
+						presentationTime: presentationTime
+					)
+				}
+				return false
+			}
+			return true
+		}
+
+		private func appendVideoPixelBuffer(
 		_ pixelBuffer: CVPixelBuffer,
 		presentationTime: CMTime,
 		duration: CMTime,
@@ -2484,148 +2523,183 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate, A
 		return videoEndTime + CMTimeMinimum(tailExtension, maxInlineAudioTailExtension)
 	}
 
-	private func appendAudioSampleBuffer(
-		_ sampleBuffer: CMSampleBuffer,
-		to input: AVAssetWriterInput,
-		firstSampleTime: inout CMTime?,
-		nextPresentationTime: inout CMTime?,
-		insertedSilenceDuration: inout CMTime,
-		presentationTime: CMTime,
-		trackName: String,
-		fatalOnFailure: Bool
-	) -> AudioAppendResult? {
-		guard waitForAudioInputReady(
-			input,
-			trackName: trackName,
-			presentationTime: presentationTime,
-			fatalOnFailure: fatalOnFailure
-		) else {
-			return nil
-		}
-
-		if firstSampleTime == nil {
-			firstSampleTime = presentationTime
-		}
-
-		if nextPresentationTime == nil {
-			nextPresentationTime = .zero
-		}
-
-		guard fillAudioContinuityGapIfNeeded(
-			matching: sampleBuffer,
-			to: input,
-			trackName: trackName,
-			targetPresentationTime: presentationTime,
-			nextPresentationTime: &nextPresentationTime,
-			insertedSilenceDuration: &insertedSilenceDuration
-		) else {
-			if fatalOnFailure {
-				failRequiredAudioAppend(
-					trackName: trackName,
-					reason: "silence-fill-failed",
-					presentationTime: presentationTime
-				)
-			}
-			return nil
-		}
-
-		let appendPresentationTime = nextPresentationTime ?? presentationTime
-		let sampleDuration = validAudioSampleBufferDuration(sampleBuffer) ?? sampleBuffer.duration
-		let timing = CMSampleTimingInfo(
-			duration: sampleDuration,
-			presentationTimeStamp: appendPresentationTime,
-			decodeTimeStamp: .invalid
-		)
-		if let retimedSampleBuffer = try? CMSampleBuffer(copying: sampleBuffer, withNewTiming: [timing]) {
-			let appended = input.append(retimedSampleBuffer)
-			if appended {
-				nextPresentationTime = appendPresentationTime + sampleDuration
-				if input === inlineAudioInput {
-					lastInlineAudioPresentationTime = appendPresentationTime
-					lastInlineAudioDuration = sampleDuration
-					lastInlineAudioHostTime = CMClockGetTime(CMClockGetHostTimeClock())
-					inlineAudioBufferCount += 1
-				}
-				return AudioAppendResult(
-					presentationTime: appendPresentationTime,
-					duration: sampleDuration
-				)
-			}
-			if fatalOnFailure {
-				failRequiredAudioAppend(
-					trackName: trackName,
-					reason: "append-failed",
-					presentationTime: presentationTime
-				)
-			}
-			return nil
-		}
-		if fatalOnFailure {
-			failRequiredAudioAppend(
+		private func appendAudioSampleBuffer(
+			_ sampleBuffer: CMSampleBuffer,
+			to input: AVAssetWriterInput,
+			firstSampleTime: inout CMTime?,
+			nextPresentationTime: inout CMTime?,
+			insertedSilenceDuration: inout CMTime,
+			presentationTime: CMTime,
+			trackName: String,
+			fatalOnFailure: Bool
+		) -> AudioAppendResult? {
+			guard audioWriterAllowsAppend(
+				input,
 				trackName: trackName,
-				reason: "retime-failed",
-				presentationTime: presentationTime
-			)
-		}
-		return nil
-	}
-
-	private func fillAudioContinuityGapIfNeeded(
-		matching sampleBuffer: CMSampleBuffer,
-		to input: AVAssetWriterInput,
-		trackName: String,
-		targetPresentationTime: CMTime,
-		nextPresentationTime: inout CMTime?,
-		insertedSilenceDuration: inout CMTime
-	) -> Bool {
-		guard var next = nextPresentationTime else {
-			return true
-		}
-		guard targetPresentationTime > next + audioContinuityGapFillThreshold else {
-			return true
-		}
-		guard let sampleDuration = validAudioSampleBufferDuration(sampleBuffer) else {
-			return true
-		}
-
-		var insertedBuffers = 0
-		var insertedDuration: CMTime = .zero
-		let halfSampleDuration = CMTimeMultiplyByFloat64(sampleDuration, multiplier: 0.5)
-		while next + halfSampleDuration < targetPresentationTime && insertedBuffers < maxAudioSilenceBuffersPerAppend {
+				presentationTime: presentationTime,
+				fatalOnFailure: fatalOnFailure
+			) else {
+				return nil
+			}
 			guard waitForAudioInputReady(
 				input,
 				trackName: trackName,
-				presentationTime: next,
-				fatalOnFailure: false
-			) else { return false }
-			guard let silence = makeSilentAudioSampleBuffer(
-				matching: sampleBuffer,
-				presentationTime: next,
-				duration: sampleDuration
+				presentationTime: presentationTime,
+				fatalOnFailure: fatalOnFailure
 			) else {
+				return nil
+			}
+
+			if firstSampleTime == nil {
+				firstSampleTime = presentationTime
+			}
+
+			if nextPresentationTime == nil {
+				nextPresentationTime = .zero
+			}
+
+			guard fillAudioContinuityGapIfNeeded(
+				matching: sampleBuffer,
+				to: input,
+				trackName: trackName,
+				targetPresentationTime: presentationTime,
+				nextPresentationTime: &nextPresentationTime,
+				insertedSilenceDuration: &insertedSilenceDuration,
+				fatalOnFailure: fatalOnFailure
+			) else {
+				if fatalOnFailure {
+					failRequiredAudioAppend(
+						trackName: trackName,
+						reason: "silence-fill-failed",
+						presentationTime: presentationTime
+					)
+				}
+				return nil
+			}
+
+			let appendPresentationTime = nextPresentationTime ?? presentationTime
+			guard let sampleDuration = validAudioSampleBufferDuration(sampleBuffer) else {
+				if fatalOnFailure {
+					failRequiredAudioAppend(
+						trackName: trackName,
+						reason: "invalid-sample-duration",
+						presentationTime: presentationTime
+					)
+				}
+				return nil
+			}
+			let timing = CMSampleTimingInfo(
+				duration: sampleDuration,
+				presentationTimeStamp: appendPresentationTime,
+				decodeTimeStamp: .invalid
+			)
+			if let retimedSampleBuffer = try? CMSampleBuffer(copying: sampleBuffer, withNewTiming: [timing]) {
+				guard audioWriterAllowsAppend(
+					input,
+					trackName: trackName,
+					presentationTime: appendPresentationTime,
+					fatalOnFailure: fatalOnFailure
+				) else {
+					return nil
+				}
+				let appended = input.append(retimedSampleBuffer)
+				if appended {
+					nextPresentationTime = appendPresentationTime + sampleDuration
+					if input === inlineAudioInput {
+						lastInlineAudioPresentationTime = appendPresentationTime
+						lastInlineAudioDuration = sampleDuration
+						lastInlineAudioHostTime = CMClockGetTime(CMClockGetHostTimeClock())
+						inlineAudioBufferCount += 1
+					}
+					return AudioAppendResult(
+						presentationTime: appendPresentationTime,
+						duration: sampleDuration
+					)
+				}
+				if fatalOnFailure {
+					failRequiredAudioAppend(
+						trackName: trackName,
+						reason: "append-failed",
+						presentationTime: presentationTime
+					)
+				}
+				return nil
+			}
+			if fatalOnFailure {
+				failRequiredAudioAppend(
+					trackName: trackName,
+					reason: "retime-failed",
+					presentationTime: presentationTime
+				)
+			}
+			return nil
+		}
+
+		private func fillAudioContinuityGapIfNeeded(
+			matching sampleBuffer: CMSampleBuffer,
+			to input: AVAssetWriterInput,
+			trackName: String,
+			targetPresentationTime: CMTime,
+			nextPresentationTime: inout CMTime?,
+			insertedSilenceDuration: inout CMTime,
+			fatalOnFailure: Bool
+		) -> Bool {
+			guard var next = nextPresentationTime else {
 				return true
 			}
-			guard input.append(silence) else {
-				return false
+			guard targetPresentationTime > next + audioContinuityGapFillThreshold else {
+				return true
 			}
-			next = next + sampleDuration
-			insertedBuffers += 1
-			insertedDuration = insertedDuration + sampleDuration
-		}
+			guard let sampleDuration = validAudioSampleBufferDuration(sampleBuffer) else {
+				return true
+			}
 
-		guard insertedBuffers > 0 else {
-			return true
-		}
+			var insertedBuffers = 0
+			var insertedDuration: CMTime = .zero
+			let halfSampleDuration = CMTimeMultiplyByFloat64(sampleDuration, multiplier: 0.5)
+			while next + halfSampleDuration < targetPresentationTime && insertedBuffers < maxAudioSilenceBuffersPerAppend {
+				guard audioWriterAllowsAppend(
+					input,
+					trackName: trackName,
+					presentationTime: next,
+					fatalOnFailure: fatalOnFailure
+				) else { return false }
+				guard waitForAudioInputReady(
+					input,
+					trackName: trackName,
+					presentationTime: next,
+					fatalOnFailure: false
+				) else { return false }
+				guard let silence = makeSilentAudioSampleBuffer(
+					matching: sampleBuffer,
+					presentationTime: next,
+					duration: sampleDuration
+				) else {
+					return false
+				}
+				guard input.append(silence) else {
+					return false
+				}
+				next = next + sampleDuration
+				insertedBuffers += 1
+				insertedDuration = insertedDuration + sampleDuration
+			}
 
-		nextPresentationTime = next
-		insertedSilenceDuration = insertedSilenceDuration + insertedDuration
-		fputs(
-			"AUDIO_SILENCE_INSERTED track=\(trackName) buffers=\(insertedBuffers) duration=\(CMTimeGetSeconds(insertedDuration)) totalInserted=\(CMTimeGetSeconds(insertedSilenceDuration)) targetPts=\(CMTimeGetSeconds(targetPresentationTime)) nextPts=\(CMTimeGetSeconds(next))\n",
-			stderr
-		)
-		fflush(stderr)
-		return true
-	}
+			guard insertedBuffers > 0 else {
+				return true
+			}
+
+			let remainingGap =
+				next + halfSampleDuration < targetPresentationTime ? targetPresentationTime - next : .zero
+			nextPresentationTime = next
+			insertedSilenceDuration = insertedSilenceDuration + insertedDuration
+			fputs(
+				"AUDIO_SILENCE_INSERTED track=\(trackName) buffers=\(insertedBuffers) duration=\(CMTimeGetSeconds(insertedDuration)) totalInserted=\(CMTimeGetSeconds(insertedSilenceDuration)) targetPts=\(CMTimeGetSeconds(targetPresentationTime)) nextPts=\(CMTimeGetSeconds(next)) remainingGap=\(CMTimeGetSeconds(remainingGap))\n",
+				stderr
+			)
+			fflush(stderr)
+			return remainingGap <= .zero
+		}
 
 	private func validAudioSampleBufferDuration(_ sampleBuffer: CMSampleBuffer) -> CMTime? {
 		let duration = sampleBuffer.duration

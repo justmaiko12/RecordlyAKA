@@ -755,8 +755,20 @@ describe("NativeCaptureHealthSupervisor", () => {
 		);
 		supervisor.observe(
 			event("native-webcam-proof-preview-accepted", {
-				acceptedFrame: 120,
-				acceptedPts: 4,
+				acceptedFrame: 66,
+				acceptedPts: 2.2,
+			}),
+		);
+		supervisor.observe(
+			event("native-webcam-proof-preview-accepted", {
+				acceptedFrame: 102,
+				acceptedPts: 3.4,
+			}),
+		);
+		supervisor.observe(
+			event("native-webcam-proof-preview-accepted", {
+				acceptedFrame: 138,
+				acceptedPts: 4.6,
 			}),
 		);
 		supervisor.observe(
@@ -779,7 +791,7 @@ describe("NativeCaptureHealthSupervisor", () => {
 			setIntervalFn: vi.fn(),
 			clearIntervalFn: vi.fn(),
 			staleAfterMs: 15000,
-			maxAcceptedProofGapSeconds: 3.5,
+			maxAcceptedProofGapSeconds: 1.5,
 			onIssue: (issue) => issues.push(issue),
 		});
 
@@ -796,7 +808,7 @@ describe("NativeCaptureHealthSupervisor", () => {
 		supervisor.observe(
 			event("native-webcam-proof-preview-accepted", {
 				acceptedFrame: 155,
-				acceptedPts: 5.1,
+				acceptedPts: 2.7,
 			}),
 		);
 
@@ -805,10 +817,10 @@ describe("NativeCaptureHealthSupervisor", () => {
 			event: "native-webcam-proof-preview-gap",
 			severity: "error",
 			details: {
-				acceptedProofGapSeconds: 4.1,
-				maxAcceptedProofGapSeconds: 3.5,
+				acceptedProofGapSeconds: 1.7000000000000002,
+				maxAcceptedProofGapSeconds: 1.5,
 				previousAcceptedPts: 1,
-				currentAcceptedPts: 5.1,
+				currentAcceptedPts: 2.7,
 				previousAcceptedFrame: 30,
 				currentAcceptedFrame: 155,
 			},
@@ -898,13 +910,19 @@ describe("NativeCaptureHealthSupervisor", () => {
 		supervisor.observe(
 			event("native-webcam-proof-preview-accepted", {
 				acceptedFrame: 180,
-				acceptedPts: 3,
+				acceptedPts: 2.2,
 			}),
 		);
 		supervisor.observe(
 			event("native-webcam-proof-preview-accepted", {
 				acceptedFrame: 300,
-				acceptedPts: 5,
+				acceptedPts: 3.4,
+			}),
+		);
+		supervisor.observe(
+			event("native-webcam-proof-preview-accepted", {
+				acceptedFrame: 360,
+				acceptedPts: 4.6,
 			}),
 		);
 		supervisor.observe(
