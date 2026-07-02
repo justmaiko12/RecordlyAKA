@@ -20,6 +20,7 @@ import type {
 	MarketplaceReviewStatus,
 	MarketplaceSearchResult,
 } from "./extensionTypes";
+import { assertSafeZipEntries } from "./zipEntryValidation";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -215,6 +216,12 @@ export async function downloadAndInstallExtension(
 		// Write to disk
 		const fileStream = createWriteStream(zipPath);
 		await pipeline(Readable.fromWeb(response.body as NodeReadableStream), fileStream);
+
+		// Security: validate the archive's central directory BEFORE extraction.
+		// Rejects absolute paths, `..` traversal, and symlink entries so a
+		// hostile archive can never write outside the extraction directory —
+		// the post-extraction scan below alone runs too late (TOCTOU).
+		assertSafeZipEntries(await fs.readFile(zipPath));
 
 		// Extract the zip — use the built-in decompress or shell unzip
 		const extractDir = path.join(tempDir, "extracted");

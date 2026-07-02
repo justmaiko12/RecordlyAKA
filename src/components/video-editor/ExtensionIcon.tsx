@@ -1,5 +1,6 @@
 import type { Icon, IconProps } from "@phosphor-icons/react";
 import * as PhosphorIcons from "@phosphor-icons/react";
+import { EXTENSION_PROTOCOL_PREFIX } from "@/lib/extensions/fileUrls";
 
 const WINDOWS_ABSOLUTE_PATH = /^[a-zA-Z]:[\\/]/;
 const { PuzzlePiece } = PhosphorIcons;
@@ -44,6 +45,7 @@ function isImagePath(value: string): boolean {
 	return (
 		value.startsWith("data:") ||
 		value.startsWith("file://") ||
+		value.startsWith("recordly-ext://") ||
 		value.startsWith("http://") ||
 		value.startsWith("https://") ||
 		value.includes("/") ||
@@ -51,19 +53,25 @@ function isImagePath(value: string): boolean {
 	);
 }
 
-function toFileHref(filePath: string): string {
+// Extension icons load over recordly-ext:// — with webSecurity enabled, raw
+// file:// images are blocked on the http-served renderer.
+function toExtensionHref(filePath: string): string {
 	const normalized = filePath.replace(/\\/g, "/");
 
-	if (normalized.startsWith("file://")) {
+	if (normalized.startsWith(`${EXTENSION_PROTOCOL_PREFIX}/`)) {
 		return normalized;
 	}
 
+	if (normalized.startsWith("file://")) {
+		return `${EXTENSION_PROTOCOL_PREFIX}${normalized.replace(/^file:\/\//, "")}`;
+	}
+
 	if (normalized.startsWith("/")) {
-		return `file://${normalized}`;
+		return `${EXTENSION_PROTOCOL_PREFIX}${normalized}`;
 	}
 
 	if (WINDOWS_ABSOLUTE_PATH.test(normalized)) {
-		return `file:///${normalized}`;
+		return `${EXTENSION_PROTOCOL_PREFIX}/${normalized}`;
 	}
 
 	return normalized;
@@ -76,22 +84,24 @@ function resolveIconSrc(icon: string, extensionPath?: string | null): string | n
 
 	if (
 		icon.startsWith("data:") ||
-		icon.startsWith("file://") ||
+		icon.startsWith("recordly-ext://") ||
 		icon.startsWith("http://") ||
 		icon.startsWith("https://")
 	) {
 		return icon;
 	}
 
-	if (icon.startsWith("/") || WINDOWS_ABSOLUTE_PATH.test(icon)) {
-		return toFileHref(icon);
+	if (icon.startsWith("file://") || icon.startsWith("/") || WINDOWS_ABSOLUTE_PATH.test(icon)) {
+		return toExtensionHref(icon);
 	}
 
 	if (!extensionPath) {
 		return icon;
 	}
 
-	const baseHref = toFileHref(extensionPath.endsWith("/") ? extensionPath : `${extensionPath}/`);
+	const baseHref = toExtensionHref(
+		extensionPath.endsWith("/") ? extensionPath : `${extensionPath}/`,
+	);
 	return new URL(icon, baseHref).toString();
 }
 

@@ -96,7 +96,7 @@ function summarizeError(error: unknown) {
 	return String(error);
 }
 
-function writeUpdaterLog(message: string, detail?: unknown) {
+export function writeUpdaterLog(message: string, detail?: unknown) {
 	try {
 		fs.mkdirSync(path.dirname(UPDATER_LOG_PATH), { recursive: true });
 		const suffix = detail === undefined ? "" : ` ${summarizeError(detail)}`;

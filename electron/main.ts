@@ -17,6 +17,10 @@ import {
 } from "electron";
 import { RECORDINGS_DIR } from "./appPaths";
 import { showCursor } from "./cursorHider";
+import {
+	registerExtensionProtocolHandler,
+	registerExtensionProtocolPrivileges,
+} from "./extensionProtocol";
 import { registerExtensionIpcHandlers } from "./extensions/extensionIpc";
 import { getGpuSwitches } from "./gpuSwitches";
 import {
@@ -28,12 +32,12 @@ import {
   registerIpcHandlers,
 } from "./ipc/handlers";
 import { clearActiveEditorSession } from "./ipc/project/activeEditorSession";
-import { shouldUseElectronSourceEnumeration } from "./ipc/register/sources";
 import { beginSceneStyleSession } from "./ipc/recording/sceneStyleEvents";
 import {
   beginWebcamLayoutSession,
   setWebcamLayoutSessionStyle,
 } from "./ipc/recording/webcamLayoutEvents";
+import { shouldUseElectronSourceEnumeration } from "./ipc/register/sources";
 import { ensureMediaServer } from "./mediaServer";
 import { ensurePackagedRendererServer } from "./rendererServer";
 import {
@@ -56,6 +60,7 @@ import {
   previewUpdateToast,
   setupAutoUpdates,
   skipAvailableUpdateVersion,
+  writeUpdaterLog,
 } from "./updater";
 import {
   createEditorWindow,
@@ -87,6 +92,19 @@ function ignoreBrokenConsolePipe(stream: NodeJS.WritableStream | undefined) {
 
 ignoreBrokenConsolePipe(process.stdout);
 ignoreBrokenConsolePipe(process.stderr);
+
+// Surface fire-and-forget failures instead of dying (or worse, dying silently
+// with no trace). Both handlers write to the persistent updater log so field
+// crashes can be diagnosed after the fact.
+process.on("unhandledRejection", (reason) => {
+	console.error("[main] Unhandled promise rejection:", reason);
+	writeUpdaterLog("Unhandled promise rejection in main process.", reason);
+});
+
+process.on("uncaughtException", (error) => {
+	console.error("[main] Uncaught exception:", error);
+	writeUpdaterLog("Uncaught exception in main process.", error);
+});
 
 app.commandLine.appendSwitch("ignore-gpu-blocklist");
 app.commandLine.appendSwitch("enable-unsafe-webgpu");
@@ -128,6 +146,10 @@ async function logSmokeExportGpuDiagnostics() {
 }
 
 configureGpuAccelerationSwitches();
+
+// Extension modules/assets load over recordly-ext:// now that webSecurity is
+// enabled and file:// subresources are blocked. Must run before app is ready.
+registerExtensionProtocolPrivileges();
 
 async function ensureRecordingsDir() {
   try {
@@ -1016,7 +1038,12 @@ app.whenReady().then(async () => {
     },
   );
 
-  session.defaultSession.setDevicePermissionHandler((_details) => true);
+  // Deny WebHID/WebSerial/WebUSB device access outright — the app never uses
+  // those APIs, and auto-granting them would let any compromised renderer
+  // talk to attached hardware.
+  session.defaultSession.setDevicePermissionHandler((_details) => false);
+
+  registerExtensionProtocolHandler();
 
   registerTeleprompterToggleShortcut(toggleTeleprompterWindow);
 

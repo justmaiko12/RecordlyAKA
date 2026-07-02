@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { createReadStream, readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -66,6 +67,13 @@ function waitForMjpegResponseDrain(
 		response.once("close", onClose);
 	});
 }
+
+// Per-session bearer token. The server listens on loopback with permissive
+// CORS (media elements need it), so without a secret any web page the user
+// visits could port-scan localhost and read approved recordings. URLs are
+// minted per-load via the get-local-media-url IPC, so the token never
+// persists outside app memory.
+const mediaServerToken = randomBytes(32).toString("hex");
 
 export function resolveHttpByteRange(
 	rangeHeader: string,
@@ -497,6 +505,15 @@ async function handleMediaRequest(
 			return;
 		}
 
+		// Preflights carry no credentials and reveal nothing; everything else
+		// must present the per-session token minted into app-issued URLs.
+		if (request.method !== "OPTIONS" && url.searchParams.get("token") !== mediaServerToken) {
+			console.warn("[media-server] Blocked request without a valid session token");
+			response.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+			response.end("Forbidden");
+			return;
+		}
+
 		const resolvedPath = await resolveRealPath(rawPath);
 		if (!resolvedPath || !isAllowedMediaPath(resolvedPath)) {
 			console.warn(`[media-server] Blocked access to unapproved path: ${rawPath}`);
@@ -648,7 +665,7 @@ export async function ensureMediaServer(): Promise<string> {
 
 export function buildMediaUrl(baseUrl: string, filePath: string): string {
 	const resolved = path.resolve(filePath);
-	return `${baseUrl}/video?path=${encodeURIComponent(resolved)}`;
+	return `${baseUrl}/video?path=${encodeURIComponent(resolved)}&token=${mediaServerToken}`;
 }
 
 export function buildMjpegPreviewStreamUrl(baseUrl: string, streamId: string): string {

@@ -77,6 +77,7 @@ import {
 } from "@/lib/extensions/renderHooks";
 import { applyCanvasSceneTransform } from "@/lib/extensions/sceneTransform";
 import { drawSquircleOnCanvas, drawSquircleOnGraphics } from "@/lib/geometry/squircle";
+import { applyMediaElementCrossOrigin } from "@/lib/mediaCrossOrigin";
 import {
 	clampMediaTimeToDuration,
 	getEffectiveVideoStreamDurationSeconds,
@@ -632,6 +633,7 @@ export class FrameRenderer {
 			// Render background based on type
 			if (
 				wallpaper.startsWith("file://") ||
+				wallpaper.startsWith("recordly-ext://") ||
 				wallpaper.startsWith("data:") ||
 				wallpaper.startsWith("/") ||
 				wallpaper.startsWith("http")
@@ -639,14 +641,9 @@ export class FrameRenderer {
 				// Image background
 				const img = new Image();
 				const imageUrl = await this.resolveWallpaperImageUrl(wallpaper);
-				// Don't set crossOrigin for same-origin images to avoid CORS taint.
-				if (
-					imageUrl.startsWith("http") &&
-					window.location.origin &&
-					!imageUrl.startsWith(window.location.origin)
-				) {
-					img.crossOrigin = "anonymous";
-				}
+				// CORS mode only where needed (cross-origin http / recordly-ext);
+				// same-origin and file:// loads must stay non-CORS.
+				applyMediaElementCrossOrigin(img, imageUrl);
 
 				await new Promise<void>((resolve, reject) => {
 					img.onload = () => resolve();
@@ -960,6 +957,7 @@ export class FrameRenderer {
 		video.loop = true;
 		video.playsInline = true;
 		video.preload = "auto";
+		applyMediaElementCrossOrigin(video, backgroundSource.src);
 		video.src = backgroundSource.src;
 		video.load();
 
@@ -1155,11 +1153,15 @@ export class FrameRenderer {
 	}
 
 	private async resolveWallpaperImageUrl(wallpaper: string): Promise<string> {
-		if (
-			wallpaper.startsWith("file://") ||
-			wallpaper.startsWith("data:") ||
-			wallpaper.startsWith("http")
-		) {
+		// file:// (legacy persisted extension wallpapers) and recordly-ext://
+		// images convert to data URLs through the gated read-local-file IPC —
+		// raw file:// cannot load on the http-served renderer with webSecurity
+		// enabled, and data URLs sidestep canvas-taint concerns entirely.
+		if (wallpaper.startsWith("file://") || wallpaper.startsWith("recordly-ext://")) {
+			return getRenderableAssetUrl(wallpaper);
+		}
+
+		if (wallpaper.startsWith("data:") || wallpaper.startsWith("http")) {
 			return wallpaper;
 		}
 
@@ -1271,6 +1273,7 @@ export class FrameRenderer {
 		this.cleanupWebcamSource = webcamSource.revoke;
 
 		const video = document.createElement("video");
+		applyMediaElementCrossOrigin(video, webcamSource.src);
 		video.src = webcamSource.src;
 		video.muted = true;
 		video.preload = "auto";

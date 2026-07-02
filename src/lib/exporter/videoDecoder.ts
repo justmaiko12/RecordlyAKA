@@ -1,3 +1,5 @@
+import { applyMediaElementCrossOrigin } from "@/lib/mediaCrossOrigin";
+
 export interface DecodedVideoInfo {
 	width: number;
 	height: number;
@@ -12,6 +14,7 @@ export class VideoFileDecoder {
 
 	async loadVideo(videoUrl: string): Promise<DecodedVideoInfo> {
 		this.videoElement = document.createElement("video");
+		applyMediaElementCrossOrigin(this.videoElement, videoUrl);
 		this.videoElement.src = videoUrl;
 		this.videoElement.preload = "metadata";
 

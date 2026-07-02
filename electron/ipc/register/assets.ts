@@ -4,18 +4,30 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ipcMain } from "electron";
 import { USER_DATA_PATH } from "../../appPaths";
+import { getAssetRootPath, isAllowedLocalReadPath } from "../project/manager";
 import { normalizePath } from "../utils";
-import { getAssetRootPath } from "../project/manager";
 
 export function registerAssetHandlers() {
   async function resolveReadableLocalFilePath(filePath: string) {
     const normalizedPath = normalizePath(filePath)
+    // Same allowlist policy as the media server: app-managed directories plus
+    // paths the user explicitly opted into (dialogs, recording sessions,
+    // loaded projects). Check the caller-supplied path BEFORE canonicalizing
+    // and the canonical path after, so neither a symlink under an allowed
+    // prefix nor an allowed-looking alias of a forbidden file slips through.
+    if (!isAllowedLocalReadPath(normalizedPath)) {
+      throw new Error('Access to this path is not allowed')
+    }
     const resolvedPath = await fs.realpath(normalizedPath).catch(() => normalizedPath)
     const stats = await fs.stat(resolvedPath)
     if (!stats.isFile()) {
       throw new Error('Path is not a readable file')
     }
-    return normalizePath(resolvedPath)
+    const finalPath = normalizePath(resolvedPath)
+    if (!isAllowedLocalReadPath(finalPath)) {
+      throw new Error('Access to this path is not allowed')
+    }
+    return finalPath
   }
 
   // Generate a tiny thumbnail for a wallpaper image and cache it in userData.
@@ -109,11 +121,9 @@ export function registerAssetHandlers() {
 
   ipcMain.handle('read-local-file', async (_, filePath: string) => {
     try {
-      // Intentionally more permissive than the media-server allowlist: this IPC
-      // is used for direct renderer-side local file reads after the app has
-      // already accepted a path, while URL-based media serving must stay scoped
-      // to approved/app-managed locations. We still canonicalize the path and
-      // require a real on-disk file so this cannot be used to read directories.
+      // Gated by the same allowlist as the media server (app-managed dirs +
+      // explicitly approved paths) so a compromised renderer cannot use this
+      // IPC to read arbitrary files on disk.
       const resolved = await resolveReadableLocalFilePath(filePath)
 
       const data = await fs.readFile(resolved)

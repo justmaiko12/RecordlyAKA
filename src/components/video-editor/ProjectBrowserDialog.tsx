@@ -10,6 +10,49 @@ export type ProjectLibraryEntry = {
 	isInProjectsDirectory: boolean;
 };
 
+// Thumbnails render through the loopback media server: with webSecurity
+// enabled, raw file:// images no longer load on http-served windows. The
+// main process approves each listed thumbnail path, so getLocalMediaUrl
+// succeeds for every entry the browser shows. file:// remains as a fallback
+// for the packaged loadFile window, where it still works.
+function useResolvedThumbnailUrls(entries: ProjectLibraryEntry[]): Record<string, string> {
+	const [urls, setUrls] = useState<Record<string, string>>({});
+
+	useEffect(() => {
+		let cancelled = false;
+
+		(async () => {
+			const next: Record<string, string> = {};
+			await Promise.all(
+				entries.map(async (entry) => {
+					const thumbnailPath = entry.thumbnailPath;
+					if (!thumbnailPath) {
+						return;
+					}
+
+					try {
+						const result = await window.electronAPI?.getLocalMediaUrl?.(thumbnailPath);
+						next[thumbnailPath] =
+							result?.success && result.url ? result.url : toFileUrl(thumbnailPath);
+					} catch {
+						next[thumbnailPath] = toFileUrl(thumbnailPath);
+					}
+				}),
+			);
+
+			if (!cancelled) {
+				setUrls(next);
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [entries]);
+
+	return urls;
+}
+
 type ProjectBrowserDialogProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -33,6 +76,7 @@ export default function ProjectBrowserDialog({
 	const panelRef = useRef<HTMLDivElement | null>(null);
 	const [position, setPosition] = useState({ top: 72, left: 16, maxHeight: 360 });
 	const visibleEntries = useMemo(() => entries.slice(0, 24), [entries]);
+	const thumbnailUrls = useResolvedThumbnailUrls(visibleEntries);
 
 	const updatePosition = useCallback(() => {
 		if (typeof window === "undefined") {
@@ -172,17 +216,19 @@ export default function ProjectBrowserDialog({
 				ref={panelRef}
 				role="dialog"
 				aria-label="Projects"
-					className="pointer-events-auto mb-1.5 w-[300px] max-h-[400px] overflow-hidden rounded-[14px] border border-foreground/[0.07] bg-editor-panel/[0.96] text-foreground shadow-[0_12px_32px_rgba(0,0,0,0.22),0_2px_10px_rgba(0,0,0,0.1)] animate-in fade-in-0 duration-150"
+				className="pointer-events-auto mb-1.5 w-[300px] max-h-[400px] overflow-hidden rounded-[14px] border border-foreground/[0.07] bg-editor-panel/[0.96] text-foreground shadow-[0_12px_32px_rgba(0,0,0,0.22),0_2px_10px_rgba(0,0,0,0.1)] animate-in fade-in-0 duration-150"
 			>
 				<div className="border-b border-foreground/10 px-3 py-2.5">
-					<div className="text-sm font-medium tracking-tight text-foreground">Projects</div>
+					<div className="text-sm font-medium tracking-tight text-foreground">
+						Projects
+					</div>
 				</div>
 				<div className="max-h-[360px] overflow-y-auto px-2.5 py-2.5">
 					{visibleEntries.length > 0 ? (
 						<div className="grid grid-cols-2 gap-2">
 							{visibleEntries.map((entry) => {
 								const thumbnailSrc = entry.thumbnailPath
-									? toFileUrl(entry.thumbnailPath)
+									? (thumbnailUrls[entry.thumbnailPath] ?? null)
 									: null;
 								return (
 									<button
@@ -243,7 +289,9 @@ export default function ProjectBrowserDialog({
 				className="pointer-events-auto fixed w-[min(280px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-foreground/10 bg-editor-surface text-foreground shadow-2xl animate-in fade-in-0 duration-150"
 			>
 				<div className="border-b border-foreground/10 px-3 py-2.5">
-					<div className="text-sm font-medium tracking-tight text-foreground">Projects</div>
+					<div className="text-sm font-medium tracking-tight text-foreground">
+						Projects
+					</div>
 				</div>
 				<div
 					className="overflow-y-auto px-2.5 py-2.5"
@@ -253,7 +301,7 @@ export default function ProjectBrowserDialog({
 						<div className="grid grid-cols-2 gap-2">
 							{visibleEntries.map((entry) => {
 								const thumbnailSrc = entry.thumbnailPath
-									? toFileUrl(entry.thumbnailPath)
+									? (thumbnailUrls[entry.thumbnailPath] ?? null)
 									: null;
 								return (
 									<button

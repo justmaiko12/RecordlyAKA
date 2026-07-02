@@ -35,7 +35,7 @@ export function getExtensionsDirectory(): string {
 /**
  * Returns the built-in extensions directory (shipped with the app).
  */
-function getBuiltinExtensionsDirectory(): string {
+export function getBuiltinExtensionsDirectory(): string {
 	if (app.isPackaged) {
 		return path.join(process.resourcesPath, BUILTIN_EXTENSIONS_DIR);
 	}

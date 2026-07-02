@@ -3,6 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
 import { RECORDINGS_DIR, USER_DATA_PATH } from "../../appPaths";
+import {
+	getBuiltinExtensionsDirectory,
+	getExtensionsDirectory,
+} from "../../extensions/extensionLoader";
 import { isSupportedLocalMediaPath } from "../../mediaTypes";
 import {
 	LEGACY_PROJECT_FILE_EXTENSIONS,
@@ -55,6 +59,11 @@ export function isAllowedLocalReadPath(candidatePath: string) {
 		USER_DATA_PATH,
 		getAssetRootPath(),
 		app.getPath("temp"),
+		// Extension assets (wallpapers, icons, cursors) are read through the same
+		// gated IPC/protocol paths. The user dir is under USER_DATA_PATH already;
+		// built-in extensions ship outside the asset root in packaged builds.
+		getExtensionsDirectory(),
+		getBuiltinExtensionsDirectory(),
 	];
 	const normalizedCandidatePath = normalizePath(candidatePath);
 
@@ -339,6 +348,11 @@ export async function buildProjectLibraryEntry(
 			.access(thumbnailPath, fsConstants.R_OK)
 			.then(() => true)
 			.catch(() => false);
+		if (thumbnailExists) {
+			// App-produced sidecar of a project the user opened; approve it so the
+			// project browser can render it through the allowlisted media server.
+			await rememberApprovedLocalReadPath(thumbnailPath);
+		}
 
 		return {
 			path: normalizedPath,

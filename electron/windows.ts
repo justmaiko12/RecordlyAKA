@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { USER_DATA_PATH } from "./appPaths";
 import { getHudOverlayWindowBounds, resizeHudOverlayFallbackBounds } from "./hudOverlayBounds";
+import { rememberApprovedLocalReadPath } from "./ipc/project/manager";
 import { appendRecordingEventLogEntry } from "./ipc/recording/recordingEventLog";
 import { currentRecordingSession, currentVideoPath, nativeCaptureTargetPath } from "./ipc/state";
 import { getPackagedRendererBaseUrl } from "./rendererServer";
@@ -72,6 +73,27 @@ function logWindowLifecycleEvent(event: string, details?: Record<string, unknown
 	}).catch((error) => {
 		console.warn("[recording-log] Failed to write window lifecycle event:", error);
 	});
+}
+
+// Dev-open and smoke-export inputs arrive via launch env vars (developer /
+// CI opted-in, never renderer-controlled) and can live outside the app's
+// managed directories. Approve them plus their sidecar audio files so the
+// allowlisted media server and read-local-file IPC can serve them — the old
+// escape hatch (raw file:// URLs) is gone now that webSecurity is enabled.
+function approveEditorEnvMediaPaths(): void {
+	const envInputPaths = [
+		process.env.RECORDLY_DEV_OPEN_RECORDING_INPUT,
+		process.env.RECORDLY_DEV_OPEN_RECORDING_WEBCAM,
+		process.env.RECORDLY_SMOKE_EXPORT_INPUT,
+		process.env.RECORDLY_SMOKE_EXPORT_WEBCAM_INPUT,
+	].filter((value): value is string => Boolean(value));
+
+	for (const inputPath of envInputPaths) {
+		void rememberApprovedLocalReadPath(inputPath);
+		const pathWithoutExtension = inputPath.replace(/\.[^./\\]+$/, "");
+		void rememberApprovedLocalReadPath(`${pathWithoutExtension}.mic.wav`);
+		void rememberApprovedLocalReadPath(`${pathWithoutExtension}.system.wav`);
+	}
 }
 
 function getEditorWindowQuery(): Record<string, string> {
@@ -494,7 +516,6 @@ export function createHudOverlayWindow(): BrowserWindow {
 			preload: path.join(electronWindowsDir, "preload.mjs"),
 			nodeIntegration: false,
 			contextIsolation: true,
-			webSecurity: false,
 			backgroundThrottling: false,
 		},
 	});
@@ -907,6 +928,7 @@ function loadPackagedEditorWindow(win: BrowserWindow) {
 export function createEditorWindow(): BrowserWindow {
 	const perfStart = Date.now();
 	console.log("[PERF:MAIN] createEditorWindow: STARTED");
+	approveEditorEnvMediaPaths();
 	const isMac = process.platform === "darwin";
 	const { workArea, workAreaSize } = getScreen().getPrimaryDisplay();
 	const initialWidth = isMac ? Math.round(workAreaSize.width * 0.85) : workArea.width;
@@ -940,7 +962,6 @@ export function createEditorWindow(): BrowserWindow {
 			preload: path.join(electronWindowsDir, "preload.mjs"),
 			nodeIntegration: false,
 			contextIsolation: true,
-			webSecurity: false,
 			backgroundThrottling: false,
 		},
 	});
@@ -1133,7 +1154,6 @@ export function createTeleprompterWindow(): BrowserWindow {
 			preload: path.join(electronWindowsDir, "preload.mjs"),
 			nodeIntegration: false,
 			contextIsolation: true,
-			webSecurity: false,
 			backgroundThrottling: false,
 		},
 	});

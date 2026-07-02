@@ -1,3 +1,4 @@
+import { extensionUrlToLocalPath } from "./extensions/fileUrls";
 import { resolveAvailableWallpaperPath } from "./wallpapers";
 
 function encodeRelativeAssetPath(relativePath: string): string {
@@ -88,6 +89,14 @@ const BASE64_CHUNK_SIZE = 0x8000;
 const localFileDataUrlCache = new Map<string, string>();
 
 function toLocalFilePath(resourceUrl: string) {
+	// Extension assets (recordly-ext://) resolve to local paths too so they
+	// keep flowing through the gated read-local-file IPC → data URL path,
+	// which stays canvas-safe regardless of page origin.
+	const extensionLocalPath = extensionUrlToLocalPath(resourceUrl.split("?")[0]);
+	if (extensionLocalPath) {
+		return extensionLocalPath;
+	}
+
 	if (!resourceUrl.startsWith("file://")) {
 		return null;
 	}
@@ -191,9 +200,21 @@ export async function getRenderableVideoUrl(asset: string): Promise<string> {
 		!asset ||
 		asset.startsWith("blob:") ||
 		asset.startsWith("data:") ||
-		asset.startsWith("file://") ||
 		asset.startsWith("http")
 	) {
+		return asset;
+	}
+
+	// With webSecurity enabled, raw file:// video cannot load on the
+	// http-served renderer — route it through the loopback media server.
+	// Older projects persisted extension wallpapers as file:// URLs, so this
+	// also covers that legacy shape. recordly-ext:// URLs load natively.
+	if (asset.startsWith("file://")) {
+		const localFilePath = toLocalFilePath(asset);
+		return localFilePath ? resolveLocalMediaUrl(localFilePath) : asset;
+	}
+
+	if (asset.startsWith("recordly-ext://")) {
 		return asset;
 	}
 

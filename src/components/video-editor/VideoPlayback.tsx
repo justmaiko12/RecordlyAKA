@@ -12,6 +12,7 @@ import {
 	useState,
 } from "react";
 import { getAssetPath, getRenderableAssetUrl, getRenderableVideoUrl } from "@/lib/assetPath";
+import { applyMediaElementCrossOrigin, getMediaElementCrossOrigin } from "@/lib/mediaCrossOrigin";
 import {
 	clampMediaTimeToDuration,
 	enablePitchPreservingPlayback,
@@ -1439,6 +1440,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					layoutVideoContentRef.current?.();
 				} else {
 					const img = new Image();
+					// Extension frame images load over recordly-ext:// which is
+					// cross-origin; CORS mode keeps the Pixi texture untainted.
+					applyMediaElementCrossOrigin(img, frameData.filePath);
 					img.onload = () => {
 						if (cancelled || frameIdRef.current !== frame) return;
 						const texture = Texture.from(img);
@@ -3136,6 +3140,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					if (
 						wallpaper.startsWith("http") ||
 						wallpaper.startsWith("file://") ||
+						wallpaper.startsWith("recordly-ext://") ||
 						wallpaper.startsWith("/")
 					) {
 						const renderable = await getRenderableAssetUrl(wallpaper);
@@ -3181,6 +3186,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			Boolean(
 				resolvedWallpaper &&
 					(resolvedWallpaper.startsWith("file://") ||
+						resolvedWallpaper.startsWith("recordly-ext://") ||
 						resolvedWallpaper.startsWith("http") ||
 						resolvedWallpaper.startsWith("/") ||
 						resolvedWallpaper.startsWith("data:")),
@@ -3246,6 +3252,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 						}}
 						className="absolute inset-0 h-full w-full object-cover"
 						src={resolvedWallpaper}
+						crossOrigin={getMediaElementCrossOrigin(resolvedWallpaper)}
 						muted
 						loop
 						playsInline
@@ -3332,6 +3339,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 											<video
 												ref={webcamVideoRef}
 												src={webcamVideoPath}
+												crossOrigin={getMediaElementCrossOrigin(
+													webcamVideoPath,
+												)}
 												className="pointer-events-none absolute inset-0 block h-full w-full object-fill"
 												style={{
 													opacity: webcamProcessingActive ? 0 : undefined,
@@ -3519,6 +3529,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				<video
 					ref={videoRef}
 					src={videoPath}
+					crossOrigin={getMediaElementCrossOrigin(videoPath)}
 					className={fallbackVideoClassName}
 					preload="auto"
 					playsInline
